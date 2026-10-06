@@ -15,6 +15,9 @@ add_library(rtype_ecs
     Component/ComponentStorage.hpp
     Component/ComponentManager.hpp
     Component/ComponentManager.cpp
+
+    World/World.hpp
+    World/World.cpp
 )
 add_library(rtype::ecs ALIAS rtype_ecs)
 

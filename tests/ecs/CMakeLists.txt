@@ -7,6 +7,8 @@ rtype_add_test(ecs_tests
         Component/ComponentTests.cpp
         Component/ComponentStorageTests.cpp
         Component/ComponentManagerTests.cpp
+        World/WorldTests.cpp
+        World/QueryTests.cpp
     LIBRARIES
         rtype::ecs
 )
