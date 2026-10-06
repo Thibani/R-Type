@@ -10,6 +10,11 @@ add_library(rtype_ecs
     Entity/Entity.hpp
     Entity/EntityManager.hpp
     Entity/EntityManager.cpp
+
+    Component/Component.hpp
+    Component/ComponentStorage.hpp
+    Component/ComponentManager.hpp
+    Component/ComponentManager.cpp
 )
 add_library(rtype::ecs ALIAS rtype_ecs)
 
