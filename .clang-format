@@ -1,0 +1,33 @@
+# WebKit style: braces on their own line for functions, attached elsewhere.
+BasedOnStyle: WebKit
+Language: Cpp
+Standard: Latest
+
+ColumnLimit: 100
+IndentWidth: 4
+AccessModifierOffset: -4
+NamespaceIndentation: None
+FixNamespaceComments: true
+
+AlwaysBreakTemplateDeclarations: Yes
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+BreakConstructorInitializers: BeforeComma
+PackConstructorInitializers: Never
+PointerAlignment: Left
+SpaceBeforeCpp11BracedList: false
+Cpp11BracedListStyle: true
+InsertBraces: true
+
+IncludeBlocks: Regroup
+IncludeCategories:
+  # Project headers first ("ecs/...", "engine/...")
+  - Regex: '^"'
+    Priority: 1
+  # Third-party headers (<gtest/...>, <SFML/...>)
+  - Regex: '^<.*/'
+    Priority: 2
+  # Standard library
+  - Regex: '^<'
+    Priority: 3
