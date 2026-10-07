@@ -4,7 +4,7 @@ A networked R-Type game written in modern C++ (C++23), built on top of a
 reusable Entity-Component-System (ECS) game engine.
 
 > **Status:** early development. The build system, tooling and the first ECS
-> core (entities, components, World and queries) is in place. Gameplay, client and server come next.
+> core (entities, components, World, queries, systems and time) is in place. Gameplay, client and server come next.
 
 ---
 
@@ -139,7 +139,9 @@ Helper scripts live in `scripts/` (run them from Git Bash on Windows).
 │   └── ecs/              # Generic ECS library (target: rtype_ecs)
 │       ├── Entity/       # Entity handle and EntityManager
 │       ├── Component/    # Component concept, storage and ComponentManager
-│       └── World/        # World facade and queries
+│       ├── World/        # World facade and queries
+│       ├── System/       # System base class and SystemManager
+│       └── Time/         # Frame timing given to systems
 └── tests/
     └── ecs/              # Mirrors src/ecs (Entity/, Component/, ...)
 ```

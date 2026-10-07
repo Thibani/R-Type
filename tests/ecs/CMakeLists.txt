@@ -9,6 +9,9 @@ rtype_add_test(ecs_tests
         Component/ComponentManagerTests.cpp
         World/WorldTests.cpp
         World/QueryTests.cpp
+        World/WorldSystemsTests.cpp
+        System/SystemManagerTests.cpp
+        Time/TimeTests.cpp
     LIBRARIES
         rtype::ecs
 )

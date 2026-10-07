@@ -5,6 +5,8 @@
 #include "ecs/Component/ComponentStorage.hpp"
 #include "ecs/Entity/Entity.hpp"
 #include "ecs/Entity/EntityManager.hpp"
+#include "ecs/System/SystemManager.hpp"
+#include "ecs/Time/Time.hpp"
 
 #include <algorithm>
 #include <concepts>
@@ -18,9 +20,10 @@ namespace ecs {
 
 /// The main entry point of the ECS.
 ///
-/// The World is a facade: it hides the `EntityManager` and the
-/// `ComponentManager` behind one consistent API and keeps them in sync.
-/// For example, destroying an entity also removes all of its components.
+/// The World is a facade: it hides the `EntityManager`, the
+/// `ComponentManager` and the `SystemManager` behind one consistent API and
+/// keeps them in sync. For example, destroying an entity also removes all of
+/// its components.
 ///
 ///     ecs::World world;
 ///
@@ -28,9 +31,8 @@ namespace ecs {
 ///     world.addComponent(ship, Position{0.0F, 0.0F});
 ///     world.addComponent(ship, Velocity{1.0F, 0.0F});
 ///
-///     world.query<Position, Velocity>([](ecs::Entity, Position& position, Velocity& velocity) {
-///         position.x += velocity.dx;
-///     });
+///     world.systems().add<MovementSystem>();
+///     world.update(time); // runs every system once
 class World {
 public:
     // --- Entities -------------------------------------------------------------
@@ -51,6 +53,7 @@ public:
     std::size_t entityCount() const noexcept;
 
     /// Destroys every entity and every component.
+    /// Systems are kept: they are the configuration of the World, not its state.
     void clear();
 
     // --- Components -----------------------------------------------------------
@@ -156,9 +159,22 @@ public:
         }
     }
 
+    // --- Systems --------------------------------------------------------------
+
+    /// The systems of this World, run by `update()` in insertion order.
+    [[nodiscard]]
+    SystemManager& systems() noexcept;
+
+    [[nodiscard]]
+    const SystemManager& systems() const noexcept;
+
+    /// Runs every system once with the timing of the current frame.
+    void update(const Time& time);
+
 private:
     EntityManager _entities;
     ComponentManager _components;
+    SystemManager _systems;
 };
 
 } // namespace ecs

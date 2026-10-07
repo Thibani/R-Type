@@ -14,16 +14,18 @@ This folder contains the `World`, the **main entry point of the ECS**.
 The ECS is made of independent building blocks:
 
 - the `EntityManager` ([`../Entity`](../Entity/README.md)) creates and validates entity handles;
-- the `ComponentManager` ([`../Component`](../Component/README.md)) stores components.
+- the `ComponentManager` ([`../Component`](../Component/README.md)) stores components;
+- the `SystemManager` ([`../System`](../System/README.md)) owns and runs the systems.
 
-Neither knows about the other. The `World` is a **facade** that owns both and
-keeps them consistent:
+None of them knows about the others. The `World` is a **facade** that owns them
+and keeps them consistent:
 
 ```mermaid
 flowchart TD
     Game[Game code / Systems] --> World
     World --> EntityManager
     World --> ComponentManager
+    World --> SystemManager
 ```
 
 Game code and systems only talk to the `World`. They never touch the managers
@@ -36,6 +38,7 @@ What the `World` adds on top of the two managers:
 | Destroying an entity also removes **all** its components | `destroyEntity`      |
 | A component can only be added to an **alive** entity   | `addComponent`         |
 | Iterating over entities owning a set of components     | `query`                |
+| Running every system with the time of the frame        | `update`               |
 
 ---
 
@@ -49,7 +52,7 @@ What the `World` adds on top of the two managers:
 | `destroyEntity(e)`    | Destroys `e` **and** removes all its components. `false` if `e` was not alive |
 | `isAlive(e)`          | `true` if `e` refers to an existing entity (id **and** generation match) |
 | `entityCount()`       | Number of alive entities                                         |
-| `clear()`             | Destroys every entity and every component                        |
+| `clear()`             | Destroys every entity and every component (systems are kept)     |
 
 ### Components
 
@@ -66,6 +69,13 @@ What the `World` adds on top of the two managers:
 Why only `addComponent` checks that the entity is alive: since `destroyEntity`
 removes every component, a dead (or stale) handle can never own a component.
 `has`/`get`/`remove` naturally answer "no component" for it.
+
+### Systems
+
+| Method           | Behavior                                                       |
+|------------------|----------------------------------------------------------------|
+| `systems()`      | The `SystemManager` of this World: `world.systems().add<MovementSystem>()` |
+| `update(time)`   | Runs every system once, in insertion order, with the given [`Time`](../Time/README.md) |
 
 ---
 

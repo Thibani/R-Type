@@ -18,6 +18,12 @@ add_library(rtype_ecs
 
     World/World.hpp
     World/World.cpp
+
+    System/System.hpp
+    System/SystemManager.hpp
+    System/SystemManager.cpp
+
+    Time/Time.hpp
 )
 add_library(rtype::ecs ALIAS rtype_ecs)
 

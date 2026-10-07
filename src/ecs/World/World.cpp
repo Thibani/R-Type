@@ -32,4 +32,19 @@ void World::clear()
     _entities.clear();
 }
 
+SystemManager& World::systems() noexcept
+{
+    return _systems;
+}
+
+const SystemManager& World::systems() const noexcept
+{
+    return _systems;
+}
+
+void World::update(const Time& time)
+{
+    _systems.update(*this, time);
+}
+
 } // namespace ecs
