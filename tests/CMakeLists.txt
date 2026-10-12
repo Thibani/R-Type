@@ -14,3 +14,4 @@ function(rtype_add_test name)
 endfunction()
 
 add_subdirectory(ecs)
+add_subdirectory(network)
