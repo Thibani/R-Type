@@ -134,6 +134,7 @@ Helper scripts live in `scripts/` (run them from Git Bash on Windows).
 ├── CMakeLists.txt        # Root build script
 ├── CMakePresets.json     # Ready-made build configurations
 ├── cmake/                # Options, compiler warnings, dependencies (CPM)
+├── docs/                 # Developer documentation (network protocol: docs/protocol.md)
 ├── scripts/              # format / lint / test helpers
 ├── src/
 │   └── ecs/              # Generic ECS library (target: rtype_ecs)
