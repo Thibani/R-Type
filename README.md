@@ -22,7 +22,7 @@ Optional, for code quality: `clang-format` and `clang-tidy`.
 On Windows, run the commands below from the **Developer PowerShell for VS**
 (it provides the compiler and Ninja) or from Git Bash for the shell scripts.
 
-Third-party libraries (currently only GoogleTest) are downloaded automatically
+Third-party libraries (GoogleTest and standalone Asio) are downloaded automatically
 at configure time with [CPM.cmake](https://github.com/cpm-cmake/CPM.cmake).
 Nothing third-party is committed to the repository.
 
@@ -145,7 +145,8 @@ Helper scripts live in `scripts/` (run them from Git Bash on Windows).
 │   │   └── Time/         # Frame timing given to systems
 │   └── network/          # Network library (target: rtype_network)
 │       ├── Serialization/ # Bounded big-endian ByteReader / ByteWriter
-│       └── Protocol/     # Packet types and encode / decode (docs/protocol.md)
+│       ├── Protocol/     # Packet types and encode / decode (docs/protocol.md)
+│       └── Transport/    # Non-blocking UDP socket (Asio)
 └── tests/
     ├── ecs/              # Mirrors src/ecs (Entity/, Component/, ...)
     └── network/          # Mirrors src/network
