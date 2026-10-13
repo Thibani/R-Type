@@ -33,3 +33,26 @@ if(RTYPE_BUILD_TESTS)
             "BUILD_GMOCK OFF"
             "gtest_force_shared_crt ON") # Match the MSVC runtime used by our targets
 endif()
+
+# --- Runtime dependencies -----------------------------------------------------
+
+# Standalone Asio (no Boost), header-only. It ships no CMakeLists, so the
+# target is declared here. Game code reaches it only through rtype::network.
+CPMAddPackage(
+    NAME asio
+    GITHUB_REPOSITORY chriskohlhoff/asio
+    GIT_TAG asio-1-30-2
+    DOWNLOAD_ONLY YES)
+
+find_package(Threads REQUIRED)
+
+add_library(asio INTERFACE)
+add_library(asio::asio ALIAS asio)
+# SYSTEM: our warning flags and clang-tidy must not apply to Asio's headers
+target_include_directories(asio SYSTEM INTERFACE "${asio_SOURCE_DIR}/asio/include")
+target_compile_definitions(asio INTERFACE ASIO_STANDALONE ASIO_NO_DEPRECATED)
+target_link_libraries(asio INTERFACE Threads::Threads)
+if(WIN32)
+    target_compile_definitions(asio INTERFACE _WIN32_WINNT=0x0A00) # Windows 10
+    target_link_libraries(asio INTERFACE ws2_32 mswsock)
+endif()
