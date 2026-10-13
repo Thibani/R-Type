@@ -13,7 +13,7 @@ reusable Entity-Component-System (ECS) game engine.
 | Tool         | Minimum version | Notes                                              |
 |--------------|-----------------|----------------------------------------------------|
 | CMake        | 3.21            |                                                    |
-| C++ compiler | C++23 support   | GCC 13+, Clang 17+ or MSVC 19.36+ (VS 2022 17.6+)  |
+| C++ compiler | C++23 support   | GCC 13+, Clang 19+ or MSVC 19.36+ (VS 2022 17.6+)  |
 | Ninja        | any             | Required by the CMake presets (bundled with VS)    |
 | Git          | any             | Also used by CMake to fetch dependencies           |
 
@@ -134,16 +134,21 @@ Helper scripts live in `scripts/` (run them from Git Bash on Windows).
 ├── CMakeLists.txt        # Root build script
 ├── CMakePresets.json     # Ready-made build configurations
 ├── cmake/                # Options, compiler warnings, dependencies (CPM)
+├── docs/                 # Developer documentation (network protocol: docs/protocol.md)
 ├── scripts/              # format / lint / test helpers
 ├── src/
-│   └── ecs/              # Generic ECS library (target: rtype_ecs)
-│       ├── Entity/       # Entity handle and EntityManager
-│       ├── Component/    # Component concept, storage and ComponentManager
-│       ├── World/        # World facade and queries
-│       ├── System/       # System base class and SystemManager
-│       └── Time/         # Frame timing given to systems
+│   ├── ecs/              # Generic ECS library (target: rtype_ecs)
+│   │   ├── Entity/       # Entity handle and EntityManager
+│   │   ├── Component/    # Component concept, storage and ComponentManager
+│   │   ├── World/        # World facade and queries
+│   │   ├── System/       # System base class and SystemManager
+│   │   └── Time/         # Frame timing given to systems
+│   └── network/          # Network library (target: rtype_network)
+│       ├── Serialization/ # Bounded big-endian ByteReader / ByteWriter
+│       └── Protocol/     # Packet types and encode / decode (docs/protocol.md)
 └── tests/
-    └── ecs/              # Mirrors src/ecs (Entity/, Component/, ...)
+    ├── ecs/              # Mirrors src/ecs (Entity/, Component/, ...)
+    └── network/          # Mirrors src/network
 ```
 
 Conventions:
