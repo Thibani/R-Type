@@ -24,6 +24,8 @@ add_library(rtype_ecs
     System/SystemManager.cpp
 
     Time/Time.hpp
+    Time/FixedTimestep.hpp
+    Time/FrameClock.hpp
 )
 add_library(rtype::ecs ALIAS rtype_ecs)
 
