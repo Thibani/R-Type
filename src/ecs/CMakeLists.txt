@@ -33,6 +33,9 @@ add_library(rtype_ecs
     Event/Subscription.cpp
     Event/EventBus.hpp
     Event/EventBus.cpp
+
+    Command/CommandBuffer.hpp
+    Command/CommandBuffer.cpp
 )
 add_library(rtype::ecs ALIAS rtype_ecs)
 

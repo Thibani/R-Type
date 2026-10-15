@@ -17,6 +17,8 @@ rtype_add_test(ecs_tests
         Event/EventBusTests.cpp
         Event/SubscriptionTests.cpp
         World/WorldEventsTests.cpp
+        Command/CommandBufferTests.cpp
+        World/WorldCommandsTests.cpp
     LIBRARIES
         rtype::ecs
 )

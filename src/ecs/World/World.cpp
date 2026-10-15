@@ -31,6 +31,7 @@ void World::clear()
     _components.clear();
     _entities.clear();
     _events.clear();
+    _commands.clear();
 }
 
 SystemManager& World::systems() noexcept
@@ -46,7 +47,9 @@ const SystemManager& World::systems() const noexcept
 void World::update(const Time& time)
 {
     _systems.update(*this, time);
+    _commands.apply(*this);
     _events.dispatch();
+    _commands.apply(*this);
 }
 
 EventBus& World::events() noexcept
@@ -57,6 +60,11 @@ EventBus& World::events() noexcept
 const EventBus& World::events() const noexcept
 {
     return _events;
+}
+
+CommandBuffer& World::commands() noexcept
+{
+    return _commands;
 }
 
 } // namespace ecs

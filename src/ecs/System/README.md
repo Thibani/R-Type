@@ -43,7 +43,7 @@ missile. It only knows `Position + Velocity`.
 1. **One small responsibility per system.** Movement, collision, rendering and
    damage are four different systems.
 2. **A system never calls another system.** Systems communicate through
-   components, [events](../Event/README.md), commands and resources. A system holding a reference to
+   components, [events](../Event/README.md), [commands](../Command/README.md) and resources. A system holding a reference to
    another system is a design error.
 3. **A system works on component types**, never on "player" or "enemy" classes.
 4. **Use the delta time** for anything that changes over time

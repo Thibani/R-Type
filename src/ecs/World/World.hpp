@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ecs/Command/CommandBuffer.hpp"
 #include "ecs/Component/Component.hpp"
 #include "ecs/Component/ComponentManager.hpp"
 #include "ecs/Component/ComponentStorage.hpp"
@@ -22,9 +23,9 @@ namespace ecs {
 /// The main entry point of the ECS.
 ///
 /// The World is a facade: it hides the `EntityManager`, the
-/// `ComponentManager`, the `SystemManager` and the `EventBus` behind one
-/// consistent API and keeps them in sync. For example, destroying an entity also removes all of
-/// its components.
+/// `ComponentManager`, the `SystemManager`, the `EventBus` and the
+/// `CommandBuffer` behind one consistent API and keeps them in sync. For example, destroying an
+/// entity also removes all of its components.
 ///
 ///     ecs::World world;
 ///
@@ -53,9 +54,9 @@ public:
     [[nodiscard]]
     std::size_t entityCount() const noexcept;
 
-    /// Destroys every entity and every component, and drops pending events.
-    /// Systems and event subscriptions are kept: they are the configuration of
-    /// the World, not its state.
+    /// Destroys every entity and every component, and drops pending events and
+    /// commands. Systems and event subscriptions are kept: they are the
+    /// configuration of the World, not its state.
     void clear();
 
     // --- Components -----------------------------------------------------------
@@ -131,7 +132,7 @@ public:
     ///
     /// Do not create or destroy entities, nor add or remove components,
     /// inside the callback: it would modify the storages being iterated.
-    /// Defer those changes instead (see the CommandBuffer).
+    /// Record them with `commands()` instead: they are applied after the query.
     template <Component... Ts, typename Function>
         requires(sizeof...(Ts) > 0) && std::invocable<Function&, Entity, Ts&...>
     void query(Function function)
@@ -170,8 +171,11 @@ public:
     [[nodiscard]]
     const SystemManager& systems() const noexcept;
 
-    /// Runs one frame: every system once, in insertion order, then
-    /// `events().dispatch()` to deliver the events they emitted.
+    /// Runs one frame:
+    ///  1. every system once, in insertion order;
+    ///  2. `commands().apply()`: the structural changes recorded by the systems;
+    ///  3. `events().dispatch()`: the events emitted meanwhile;
+    ///  4. `commands().apply()` again: the changes recorded by event handlers.
     void update(const Time& time);
 
     // --- Events ---------------------------------------------------------------
@@ -183,10 +187,19 @@ public:
     [[nodiscard]]
     const EventBus& events() const noexcept;
 
+    // --- Commands -------------------------------------------------------------
+
+    /// The deferred structural changes, applied by `update()`.
+    /// Use it to create or destroy entities, or add or remove components,
+    /// from inside a query or an event handler.
+    [[nodiscard]]
+    CommandBuffer& commands() noexcept;
+
 private:
     EntityManager _entities;
     ComponentManager _components;
     EventBus _events; // Declared before _systems: systems are destroyed first
+    CommandBuffer _commands;
     SystemManager _systems;
 };
 
