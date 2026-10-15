@@ -146,7 +146,8 @@ Helper scripts live in `scripts/` (run them from Git Bash on Windows).
 │   └── network/          # Network library (target: rtype_network)
 │       ├── Serialization/ # Bounded big-endian ByteReader / ByteWriter
 │       ├── Protocol/     # Packet types and encode / decode (docs/protocol.md)
-│       └── Transport/    # Non-blocking UDP socket (Asio)
+│       ├── Transport/    # Non-blocking UDP socket (Asio)
+│       └── Reliability/  # Sequences, acks, resends, ordering (docs/protocol.md §6)
 └── tests/
     ├── ecs/              # Mirrors src/ecs (Entity/, Component/, ...)
     └── network/          # Mirrors src/network
