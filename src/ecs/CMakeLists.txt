@@ -26,6 +26,13 @@ add_library(rtype_ecs
     Time/Time.hpp
     Time/FixedTimestep.hpp
     Time/FrameClock.hpp
+
+    Event/Event.hpp
+    Event/EventChannel.hpp
+    Event/Subscription.hpp
+    Event/Subscription.cpp
+    Event/EventBus.hpp
+    Event/EventBus.cpp
 )
 add_library(rtype::ecs ALIAS rtype_ecs)
 

@@ -5,6 +5,7 @@
 #include "ecs/Component/ComponentStorage.hpp"
 #include "ecs/Entity/Entity.hpp"
 #include "ecs/Entity/EntityManager.hpp"
+#include "ecs/Event/EventBus.hpp"
 #include "ecs/System/SystemManager.hpp"
 #include "ecs/Time/Time.hpp"
 
@@ -21,8 +22,8 @@ namespace ecs {
 /// The main entry point of the ECS.
 ///
 /// The World is a facade: it hides the `EntityManager`, the
-/// `ComponentManager` and the `SystemManager` behind one consistent API and
-/// keeps them in sync. For example, destroying an entity also removes all of
+/// `ComponentManager`, the `SystemManager` and the `EventBus` behind one
+/// consistent API and keeps them in sync. For example, destroying an entity also removes all of
 /// its components.
 ///
 ///     ecs::World world;
@@ -32,7 +33,7 @@ namespace ecs {
 ///     world.addComponent(ship, Velocity{1.0F, 0.0F});
 ///
 ///     world.systems().add<MovementSystem>();
-///     world.update(time); // runs every system once
+///     world.update(time); // runs every system once, then delivers the events
 class World {
 public:
     // --- Entities -------------------------------------------------------------
@@ -52,8 +53,9 @@ public:
     [[nodiscard]]
     std::size_t entityCount() const noexcept;
 
-    /// Destroys every entity and every component.
-    /// Systems are kept: they are the configuration of the World, not its state.
+    /// Destroys every entity and every component, and drops pending events.
+    /// Systems and event subscriptions are kept: they are the configuration of
+    /// the World, not its state.
     void clear();
 
     // --- Components -----------------------------------------------------------
@@ -168,12 +170,23 @@ public:
     [[nodiscard]]
     const SystemManager& systems() const noexcept;
 
-    /// Runs every system once with the timing of the current frame.
+    /// Runs one frame: every system once, in insertion order, then
+    /// `events().dispatch()` to deliver the events they emitted.
     void update(const Time& time);
+
+    // --- Events ---------------------------------------------------------------
+
+    /// The event bus systems use to communicate without knowing each other.
+    [[nodiscard]]
+    EventBus& events() noexcept;
+
+    [[nodiscard]]
+    const EventBus& events() const noexcept;
 
 private:
     EntityManager _entities;
     ComponentManager _components;
+    EventBus _events; // Declared before _systems: systems are destroyed first
     SystemManager _systems;
 };
 

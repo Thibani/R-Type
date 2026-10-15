@@ -14,6 +14,9 @@ rtype_add_test(ecs_tests
         Time/TimeTests.cpp
         Time/FixedTimestepTests.cpp
         Time/FrameClockTests.cpp
+        Event/EventBusTests.cpp
+        Event/SubscriptionTests.cpp
+        World/WorldEventsTests.cpp
     LIBRARIES
         rtype::ecs
 )

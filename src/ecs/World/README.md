@@ -15,7 +15,8 @@ The ECS is made of independent building blocks:
 
 - the `EntityManager` ([`../Entity`](../Entity/README.md)) creates and validates entity handles;
 - the `ComponentManager` ([`../Component`](../Component/README.md)) stores components;
-- the `SystemManager` ([`../System`](../System/README.md)) owns and runs the systems.
+- the `SystemManager` ([`../System`](../System/README.md)) owns and runs the systems;
+- the `EventBus` ([`../Event`](../Event/README.md)) lets systems communicate.
 
 None of them knows about the others. The `World` is a **facade** that owns them
 and keeps them consistent:
@@ -26,6 +27,7 @@ flowchart TD
     World --> EntityManager
     World --> ComponentManager
     World --> SystemManager
+    World --> EventBus
 ```
 
 Game code and systems only talk to the `World`. They never touch the managers
@@ -38,7 +40,7 @@ What the `World` adds on top of the two managers:
 | Destroying an entity also removes **all** its components | `destroyEntity`      |
 | A component can only be added to an **alive** entity   | `addComponent`         |
 | Iterating over entities owning a set of components     | `query`                |
-| Running every system with the time of the frame        | `update`               |
+| Running every system, then delivering their events     | `update`               |
 
 ---
 
@@ -52,7 +54,7 @@ What the `World` adds on top of the two managers:
 | `destroyEntity(e)`    | Destroys `e` **and** removes all its components. `false` if `e` was not alive |
 | `isAlive(e)`          | `true` if `e` refers to an existing entity (id **and** generation match) |
 | `entityCount()`       | Number of alive entities                                         |
-| `clear()`             | Destroys every entity and every component (systems are kept)     |
+| `clear()`             | Destroys every entity and component, drops pending events (systems and subscriptions are kept) |
 
 ### Components
 
@@ -70,12 +72,13 @@ Why only `addComponent` checks that the entity is alive: since `destroyEntity`
 removes every component, a dead (or stale) handle can never own a component.
 `has`/`get`/`remove` naturally answer "no component" for it.
 
-### Systems
+### Systems and events
 
 | Method           | Behavior                                                       |
 |------------------|----------------------------------------------------------------|
 | `systems()`      | The `SystemManager` of this World: `world.systems().add<MovementSystem>()` |
-| `update(time)`   | Runs every system once, in insertion order, with the given [`Time`](../Time/README.md) |
+| `update(time)`   | Runs every system once, in insertion order, with the given [`Time`](../Time/README.md), then `events().dispatch()` |
+| `events()`       | The [`EventBus`](../Event/README.md) of this World: `world.events().emit(...)` |
 
 ---
 
