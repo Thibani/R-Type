@@ -12,6 +12,8 @@ rtype_add_test(ecs_tests
         World/WorldSystemsTests.cpp
         System/SystemManagerTests.cpp
         Time/TimeTests.cpp
+        Time/FixedTimestepTests.cpp
+        Time/FrameClockTests.cpp
     LIBRARIES
         rtype::ecs
 )

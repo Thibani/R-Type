@@ -142,7 +142,7 @@ Helper scripts live in `scripts/` (run them from Git Bash on Windows).
 │   │   ├── Component/    # Component concept, storage and ComponentManager
 │   │   ├── World/        # World facade and queries
 │   │   ├── System/       # System base class and SystemManager
-│   │   └── Time/         # Frame timing given to systems
+│   │   └── Time/         # Frame timing, fixed timestep and frame clock
 │   └── network/          # Network library (target: rtype_network)
 │       ├── Serialization/ # Bounded big-endian ByteReader / ByteWriter
 │       ├── Protocol/     # Packet types and encode / decode (docs/protocol.md)
