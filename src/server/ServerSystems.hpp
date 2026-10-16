@@ -15,6 +15,9 @@ namespace server {
 ///                 InputSystem           INPUT → the player's PlayerInput
 ///                 PlayerShipSystem      one ship per connected player
 ///     simulation  TickSystem            SimulationTick + 1, first of every step
+///                 PlayerControlSystem   PlayerInput → ship Velocity
+///                 game::MovementSystem  Position += Velocity × step
+///                 PlayerBoundsSystem    ships kept inside the arena
 ///     frameEnd    SessionCleanupSystem  Disconnecting → PLAYER_LEFT, entity destroyed
 ///                 NetSendSystem         reliable messages, resends, heartbeats
 ///                 DiscardPacketsSystem  unhandled messages destroyed
