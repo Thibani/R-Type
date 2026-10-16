@@ -5,7 +5,8 @@ reusable Entity-Component-System (ECS) game engine.
 
 > **Status:** early development. The build system, tooling, the ECS core
 > (entities, components, World, queries, systems, time, game loop), the network
-> library (binary protocol, UDP transport) and the server bootstrap are in place.
+> library (binary protocol, UDP transport, reliability) and the server bootstrap
+> are in place.
 > Sessions, gameplay and the client come next.
 
 ---
@@ -159,7 +160,7 @@ Helper scripts live in `scripts/` (run them from Git Bash on Windows).
 ├── CMakeLists.txt        # Root build script
 ├── CMakePresets.json     # Ready-made build configurations
 ├── cmake/                # Options, compiler warnings, dependencies (CPM)
-├── docs/                 # Developer documentation (network protocol: docs/protocol.md)
+├── docs/                 # Protocol spec (protocol.md) and technical studies (technical-study/)
 ├── scripts/              # format / lint / test helpers
 ├── src/
 │   ├── ecs/              # Generic ECS library (target: rtype_ecs)
@@ -167,18 +168,13 @@ Helper scripts live in `scripts/` (run them from Git Bash on Windows).
 │   │   ├── Component/    # Component concept, storage and ComponentManager
 │   │   ├── World/        # World facade and queries
 │   │   ├── System/       # System base class and SystemManager
-│   │   └── Time/         # Frame timing, fixed timestep and frame clock
-│   └── network/          # Network library (target: rtype_network)
-│       ├── Serialization/ # Bounded big-endian ByteReader / ByteWriter
-│       ├── Protocol/     # Packet types and encode / decode (docs/protocol.md)
-│       ├── Transport/    # Non-blocking UDP socket (Asio)
-│       └── Reliability/  # Sequences, acks, resends, ordering (docs/protocol.md §6)
 │   │   ├── Time/         # Frame timing, fixed timestep and frame clock
 │   │   └── Loop/         # GameLoop shared by the server and the client
 │   ├── network/          # Network library (target: rtype_network)
 │   │   ├── Serialization/ # Bounded big-endian ByteReader / ByteWriter
 │   │   ├── Protocol/     # Packet types and encode / decode (docs/protocol.md)
-│   │   └── Transport/    # Non-blocking UDP socket (Asio)
+│   │   ├── Transport/    # Non-blocking UDP socket (Asio)
+│   │   └── Reliability/  # Sequences, acks, resends, ordering (docs/protocol.md §6)
 │   └── server/           # r-type_server: options, components, systems, main.cpp
 └── tests/
     ├── ecs/              # Mirrors src/ecs (Entity/, Component/, ...)
