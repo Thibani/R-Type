@@ -7,6 +7,7 @@
 #include "ecs/Entity/Entity.hpp"
 #include "ecs/Entity/EntityManager.hpp"
 #include "ecs/Event/EventBus.hpp"
+#include "ecs/Resource/Resources.hpp"
 #include "ecs/System/SystemManager.hpp"
 #include "ecs/Time/Time.hpp"
 
@@ -23,8 +24,9 @@ namespace ecs {
 /// The main entry point of the ECS.
 ///
 /// The World is a facade: it hides the `EntityManager`, the
-/// `ComponentManager`, the `SystemManager`, the `EventBus` and the
-/// `CommandBuffer` behind one consistent API and keeps them in sync. For example, destroying an
+/// `ComponentManager`, the `SystemManager`, the `EventBus`, the
+/// `CommandBuffer` and the `Resources` behind one consistent API and keeps
+/// them in sync. For example, destroying an
 /// entity also removes all of its components.
 ///
 ///     ecs::World world;
@@ -55,8 +57,8 @@ public:
     std::size_t entityCount() const noexcept;
 
     /// Destroys every entity and every component, and drops pending events and
-    /// commands. Systems and event subscriptions are kept: they are the
-    /// configuration of the World, not its state.
+    /// commands. Systems, event subscriptions and resources are kept: reset
+    /// resources explicitly with `resources()` if needed.
     void clear();
 
     // --- Components -----------------------------------------------------------
@@ -197,6 +199,16 @@ public:
     [[nodiscard]]
     CommandBuffer& commands() noexcept;
 
+    // --- Resources ------------------------------------------------------------
+
+    /// Data that exists once per World and is shared by systems
+    /// (configuration, score, inputs of the frame...).
+    [[nodiscard]]
+    Resources& resources() noexcept;
+
+    [[nodiscard]]
+    const Resources& resources() const noexcept;
+
 private:
     /// Applies the pending commands and delivers the pending events.
     /// Run after every stage.
@@ -204,7 +216,10 @@ private:
 
     EntityManager _entities;
     ComponentManager _components;
-    EventBus _events; // Declared before _systems: systems are destroyed first
+    // Declared before _systems: members are destroyed in reverse order, so the
+    // systems go first, while the resources and the bus they use still exist.
+    Resources _resources;
+    EventBus _events;
     CommandBuffer _commands;
     SystemManager _systems;
 };

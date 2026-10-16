@@ -39,6 +39,11 @@ add_library(rtype_ecs
 
     Scheduler/Scheduler.hpp
     Scheduler/Scheduler.cpp
+
+    Resource/Resources.hpp
+    Resource/Resources.cpp
+    Resource/AssetManager.hpp
+    Resource/AssetManager.cpp
 )
 add_library(rtype::ecs ALIAS rtype_ecs)
 

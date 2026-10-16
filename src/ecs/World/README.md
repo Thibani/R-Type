@@ -17,7 +17,8 @@ The ECS is made of independent building blocks:
 - the `ComponentManager` ([`../Component`](../Component/README.md)) stores components;
 - the `SystemManager` ([`../System`](../System/README.md)) owns and runs the systems;
 - the `EventBus` ([`../Event`](../Event/README.md)) lets systems communicate;
-- the `CommandBuffer` ([`../Command`](../Command/README.md)) defers structural changes.
+- the `CommandBuffer` ([`../Command`](../Command/README.md)) defers structural changes;
+- the `Resources` ([`../Resource`](../Resource/README.md)) hold the data shared by systems.
 
 None of them knows about the others. The `World` is a **facade** that owns them
 and keeps them consistent:
@@ -30,6 +31,7 @@ flowchart TD
     World --> SystemManager
     World --> EventBus
     World --> CommandBuffer
+    World --> Resources
 ```
 
 Game code and systems only talk to the `World`. They never touch the managers
@@ -56,7 +58,7 @@ What the `World` adds on top of the two managers:
 | `destroyEntity(e)`    | Destroys `e` **and** removes all its components. `false` if `e` was not alive |
 | `isAlive(e)`          | `true` if `e` refers to an existing entity (id **and** generation match) |
 | `entityCount()`       | Number of alive entities                                         |
-| `clear()`             | Destroys every entity and component, drops pending events and commands (systems and subscriptions are kept) |
+| `clear()`             | Destroys every entity and component, drops pending events and commands (systems, subscriptions and resources are kept) |
 
 ### Components
 
@@ -74,7 +76,7 @@ Why only `addComponent` checks that the entity is alive: since `destroyEntity`
 removes every component, a dead (or stale) handle can never own a component.
 `has`/`get`/`remove` naturally answer "no component" for it.
 
-### Systems, events and commands
+### Systems, events, commands and resources
 
 | Method           | Behavior                                                       |
 |------------------|----------------------------------------------------------------|
@@ -82,6 +84,7 @@ removes every component, a dead (or stale) handle can never own a component.
 | `update(time)`   | Runs one frame, [stage](../Scheduler/README.md) after stage: the systems of the stage (with the given [`Time`](../Time/README.md)), then `commands().apply()`, `events().dispatch()`, `commands().apply()` |
 | `events()`       | The [`EventBus`](../Event/README.md) of this World: `world.events().emit(...)` |
 | `commands()`     | The [`CommandBuffer`](../Command/README.md) of this World: `world.commands().destroyEntity(e)` |
+| `resources()`    | The [`Resources`](../Resource/README.md) of this World: `world.resources().get<Score>()` |
 
 ---
 

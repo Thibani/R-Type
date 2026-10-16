@@ -82,4 +82,14 @@ CommandBuffer& World::commands() noexcept
     return _commands;
 }
 
+Resources& World::resources() noexcept
+{
+    return _resources;
+}
+
+const Resources& World::resources() const noexcept
+{
+    return _resources;
+}
+
 } // namespace ecs

@@ -22,6 +22,9 @@ rtype_add_test(ecs_tests
         Scheduler/SchedulerTests.cpp
         System/SystemStagesTests.cpp
         World/WorldStagesTests.cpp
+        Resource/ResourcesTests.cpp
+        Resource/AssetManagerTests.cpp
+        World/WorldResourcesTests.cpp
     LIBRARIES
         rtype::ecs
 )
