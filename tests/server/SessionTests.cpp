@@ -10,6 +10,7 @@
 #include "network/Transport/UdpSocket.hpp"
 #include "server/Components/ClientMessage.hpp"
 #include "server/Components/NetClient.hpp"
+#include "server/Components/Player.hpp"
 #include "server/Network.hpp"
 #include "server/ServerSystems.hpp"
 #include "server/Systems/NetReceiveSystem.hpp"
@@ -72,7 +73,7 @@ class TestServer {
 public:
     TestServer()
     {
-        server::installSystems(_loop, _socket);
+        server::installSystems(_world, _loop, _socket);
         _loop.frameStart().add<MessageRecorder>(messages); // After every server system
     }
 
@@ -94,6 +95,29 @@ public:
         std::size_t count = 0;
         _world.query<server::NetClient>(
             [&](ecs::Entity /*entity*/, server::NetClient& /*client*/) { ++count; });
+        return count;
+    }
+
+    /// The PlayerInput of player `playerId`, or nullptr if none yet.
+    [[nodiscard]]
+    const server::PlayerInput* playerInput(std::uint8_t playerId)
+    {
+        const server::PlayerInput* found = nullptr;
+        _world.query<server::NetClient, server::PlayerInput>(
+            [&](ecs::Entity /*entity*/, server::NetClient& client, server::PlayerInput& input) {
+                if (client.playerId == playerId) {
+                    found = &input;
+                }
+            });
+        return found;
+    }
+
+    [[nodiscard]]
+    std::size_t shipCount()
+    {
+        std::size_t count = 0;
+        _world.query<server::PlayerShip>(
+            [&](ecs::Entity /*entity*/, server::PlayerShip& /*ship*/) { ++count; });
         return count;
     }
 
@@ -351,18 +375,45 @@ TEST(Session, RepeatedRequestGetsTheSameAccept)
 
 // --- Inside a session -----------------------------------------------------------
 
-TEST(Session, GamePayloadReachesGameplay)
+TEST(Session, InputReachesThePlayer)
 {
     TestServer server;
     TestClient client(server.address());
     (void)connectOrFail(server, client, "Thibani");
-    const Input input{.firstTick = 10, .count = 1, .masks = {input::Right}};
 
-    client.send(input);
+    client.send(Input{.firstTick = 10, .count = 1, .masks = {input::Right}});
     deliver(server);
 
-    ASSERT_EQ(server.messages.size(), 1U);
-    EXPECT_EQ(server.messages[0], Payload{input});
+    const server::PlayerInput* player = server.playerInput(0);
+    ASSERT_NE(player, nullptr);
+    EXPECT_EQ(player->mask, input::Right);
+    EXPECT_EQ(player->lastTick, 10U);
+    EXPECT_TRUE(server.messages.empty()); // Consumed by InputSystem, not left over
+}
+
+TEST(Session, ConnectedPlayerGetsAShip)
+{
+    TestServer server;
+    TestClient client(server.address());
+
+    (void)connectOrFail(server, client, "Thibani");
+    server.frame();
+
+    EXPECT_EQ(server.shipCount(), 1U);
+}
+
+TEST(Session, ShipGoesAwayWithItsPlayer)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)connectOrFail(server, client, "Thibani");
+    server.frame();
+
+    client.send(Disconnect{.reason = DisconnectReason::Quit});
+    deliver(server); // Session closed at the end of this frame
+    server.frame(); // Its ship goes at the start of the next one
+
+    EXPECT_EQ(server.shipCount(), 0U);
 }
 
 TEST(Session, PacketWithAWrongTokenIsIgnored)

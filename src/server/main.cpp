@@ -49,7 +49,7 @@ int run(std::span<const std::string_view> arguments)
 
     ecs::World world;
     ecs::GameLoop loop(world, {.sleepUntilNextStep = true});
-    server::installSystems(loop, *socket);
+    server::installSystems(world, loop, *socket);
 
     runningLoop = &loop;
     std::signal(SIGINT, onStopSignal);
