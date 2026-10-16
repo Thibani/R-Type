@@ -152,6 +152,7 @@ void ConnectionSystem::update(ecs::World& world, const ecs::Time& time)
                 .channel = network::ReliableChannel(token),
                 .lastReceived = now,
                 .lastSent = now,
+                .knownEntities = {},
             });
         trackRequest(client.channel, request.packet, now);
         for (const PlayerJoined& other : alreadyHere) {

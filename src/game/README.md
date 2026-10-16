@@ -7,7 +7,7 @@ constants, and the systems both sides must run identically.
 |-------------------------------|------------------------------------------------------|
 | `Components/Motion.hpp`       | `Position`, `Velocity`                               |
 | `Arena.hpp`                   | Size of the playing field, player spawn points       |
-| `Ship.hpp`                    | Ship speed and size                                  |
+| `Ship.hpp`                    | Ship speed, size and health (3 hearts)               |
 | `Systems/MovementSystem.hpp`  | `Position += Velocity × delta` for every entity      |
 
 The server's systems **decide** with these (it is authoritative); the client
@@ -26,3 +26,6 @@ the client scales it to its window. On the wire they are quantized to 1/4 unit
 A ship moves at `ship::Speed` (480 units/s, ≈ 4 s to cross the arena) in any
 direction, diagonals included, and its centre stays `ship::HalfWidth` /
 `ship::HalfHeight` away from the edges so the whole ship stays visible.
+
+A ship starts with `ship::MaxHealth` = **3 hit points**, the 3 hearts shown to
+the player.
