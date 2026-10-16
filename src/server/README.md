@@ -13,7 +13,7 @@ clients comply with.
 | `Components/NetClient.hpp`          | A connected player's session; `Disconnecting`            |
 | `Components/ClientMessage.hpp`      | A game payload from a connected player                   |
 | `Components/Player.hpp`             | `PlayerInput` (on the player), `PlayerShip` (on the ship) |
-| `Components/NetEntity.hpp`          | `NetEntity` (network id), `NetIdCounter`, `SimulationTick` |
+| `Components/NetEntity.hpp`          | `NetEntity` (network id), `NetIdCounter`, `SimulationTick`, `LastSnapshot` |
 | `Singleton.hpp`                     | `singleton<T>(world)`: state shared by several systems   |
 | `NetIds.hpp`                        | `allocateNetId()`: ids for networked entities (§5.1)     |
 | `Systems/NetReceiveSystem.hpp`      | Socket → `ReceivedPacket`, rate limit, drops malformed   |
@@ -26,7 +26,9 @@ clients comply with.
 | `Systems/TickSystem.hpp`            | Counts simulation steps                                  |
 | `Systems/PlayerControlSystem.hpp`   | `PlayerInput` → ship `Velocity` (normalised diagonals)   |
 | `Systems/PlayerBoundsSystem.hpp`    | Ships kept inside the arena                              |
+| `Systems/ReplicationSystem.hpp`     | ENTITY_SPAWN / ENTITY_DESTROY, so clients know who exists |
 | `Systems/NetSendSystem.hpp`         | Reliable messages, resends, heartbeats                   |
+| `Systems/SnapshotSystem.hpp`        | SNAPSHOT of every networked entity, 30 Hz                |
 | `Systems/DiscardPacketsSystem.hpp`  | Destroys the messages no system handled                  |
 
 Everything except `main.cpp` is the `rtype_server` library, so the tests can
@@ -62,8 +64,9 @@ simulation    TickSystem              SimulationTick + 1, first of every step
               game::MovementSystem    Position += Velocity × step (shared with the client)
               PlayerBoundsSystem      ships kept inside the arena, velocity into an edge → 0
 frameEnd()    SessionCleanupSystem    Disconnecting → PLAYER_LEFT, entity destroyed
-              (snapshots)             #60
+              ReplicationSystem       new NetEntity → ENTITY_SPAWN, gone → ENTITY_DESTROY
               NetSendSystem           reliable messages, resends, heartbeats
+              SnapshotSystem          every 2 steps: SNAPSHOT of all NetEntity, to everyone
               DiscardPacketsSystem    unhandled messages destroyed
 ```
 
@@ -122,6 +125,20 @@ client-side prediction, #80).
 **Network ids (§5.1).** Every networked entity gets a `netId`, distinct from
 its ECS handle. Ids are taken in a cycle, skipping those in use and `0xFFFF`
 ("none"), so a freed id is not reused within 5 seconds.
+
+**What clients see (§4.3).** Clients only display what the server sends:
+
+| Message        | When                                           | How                                |
+|----------------|------------------------------------------------|------------------------------------|
+| ENTITY_SPAWN   | A `NetEntity` the client was not told about (a new one, or every one for a newcomer) | Reliable, `ReplicationSystem` |
+| ENTITY_DESTROY | A netId the client knows is gone               | Reliable, `ReplicationSystem`      |
+| SNAPSHOT       | Every 2 simulation steps (30 Hz)               | Unreliable, `SnapshotSystem`; split every 89 entities |
+
+Each `NetClient` keeps the netIds it was told about (`knownEntities`), so
+there is a single rule for newcomers and for new entities, and any future
+networked entity (missiles, Bydos) is replicated without new code. Each
+player gets its own `lastInputTick` in the snapshot, so it knows which of
+its inputs the state already includes.
 
 **Singletons.** State shared by several systems (the tick, the netId counter)
 lives on its own entity, reached with `singleton<T>(world)`: no globals, no
