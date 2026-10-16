@@ -54,9 +54,10 @@ public:
         const float frame = !(frameSeconds > 0.0F) ? 0.0F : std::min(frameSeconds, maxFrame);
 
         // The accumulator is always below one step, so this stays <= maxStepsPerFrame
-        _accumulator += frame;
-        const int steps = std::min(static_cast<int>(_accumulator / _stepSeconds), _maxStepsPerFrame);
-        _accumulator = std::max(_accumulator - (static_cast<float>(steps) * _stepSeconds), 0.0F);
+        const auto step = static_cast<double>(_stepSeconds);
+        _accumulator += static_cast<double>(frame);
+        const int steps = std::min(static_cast<int>(_accumulator / step), _maxStepsPerFrame);
+        _accumulator = std::max(_accumulator - (steps * step), 0.0);
         return steps;
     }
 
@@ -72,13 +73,15 @@ public:
     [[nodiscard]]
     constexpr float alpha() const noexcept
     {
-        return std::min(_accumulator / _stepSeconds, 1.0F);
+        return std::min(static_cast<float>(_accumulator / static_cast<double>(_stepSeconds)), 1.0F);
     }
 
 private:
     float _stepSeconds;
     int _maxStepsPerFrame;
-    float _accumulator{0.0F}; // Real time not simulated yet
+    // Real time not simulated yet. Double: at thousands of frames per second,
+    // float rounding of each tiny frame would lose whole steps
+    double _accumulator{0.0};
 };
 
 } // namespace ecs
