@@ -21,11 +21,13 @@
 #include <asio/ip/address_v4.hpp>
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <optional>
+#include <set>
 #include <span>
 #include <string>
 #include <thread>
@@ -478,10 +480,137 @@ TEST(Session, ServerSendsHeartbeatsWhenIdle)
     TestServer server;
     TestClient client(server.address());
     (void)connectOrFail(server, client, "Thibani");
+    std::this_thread::sleep_for(20ms);
+    client.poll();
+    client.send(Heartbeat{}); // Acknowledges the ENTITY_SPAWN: nothing left to resend
+    deliver(server);
 
     server.frame(0.3F); // More than 250 ms without sending anything
 
     EXPECT_TRUE(waitFor<Heartbeat>(server, client).has_value());
+}
+
+// --- Four players, one shared game (§4.3, §5.3) --------------------------------
+
+namespace {
+
+/// Four connected players, each having received one ENTITY_SPAWN per ship.
+struct FourPlayers {
+    explicit FourPlayers(TestServer& server)
+    {
+        players.reserve(4);
+        for (int i = 0; i < 4; ++i) {
+            players.emplace_back(server.address());
+            (void)connectOrFail(server, players.back(), "Player" + std::to_string(i));
+        }
+        spawns.resize(4);
+        for (int frame = 0; frame < 1000 && !allSeeFourShips(); ++frame) {
+            server.frame();
+            std::this_thread::sleep_for(1ms);
+            for (std::size_t i = 0; i < 4; ++i) {
+                players[i].poll();
+                while (auto spawn = players[i].take<EntitySpawn>()) {
+                    spawns[i].push_back(*spawn);
+                }
+            }
+        }
+    }
+
+    [[nodiscard]]
+    bool allSeeFourShips() const
+    {
+        return std::ranges::all_of(spawns, [](const auto& seen) { return seen.size() == 4; });
+    }
+
+    std::vector<TestClient> players;
+    std::vector<std::vector<EntitySpawn>> spawns; // Per player
+};
+
+} // namespace
+
+TEST(Session, FourPlayersSeeTheSameFourShips)
+{
+    TestServer server;
+    const FourPlayers game(server);
+
+    ASSERT_TRUE(game.allSeeFourShips());
+    for (const auto& seen : game.spawns) {
+        std::set<std::uint8_t> owners;
+        std::set<std::uint16_t> netIds;
+        for (const EntitySpawn& spawn : seen) {
+            EXPECT_EQ(spawn.kind, EntityKind::PlayerShip);
+            owners.insert(spawn.owner);
+            netIds.insert(spawn.netId);
+        }
+        EXPECT_EQ(owners, (std::set<std::uint8_t>{0, 1, 2, 3})); // One ship per colour
+        EXPECT_EQ(netIds.size(), 4U);
+        EXPECT_EQ(seen.size(), game.spawns[0].size());
+    }
+}
+
+TEST(Session, SnapshotsCarryEveryShip)
+{
+    TestServer server;
+    FourPlayers game(server);
+    ASSERT_TRUE(game.allSeeFourShips());
+
+    for (TestClient& player : game.players) {
+        player.inbox.clear(); // Older snapshots may predate the last ship
+    }
+    server.frame(2.0F / 60.0F); // Two simulation steps: a snapshot is due
+    for (TestClient& player : game.players) {
+        const auto snapshot = waitFor<Snapshot>(server, player);
+        ASSERT_TRUE(snapshot.has_value());
+        EXPECT_EQ(snapshot->partCount, 1);
+        std::set<std::uint8_t> owners;
+        for (const EntityState& state : snapshot->entities) {
+            owners.insert(state.owner);
+            EXPECT_EQ(state.health, game::ship::MaxHealth); // 3 hearts each
+        }
+        EXPECT_EQ(owners, (std::set<std::uint8_t>{0, 1, 2, 3}));
+    }
+}
+
+TEST(Session, SnapshotEchoesEachPlayersOwnInput)
+{
+    TestServer server;
+    TestClient first(server.address());
+    TestClient second(server.address());
+    (void)connectOrFail(server, first, "One");
+    (void)connectOrFail(server, second, "Two");
+
+    first.send(Input{.firstTick = 5, .count = 1, .masks = {}});
+    second.send(Input{.firstTick = 9, .count = 1, .masks = {}});
+    deliver(server);
+    server.frame(2.0F / 60.0F);
+    first.poll();
+    second.poll();
+    first.inbox.clear(); // Only snapshots sent from now on: the inputs are in
+    second.inbox.clear();
+
+    const auto firstSnapshot = waitFor<Snapshot>(server, first);
+    const auto secondSnapshot = waitFor<Snapshot>(server, second);
+    ASSERT_TRUE(firstSnapshot.has_value());
+    ASSERT_TRUE(secondSnapshot.has_value());
+    EXPECT_EQ(firstSnapshot->lastInputTick, 5U);
+    EXPECT_EQ(secondSnapshot->lastInputTick, 9U);
+}
+
+TEST(Session, LeavingShipIsDestroyedForTheOthers)
+{
+    TestServer server;
+    FourPlayers game(server);
+    ASSERT_TRUE(game.allSeeFourShips());
+    const auto leavingShip
+        = std::ranges::find(game.spawns[0], std::uint8_t{3}, &EntitySpawn::owner);
+    ASSERT_NE(leavingShip, game.spawns[0].end());
+
+    game.players[3].send(Disconnect{.reason = DisconnectReason::Quit});
+    for (std::size_t i = 0; i < 3; ++i) {
+        const auto destroyed = waitFor<EntityDestroy>(server, game.players[i]);
+        ASSERT_TRUE(destroyed.has_value());
+        EXPECT_EQ(destroyed->netId, leavingShip->netId);
+    }
 }
 
 // --- Leaving (§8.2, §8.3) -------------------------------------------------------

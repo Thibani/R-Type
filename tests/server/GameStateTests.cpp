@@ -13,13 +13,19 @@
 #include "server/NetIds.hpp"
 #include "server/Singleton.hpp"
 #include "server/Systems/InputSystem.hpp"
+#include "server/Network.hpp"
 #include "server/Systems/PlayerShipSystem.hpp"
+#include "server/Systems/ReplicationSystem.hpp"
+#include "server/Systems/SnapshotSystem.hpp"
 #include "server/Systems/TickSystem.hpp"
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <set>
+#include <variant>
 #include <vector>
 
 using namespace network::protocol;
@@ -28,6 +34,7 @@ using server::NetEntity;
 using server::PlayerInput;
 using server::PlayerShip;
 using server::PlayerShipSystem;
+using server::ReplicationSystem;
 using testing_players::addPlayer;
 
 namespace {
@@ -252,4 +259,140 @@ TEST(GameState, NetIdsCycleAndNeverUseNoEntity)
 
     EXPECT_EQ(server::allocateNetId(world), NoEntity - 1);
     EXPECT_EQ(server::allocateNetId(world), 0); // 0xFFFF skipped: it means "none"
+}
+
+// --- Replication (§4.3) -------------------------------------------------------
+
+namespace {
+
+/// The reliable messages queued for `player` since the last call.
+std::vector<Payload> queued(ecs::World& world, ecs::Entity player)
+{
+    std::vector<Payload> payloads;
+    for (const Packet& packet :
+        world.getComponent<server::NetClient>(player).channel.takeDue(server::TimePoint{})) {
+        payloads.push_back(packet.payload);
+    }
+    return payloads;
+}
+
+template <typename T>
+std::vector<T> only(const std::vector<Payload>& payloads)
+{
+    std::vector<T> found;
+    for (const Payload& payload : payloads) {
+        if (const T* message = std::get_if<T>(&payload)) {
+            found.push_back(*message);
+        }
+    }
+    return found;
+}
+
+} // namespace
+
+TEST(GameState, EveryoneIsToldAboutEveryShip)
+{
+    ecs::World world;
+    const ecs::Entity first = addPlayer(world, 0);
+    const ecs::Entity second = addPlayer(world, 1);
+    PlayerShipSystem ships;
+    ReplicationSystem replication;
+    ships.update(world, ecs::Time{});
+
+    replication.update(world, ecs::Time{});
+    replication.update(world, ecs::Time{}); // Once only
+
+    for (const ecs::Entity player : {first, second}) {
+        const auto spawns = only<EntitySpawn>(queued(world, player));
+        ASSERT_EQ(spawns.size(), 2U);
+        std::set<std::uint8_t> owners;
+        for (const EntitySpawn& spawn : spawns) {
+            EXPECT_EQ(spawn.kind, EntityKind::PlayerShip);
+            const auto lane = game::arena::playerSpawn(spawn.owner);
+            EXPECT_EQ(spawn.x, quantize(lane.x));
+            EXPECT_EQ(spawn.y, quantize(lane.y));
+            owners.insert(spawn.owner);
+        }
+        EXPECT_EQ(owners, (std::set<std::uint8_t>{0, 1}));
+    }
+}
+
+TEST(GameState, NewcomerIsToldAboutExistingShips)
+{
+    ecs::World world;
+    (void)addPlayer(world, 0);
+    PlayerShipSystem ships;
+    ReplicationSystem replication;
+    ships.update(world, ecs::Time{});
+    replication.update(world, ecs::Time{});
+
+    const ecs::Entity newcomer = addPlayer(world, 1);
+    ships.update(world, ecs::Time{});
+    replication.update(world, ecs::Time{});
+
+    EXPECT_EQ(only<EntitySpawn>(queued(world, newcomer)).size(), 2U);
+}
+
+TEST(GameState, ShipOfALeavingPlayerIsDestroyedForTheOthers)
+{
+    ecs::World world;
+    const ecs::Entity staying = addPlayer(world, 0);
+    const ecs::Entity leaving = addPlayer(world, 1);
+    PlayerShipSystem ships;
+    ReplicationSystem replication;
+    ships.update(world, ecs::Time{});
+    replication.update(world, ecs::Time{});
+    const auto spawns = only<EntitySpawn>(queued(world, staying));
+    const auto leavingShip = std::ranges::find(spawns, std::uint8_t{1}, &EntitySpawn::owner);
+    ASSERT_NE(leavingShip, spawns.end());
+
+    world.destroyEntity(leaving);
+    ships.update(world, ecs::Time{});
+    replication.update(world, ecs::Time{});
+
+    const auto destroys = only<EntityDestroy>(queued(world, staying));
+    ASSERT_EQ(destroys.size(), 1U);
+    EXPECT_EQ(destroys[0].netId, leavingShip->netId);
+}
+
+TEST(GameState, SmallSnapshotIsOnePart)
+{
+    const std::vector<EntityState> four(4);
+
+    const auto parts = server::snapshotParts(four, 42, 7);
+
+    ASSERT_EQ(parts.size(), 1U);
+    EXPECT_EQ(parts[0].serverTick, 42U);
+    EXPECT_EQ(parts[0].lastInputTick, 7U);
+    EXPECT_EQ(parts[0].partCount, 1);
+    EXPECT_EQ(parts[0].entities.size(), 4U);
+}
+
+TEST(GameState, EmptySnapshotStillHasOnePart)
+{
+    const auto parts = server::snapshotParts({}, 1, 0);
+
+    ASSERT_EQ(parts.size(), 1U);
+    EXPECT_TRUE(parts[0].entities.empty());
+}
+
+TEST(GameState, LargeSnapshotIsSplit)
+{
+    std::vector<EntityState> entities(MaxSnapshotEntities * 2 + 1);
+    for (std::size_t i = 0; i < entities.size(); ++i) {
+        entities[i].netId = static_cast<std::uint16_t>(i);
+    }
+
+    const auto parts = server::snapshotParts(entities, 1, 0);
+
+    ASSERT_EQ(parts.size(), 3U);
+    std::size_t total = 0;
+    for (std::size_t i = 0; i < parts.size(); ++i) {
+        EXPECT_EQ(parts[i].partIndex, i);
+        EXPECT_EQ(parts[i].partCount, 3);
+        EXPECT_LE(parts[i].entities.size(), MaxSnapshotEntities);
+        total += parts[i].entities.size();
+    }
+    EXPECT_EQ(total, entities.size());
+    EXPECT_EQ(parts[2].entities[0].netId, MaxSnapshotEntities * 2);
 }
