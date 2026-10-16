@@ -171,11 +171,13 @@ public:
     [[nodiscard]]
     const SystemManager& systems() const noexcept;
 
-    /// Runs one frame:
-    ///  1. every system once, in insertion order;
-    ///  2. `commands().apply()`: the structural changes recorded by the systems;
-    ///  3. `events().dispatch()`: the events emitted meanwhile;
+    /// Runs one frame, stage after stage (see `systems().scheduler()`).
+    /// For each stage:
+    ///  1. the systems of the stage run, in insertion order;
+    ///  2. `commands().apply()`: the structural changes they recorded;
+    ///  3. `events().dispatch()`: the events they emitted;
     ///  4. `commands().apply()` again: the changes recorded by event handlers.
+    /// So each stage sees everything the previous stages did.
     void update(const Time& time);
 
     // --- Events ---------------------------------------------------------------
@@ -196,6 +198,10 @@ public:
     CommandBuffer& commands() noexcept;
 
 private:
+    /// Applies the pending commands and delivers the pending events.
+    /// Run after every stage.
+    void synchronize();
+
     EntityManager _entities;
     ComponentManager _components;
     EventBus _events; // Declared before _systems: systems are destroyed first

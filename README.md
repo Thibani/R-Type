@@ -4,7 +4,7 @@ A networked R-Type game written in modern C++ (C++23), built on top of a
 reusable Entity-Component-System (ECS) game engine.
 
 > **Status:** early development. The build system, tooling and the first ECS
-> core (entities, components, World, queries, systems, time, events and commands) is in place. Gameplay, client and server come next.
+> core (entities, components, World, queries, systems, time, events, commands and stages) is in place. Gameplay, client and server come next.
 
 ---
 
@@ -144,7 +144,8 @@ Helper scripts live in `scripts/` (run them from Git Bash on Windows).
 │   │   ├── System/       # System base class and SystemManager
 │   │   ├── Time/         # Frame timing, fixed timestep and frame clock
 │   │   ├── Event/        # EventBus: systems communicate without knowing each other
-│   │   └── Command/      # CommandBuffer: deferred structural changes
+│   │   ├── Command/      # CommandBuffer: deferred structural changes
+│   │   └── Scheduler/    # Stages: the order of the frame
 │   └── network/          # Network library (target: rtype_network)
 │       ├── Serialization/ # Bounded big-endian ByteReader / ByteWriter
 │       ├── Protocol/     # Packet types and encode / decode (docs/protocol.md)

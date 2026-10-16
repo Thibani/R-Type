@@ -36,6 +36,9 @@ add_library(rtype_ecs
 
     Command/CommandBuffer.hpp
     Command/CommandBuffer.cpp
+
+    Scheduler/Scheduler.hpp
+    Scheduler/Scheduler.cpp
 )
 add_library(rtype::ecs ALIAS rtype_ecs)
 

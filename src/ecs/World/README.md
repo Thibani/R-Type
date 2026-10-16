@@ -79,7 +79,7 @@ removes every component, a dead (or stale) handle can never own a component.
 | Method           | Behavior                                                       |
 |------------------|----------------------------------------------------------------|
 | `systems()`      | The `SystemManager` of this World: `world.systems().add<MovementSystem>()` |
-| `update(time)`   | Runs one frame: every system (in insertion order, with the given [`Time`](../Time/README.md)), `commands().apply()`, `events().dispatch()`, `commands().apply()` |
+| `update(time)`   | Runs one frame, [stage](../Scheduler/README.md) after stage: the systems of the stage (with the given [`Time`](../Time/README.md)), then `commands().apply()`, `events().dispatch()`, `commands().apply()` |
 | `events()`       | The [`EventBus`](../Event/README.md) of this World: `world.events().emit(...)` |
 | `commands()`     | The [`CommandBuffer`](../Command/README.md) of this World: `world.commands().destroyEntity(e)` |
 

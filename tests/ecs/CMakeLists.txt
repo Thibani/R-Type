@@ -19,6 +19,9 @@ rtype_add_test(ecs_tests
         World/WorldEventsTests.cpp
         Command/CommandBufferTests.cpp
         World/WorldCommandsTests.cpp
+        Scheduler/SchedulerTests.cpp
+        System/SystemStagesTests.cpp
+        World/WorldStagesTests.cpp
     LIBRARIES
         rtype::ecs
 )

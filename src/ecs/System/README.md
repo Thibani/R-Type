@@ -76,19 +76,24 @@ variables, and receive dependencies through its constructor.
 
 | Method                   | Behavior                                                       |
 |--------------------------|----------------------------------------------------------------|
-| `add<T>(args...)`        | Builds a `T` from `args`, appends it to the execution order, returns `T&`. Throws `std::logic_error` if a `T` was already added |
+| `add<T>(args...)`        | Builds a `T` from `args` in the default stage (`"Update"`), returns `T&`. Throws `std::logic_error` if a `T` was already added |
+| `addToStage<T>(stage, args...)` | Same, in the given [stage](../Scheduler/README.md). Throws `std::invalid_argument` if the stage does not exist |
+| `stageOf<T>()`           | The stage of `T`, or nothing                                   |
+| `scheduler()`            | The [`Scheduler`](../Scheduler/README.md): the stages and their order |
 | `remove<T>()`            | Removes the `T`. `false` if there was none                     |
 | `has<T>()`               | `true` if a `T` was added                                      |
 | `find<T>()`              | Returns `T*`, or `nullptr` if there is none                    |
-| `update(world, time)`    | Calls `update` on every system, **in insertion order**         |
+| `update(world, time)`    | Runs every stage in order; inside a stage, systems in insertion order |
+| `updateStage(world, time, stage)` | Runs the systems of one stage only                    |
 | `size()`                 | Number of systems                                              |
-| `clear()`                | Removes every system                                           |
+| `clear()`                | Removes every system (the stages are kept)                     |
 
 - **Each system type can be added only once.** This makes `find<T>()`
   unambiguous.
-- **The execution order is the insertion order.** It matters: input must be
-  read before movement, and movement must happen before collision. The
-  Scheduler (coming later) will add finer control (stages).
+- **The execution order is given by stages.** It matters: input must be
+  read before movement, and movement must happen before collision. Stages run
+  in the order of the [`Scheduler`](../Scheduler/README.md); inside a stage,
+  systems run in insertion order.
 - **Do not add or remove systems from inside a system's `update`**: the list
   being iterated would change.
 
@@ -97,9 +102,13 @@ The `World` owns a `SystemManager`: in practice you use `world.systems()` and
 
 ```cpp
 ecs::World world;
-world.systems().add<InputSystem>();
-world.systems().add<MovementSystem>();
-world.systems().add<CollisionSystem>();
+auto& scheduler = world.systems().scheduler();
+scheduler.addStageBefore("Input", ecs::Scheduler::DefaultStage);
+scheduler.addStage("Collision");
+
+world.systems().addToStage<CollisionSystem>("Collision");
+world.systems().add<MovementSystem>();                 // "Update"
+world.systems().addToStage<InputSystem>("Input");
 
 world.update(time); // Input, then Movement, then Collision
 ```
@@ -141,7 +150,8 @@ each frame.
 1. Create a class deriving from `ecs::System` in the layer it belongs to
    (game systems go in the game layer, never in `src/ecs/`).
 2. Implement `update(World&, const Time&)`.
-3. Register it: `world.systems().add<MySystem>(constructor arguments...)`.
+3. Register it in its stage: `world.systems().addToStage<MySystem>("Stage", constructor arguments...)`,
+   or `add<MySystem>(...)` for the default stage.
 
 No existing system needs to be modified.
 
