@@ -17,6 +17,8 @@ add_library(rtype_network
 
     Transport/UdpSocket.hpp
     Transport/UdpSocket.cpp
+    Transport/NetworkThread.hpp
+    Transport/NetworkThread.cpp
 
     Reliability/ReliableChannel.hpp
     Reliability/ReliableChannel.cpp

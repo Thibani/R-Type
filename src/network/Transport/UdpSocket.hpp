@@ -38,6 +38,14 @@ struct Datagram {
     std::size_t size{0}; // Bytes written at the start of the receive buffer
 };
 
+/// True for receive errors that are not failures of the socket, so the next
+/// datagram can be read: an ICMP "port unreachable" for an earlier send to a
+/// peer that is gone (connection_reset/refused, reported by Windows and
+/// sometimes Linux), or a datagram larger than the buffer (message_size,
+/// Windows drops it).
+[[nodiscard]]
+bool isTransientReceiveError(const std::error_code& error) noexcept;
+
 class UdpSocket {
 public:
     /// Binds an IPv4 socket to `port` on every interface (0 = let the OS choose).

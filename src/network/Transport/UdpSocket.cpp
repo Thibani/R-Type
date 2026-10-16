@@ -13,6 +13,12 @@ UdpSocket::UdpSocket(std::unique_ptr<asio::io_context> context, asio::ip::udp::s
 {
 }
 
+bool isTransientReceiveError(const std::error_code& error) noexcept
+{
+    return error == asio::error::connection_reset || error == asio::error::connection_refused
+        || error == asio::error::message_size;
+}
+
 std::expected<UdpSocket, std::error_code> UdpSocket::open(std::uint16_t port)
 {
     auto context = std::make_unique<asio::io_context>();
@@ -56,13 +62,8 @@ std::expected<std::optional<Datagram>, std::error_code> UdpSocket::receive(std::
         if (error == asio::error::would_block) {
             return std::nullopt;
         }
-        // Not failures of this socket, so skip to the next datagram:
-        // - connection_reset/refused: an ICMP "port unreachable" for an earlier
-        //   send to a client that is gone (reported by Windows, sometimes Linux)
-        // - message_size: a datagram larger than `buffer` (Windows drops it)
-        if (error == asio::error::connection_reset || error == asio::error::connection_refused
-            || error == asio::error::message_size) {
-            continue;
+        if (isTransientReceiveError(error)) {
+            continue; // Skip to the next datagram
         }
         return std::unexpected(error);
     }
