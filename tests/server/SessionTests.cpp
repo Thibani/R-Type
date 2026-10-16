@@ -1,5 +1,5 @@
-// End-to-end session tests: the real server systems (installSystems) and real
-// clients talking over the loopback interface. Server time is driven by
+// End-to-end session tests: the real server systems (installSystems), its
+// network thread, and real clients talking over the loopback interface. Server time is driven by
 // GameLoop::runFrame, so a 5 second timeout takes no real time.
 
 #include "ecs/Loop/GameLoop.hpp"
@@ -9,6 +9,7 @@
 #include "game/Ship.hpp"
 #include "network/Protocol/PacketCodec.hpp"
 #include "network/Reliability/ReliableChannel.hpp"
+#include "network/Transport/NetworkThread.hpp"
 #include "network/Transport/UdpSocket.hpp"
 #include "server/Components/ClientMessage.hpp"
 #include "server/Components/NetClient.hpp"
@@ -26,6 +27,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <memory>
 #include <optional>
 #include <set>
 #include <span>
@@ -53,6 +55,17 @@ UdpSocket openOrFail()
     return std::move(*socket);
 }
 
+/// The server's network thread, as r-type_server opens it.
+std::unique_ptr<network::NetworkThread> openNetworkOrFail()
+{
+    auto network = network::NetworkThread::open(0);
+    if (!network) {
+        ADD_FAILURE() << "cannot open network thread: " << network.error().message();
+        std::abort();
+    }
+    return std::move(*network);
+}
+
 /// Copies the ClientMessages seen this frame, before they are discarded.
 class MessageRecorder final : public ecs::System {
 public:
@@ -77,7 +90,7 @@ class TestServer {
 public:
     TestServer()
     {
-        server::installSystems(_world, _loop, _socket);
+        server::installSystems(_world, _loop, *_network);
         _loop.frameStart().add<MessageRecorder>(messages); // After every server system
     }
 
@@ -90,7 +103,7 @@ public:
     [[nodiscard]]
     Endpoint address() const
     {
-        return {asio::ip::address_v4::loopback(), _socket.localEndpoint()->port()};
+        return {asio::ip::address_v4::loopback(), _network->localEndpoint().port()};
     }
 
     [[nodiscard]]
@@ -148,13 +161,14 @@ public:
 
     void shutdown()
     {
-        server::notifyShutdown(_world, _socket, server::TimePoint{});
+        server::notifyShutdown(_world, *_network, server::TimePoint{});
     }
 
     std::vector<Payload> messages; // ClientMessages, as gameplay would see them
 
 private:
-    UdpSocket _socket = openOrFail();
+    // Declared first, so destroyed last: the thread outlives the systems using it
+    std::unique_ptr<network::NetworkThread> _network = openNetworkOrFail();
     ecs::World _world;
     ecs::GameLoop _loop{_world};
 };
