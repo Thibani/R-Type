@@ -117,7 +117,11 @@ Above the cap the game slows down instead.
 | `alpha()`                            | Progress into the next step, 0..1, for render interpolation |
 
 `FixedTimestep` reads no clock either, so it is `constexpr` and tested with
-exact durations.
+exact durations. Its accumulator is a `double`: with float, the tiny frames of
+an uncapped client were rounded off and whole steps were lost.
+
+The server and the client do not write this loop themselves: they use
+[`ecs::GameLoop`](../Loop/README.md), which runs it with the frame systems.
 
 ## FrameClock
 
