@@ -8,7 +8,7 @@ namespace server {
 
 using namespace network::protocol;
 
-NetSendSystem::NetSendSystem(network::UdpSocket& socket) noexcept
+NetSendSystem::NetSendSystem(network::NetworkThread& socket) noexcept
     : _socket(socket)
 {
 }
