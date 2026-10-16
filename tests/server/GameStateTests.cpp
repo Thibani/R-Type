@@ -1,14 +1,13 @@
 // The authoritative game state, system by system, on a plain World: no
 // sockets, the tests create the components the network systems would.
 
+#include "TestPlayers.hpp"
 #include "ecs/Time/Time.hpp"
 #include "ecs/World/World.hpp"
 #include "game/Arena.hpp"
 #include "game/Components/Motion.hpp"
 #include "network/Protocol/Packets.hpp"
-#include "network/Reliability/ReliableChannel.hpp"
 #include "server/Components/ClientMessage.hpp"
-#include "server/Components/NetClient.hpp"
 #include "server/Components/NetEntity.hpp"
 #include "server/Components/Player.hpp"
 #include "server/NetIds.hpp"
@@ -21,7 +20,6 @@
 
 #include <cstdint>
 #include <set>
-#include <string>
 #include <vector>
 
 using namespace network::protocol;
@@ -30,24 +28,9 @@ using server::NetEntity;
 using server::PlayerInput;
 using server::PlayerShip;
 using server::PlayerShipSystem;
+using testing_players::addPlayer;
 
 namespace {
-
-ecs::Entity addPlayer(ecs::World& world, std::uint8_t playerId)
-{
-    const ecs::Entity player = world.createEntity();
-    world.addComponent(player,
-        server::NetClient{
-            .endpoint = {},
-            .token = playerId + 1U,
-            .playerId = playerId,
-            .name = "Player" + std::to_string(playerId),
-            .channel = network::ReliableChannel(playerId + 1U),
-            .lastReceived = {},
-            .lastSent = {},
-        });
-    return player;
-}
 
 void receiveInput(ecs::World& world, ecs::Entity player, Input input)
 {
