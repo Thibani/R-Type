@@ -389,6 +389,10 @@ four players are distinct. `0xFF` means "no player" (`owner` of an enemy).
   arriving early waits in a buffer; one already delivered is dropped. The
   buffer holds at most 64 messages: a peer exceeding it is disconnected with
   `PROTOCOL_ERROR`.
+- To respect that limit, a sender **MUST NOT** send a reliable message whose
+  `reliableId` is more than 64 ahead of its oldest unacknowledged one. Later
+  messages wait until the window moves. Without this rule, losing a single
+  message while many others are in flight would disconnect a healthy peer.
 
 In version 1 only the server sends reliable messages.
 

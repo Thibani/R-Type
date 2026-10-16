@@ -1,4 +1,4 @@
-# Test files mirror the layout of src/network/ (Serialization/, Protocol/, Transport/).
+# Test files mirror the layout of src/network/ (Serialization/, Protocol/, Transport/, Reliability/).
 
 rtype_add_test(network_tests
     SOURCES
@@ -8,6 +8,7 @@ rtype_add_test(network_tests
         Protocol/PacketCodecTests.cpp
         Protocol/PacketCodecRobustnessTests.cpp
         Transport/UdpSocketTests.cpp
+        Reliability/ReliableChannelTests.cpp
     LIBRARIES
         rtype::network
 )
