@@ -12,11 +12,18 @@ clients comply with.
 | `Components/ReceivedPacket.hpp`     | A valid packet received this frame; `IncompatibleClient` |
 | `Components/NetClient.hpp`          | A connected player's session; `Disconnecting`            |
 | `Components/ClientMessage.hpp`      | A game payload from a connected player                   |
+| `Components/Player.hpp`             | `PlayerInput` (on the player), `PlayerShip` (on the ship) |
+| `Components/NetEntity.hpp`          | `NetEntity` (network id), `NetIdCounter`, `SimulationTick` |
+| `Singleton.hpp`                     | `singleton<T>(world)`: state shared by several systems   |
+| `NetIds.hpp`                        | `allocateNetId()`: ids for networked entities (§5.1)     |
 | `Systems/NetReceiveSystem.hpp`      | Socket → `ReceivedPacket`, rate limit, drops malformed   |
 | `Systems/ConnectionSystem.hpp`      | CONNECT_REQUEST → session + ACCEPT, or REJECT            |
 | `Systems/SessionReceiveSystem.hpp`  | Packets → their session's channel → `ClientMessage`      |
 | `Systems/TimeoutSystem.hpp`         | Silent for 5 s → `Disconnecting`                         |
 | `Systems/SessionCleanupSystem.hpp`  | `Disconnecting` → PLAYER_LEFT to the others, entity gone |
+| `Systems/InputSystem.hpp`           | INPUT → the player's `PlayerInput`                       |
+| `Systems/PlayerShipSystem.hpp`      | One ship per connected player                            |
+| `Systems/TickSystem.hpp`            | Counts simulation steps                                  |
 | `Systems/NetSendSystem.hpp`         | Reliable messages, resends, heartbeats                   |
 | `Systems/DiscardPacketsSystem.hpp`  | Destroys the messages no system handled                  |
 
@@ -46,8 +53,10 @@ frameStart()  NetReceiveSystem        socket → ReceivedPacket / IncompatibleCl
               ConnectionSystem        CONNECT_REQUEST → NetClient entity, ACCEPT / REJECT
               SessionReceiveSystem    packet → its session's channel → ClientMessage
               TimeoutSystem           silent session → Disconnecting
-              (gameplay handlers)     #44: consume ClientMessage (INPUT)
-simulation    (gameplay systems)      60 Hz fixed steps
+              InputSystem             ClientMessage (INPUT) → the player's PlayerInput
+              PlayerShipSystem        one ship per connected player
+simulation    TickSystem              SimulationTick + 1, first of every step
+              (gameplay systems)      60 Hz fixed steps: movement (#52)...
 frameEnd()    SessionCleanupSystem    Disconnecting → PLAYER_LEFT, entity destroyed
               (snapshots)             #60
               NetSendSystem           reliable messages, resends, heartbeats
@@ -77,6 +86,41 @@ world.query<ClientMessage>([&](ecs::Entity entity, ClientMessage& message) {
 simulation steps (fast frame), so a message handled by a simulation system
 could be discarded before it is ever seen. Handlers turn messages into state
 (a player's latest input...) that the simulation then reads.
+
+---
+
+## Game state: the server decides
+
+The server is **authoritative**: clients send which keys are pressed, never
+where things are. There is no packet a client could use to move its ship
+directly; only the server's systems change `Position`.
+
+```
+player entity   NetClient, PlayerInput            the person: session + latest keys
+ship entity     PlayerShip, Position, Velocity,   what is in the game: can die (#59)
+                NetEntity                          while its player stays connected
+```
+
+| Data                | Where                                   | Written by                 |
+|---------------------|-----------------------------------------|----------------------------|
+| Latest input        | `PlayerInput` on the player             | `InputSystem`              |
+| Ship position/speed | `game::Position`, `game::Velocity` on the ship | gameplay systems (#52) |
+| Network identity    | `NetEntity {netId, kind, owner}` on the ship | `PlayerShipSystem`    |
+| Simulation tick     | `SimulationTick` singleton              | `TickSystem`               |
+
+**Inputs (§4.2, §7.1).** Each INPUT repeats the client's last masks, so a lost
+datagram costs nothing. For each player, only ticks newer than the last one
+applied count; ticks more than 120 ahead are ignored, so a client cannot jump
+its input clock. The newest mask wins (replaying every tick comes with
+client-side prediction, #80).
+
+**Network ids (§5.1).** Every networked entity gets a `netId`, distinct from
+its ECS handle. Ids are taken in a cycle, skipping those in use and `0xFFFF`
+("none"), so a freed id is not reused within 5 seconds.
+
+**Singletons.** State shared by several systems (the tick, the netId counter)
+lives on its own entity, reached with `singleton<T>(world)`: no globals, no
+state hidden in a system.
 
 ---
 
