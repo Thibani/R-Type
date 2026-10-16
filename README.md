@@ -3,8 +3,10 @@
 A networked R-Type game written in modern C++ (C++23), built on top of a
 reusable Entity-Component-System (ECS) game engine.
 
-> **Status:** early development. The build system, tooling and the first ECS
-> core (entities, components, World, queries, systems and time) is in place. Gameplay, client and server come next.
+> **Status:** early development. The build system, tooling, the ECS core
+> (entities, components, World, queries, systems, time, game loop), the network
+> library (binary protocol, UDP transport) and the server bootstrap are in place.
+> Sessions, gameplay and the client come next.
 
 ---
 
@@ -93,6 +95,29 @@ Pass them at configure time, e.g. `cmake --preset debug -DRTYPE_BUILD_TESTS=OFF`
 
 ---
 
+## Run
+
+### Server
+
+```sh
+./build/debug/r-type_server              # listens on UDP port 4242
+./build/debug/r-type_server -p 5000      # another port
+./build/debug/r-type_server --help
+```
+
+The binary is written at the root of the build folder (`build/<preset>/`).
+Stop it with `Ctrl+C`: it finishes the current frame and exits cleanly.
+
+| Exit code | Meaning                                                  |
+|-----------|----------------------------------------------------------|
+| `0`       | Stopped normally, or `--help`                            |
+| `84`      | Invalid arguments, port unavailable, or a fatal error    |
+
+On Windows the binary is `build\<preset>\r-type_server.exe`; allow it through the
+firewall when asked, or clients on other machines cannot reach it.
+
+---
+
 ## Tests
 
 Tests use [GoogleTest](https://github.com/google/googletest) and are run
@@ -144,13 +169,15 @@ Helper scripts live in `scripts/` (run them from Git Bash on Windows).
 │   │   ├── System/       # System base class and SystemManager
 │   │   ├── Time/         # Frame timing, fixed timestep and frame clock
 │   │   └── Loop/         # GameLoop shared by the server and the client
-│   └── network/          # Network library (target: rtype_network)
-│       ├── Serialization/ # Bounded big-endian ByteReader / ByteWriter
-│       ├── Protocol/     # Packet types and encode / decode (docs/protocol.md)
-│       └── Transport/    # Non-blocking UDP socket (Asio)
+│   ├── network/          # Network library (target: rtype_network)
+│   │   ├── Serialization/ # Bounded big-endian ByteReader / ByteWriter
+│   │   ├── Protocol/     # Packet types and encode / decode (docs/protocol.md)
+│   │   └── Transport/    # Non-blocking UDP socket (Asio)
+│   └── server/           # r-type_server: options, components, systems, main.cpp
 └── tests/
     ├── ecs/              # Mirrors src/ecs (Entity/, Component/, ...)
-    └── network/          # Mirrors src/network
+    ├── network/          # Mirrors src/network
+    └── server/           # Mirrors src/server
 ```
 
 Conventions:
