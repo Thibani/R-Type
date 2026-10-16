@@ -23,6 +23,7 @@ inline ecs::Entity addPlayer(ecs::World& world, std::uint8_t playerId)
             .channel = network::ReliableChannel(playerId + 1U),
             .lastReceived = {},
             .lastSent = {},
+            .knownEntities = {},
         });
     return player;
 }

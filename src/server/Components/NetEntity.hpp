@@ -3,6 +3,7 @@
 #include "network/Protocol/Protocol.hpp"
 
 #include <cstdint>
+#include <optional>
 
 namespace server {
 
@@ -26,6 +27,11 @@ struct NetIdCounter {
 /// entity. Snapshots carry it as `serverTick`.
 struct SimulationTick {
     std::uint32_t value{0};
+};
+
+/// The `SimulationTick` of the last SNAPSHOT sent, on a singleton entity.
+struct LastSnapshot {
+    std::optional<std::uint32_t> tick; // nullopt until the first one
 };
 
 } // namespace server
