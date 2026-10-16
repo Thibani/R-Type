@@ -1,10 +1,13 @@
 #include "server/ServerSystems.hpp"
 
+#include "game/Systems/MovementSystem.hpp"
 #include "server/Systems/ConnectionSystem.hpp"
 #include "server/Systems/DiscardPacketsSystem.hpp"
 #include "server/Systems/InputSystem.hpp"
 #include "server/Systems/NetReceiveSystem.hpp"
 #include "server/Systems/NetSendSystem.hpp"
+#include "server/Systems/PlayerBoundsSystem.hpp"
+#include "server/Systems/PlayerControlSystem.hpp"
 #include "server/Systems/PlayerShipSystem.hpp"
 #include "server/Systems/SessionCleanupSystem.hpp"
 #include "server/Systems/SessionReceiveSystem.hpp"
@@ -23,6 +26,9 @@ void installSystems(ecs::World& world, ecs::GameLoop& loop, network::UdpSocket& 
     loop.frameStart().add<PlayerShipSystem>();
 
     world.systems().add<TickSystem>();
+    world.systems().add<PlayerControlSystem>();
+    world.systems().add<game::MovementSystem>();
+    world.systems().add<PlayerBoundsSystem>();
 
     loop.frameEnd().add<SessionCleanupSystem>(socket);
     loop.frameEnd().add<NetSendSystem>(socket);
