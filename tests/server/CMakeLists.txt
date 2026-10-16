@@ -4,6 +4,7 @@ rtype_add_test(server_tests
     SOURCES
         ServerOptionsTests.cpp
         NetReceiveSystemTests.cpp
+        SessionTests.cpp
     LIBRARIES
         rtype::server
 )

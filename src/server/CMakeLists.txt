@@ -9,10 +9,27 @@ add_library(rtype_server
     ServerOptions.hpp
     ServerOptions.cpp
 
+    Network.hpp
+    Network.cpp
+    ServerSystems.hpp
+    ServerSystems.cpp
+
     Components/ReceivedPacket.hpp
+    Components/NetClient.hpp
+    Components/ClientMessage.hpp
 
     Systems/NetReceiveSystem.hpp
     Systems/NetReceiveSystem.cpp
+    Systems/ConnectionSystem.hpp
+    Systems/ConnectionSystem.cpp
+    Systems/SessionReceiveSystem.hpp
+    Systems/SessionReceiveSystem.cpp
+    Systems/TimeoutSystem.hpp
+    Systems/TimeoutSystem.cpp
+    Systems/SessionCleanupSystem.hpp
+    Systems/SessionCleanupSystem.cpp
+    Systems/NetSendSystem.hpp
+    Systems/NetSendSystem.cpp
     Systems/DiscardPacketsSystem.hpp
     Systems/DiscardPacketsSystem.cpp
 )

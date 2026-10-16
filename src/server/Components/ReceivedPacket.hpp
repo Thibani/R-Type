@@ -17,4 +17,11 @@ struct ReceivedPacket {
     network::protocol::Packet packet;
 };
 
+/// A CONNECT_REQUEST of another protocol version: `decode()` cannot read it,
+/// but §3.2 requires answering it with CONNECT_REJECT (VERSION_MISMATCH).
+/// Created by `NetReceiveSystem`, answered by `ConnectionSystem`.
+struct IncompatibleClient {
+    network::Endpoint from;
+};
+
 } // namespace server

@@ -4,7 +4,8 @@
 
 namespace server {
 
-/// Destroys the `ReceivedPacket` entities no system handled this frame, so
+/// Destroys the short-lived message entities (`ReceivedPacket`,
+/// `IncompatibleClient`, `ClientMessage`) no system handled this frame, so
 /// they never pile up. Runs last in `frameEnd()`.
 class DiscardPacketsSystem final : public ecs::System {
 public:
