@@ -9,12 +9,12 @@ justifies the choice. The protocol itself is specified in
 | Decision            | Choice                                        | Main alternatives                         |
 |---------------------|-----------------------------------------------|-------------------------------------------|
 | Transport           | UDP only                                      | TCP, UDP + TCP                            |
-| Socket library      | Standalone Asio, non-blocking, polled         | Raw BSD sockets / Winsock, SFML Network, Boost.Asio, libuv |
+| Socket library      | Standalone Asio (async on the server's network thread, polled on the client) | Raw BSD sockets / Winsock, SFML Network, Boost.Asio, libuv |
 | Message format      | Hand-written binary codec, big-endian         | JSON, raw `memcpy` of structs, Protocol Buffers, FlatBuffers |
 | Reliability         | Our own: sequences, ack bitfield, resends     | TCP, ENet, GameNetworkingSockets, yojimbo |
 | Game state sync     | Authoritative server, inputs up, snapshots + events down | Lockstep, client authority  |
 | Timing              | Fixed 60 Hz simulation, 30 Hz snapshots       | Variable time step                        |
-| Concurrency         | One thread, non-blocking socket (for now)     | One thread per client, async callbacks    |
+| Concurrency         | Server: a network thread + the game thread, two queues between them | One thread per client, async callbacks    |
 | Error handling      | Errors as values (`std::expected`)            | Exceptions, error codes + out-parameters  |
 
 ---
@@ -76,15 +76,16 @@ ourselves. §4 explains how.
 - **libuv** is a C event-loop library: no RAII, callback-driven.
 
 **Choice: standalone Asio 1.30.2**, header-only, fetched by CPM and pinned to an
-exact version. We use only its simplest part: a non-blocking
-`asio::ip::udp::socket` that the game loop polls once per frame. Asio's
-asynchronous model (`io_context::run`, callbacks, strands) is not used: it is
-powerful but much harder to read, and a 60 Hz loop that drains the socket
-needs none of it.
+exact version. We use two of its parts:
 
-Asio is hidden behind our own class, `network::UdpSocket`
-(`src/network/Transport/`): game code never includes Asio directly, so
-replacing it would only touch that folder.
+- `network::UdpSocket`: a non-blocking `asio::ip::udp::socket` that a loop
+  polls, for the client and the tests;
+- `network::NetworkThread`: the server's socket, served by its own thread
+  running `io_context::run()` with asynchronous receives (§7). Only that one
+  thread runs the `io_context`, so strands are not needed.
+
+Asio is hidden behind these two classes (`src/network/Transport/`): game code
+never includes Asio directly, so replacing it would only touch that folder.
 
 ---
 
@@ -162,7 +163,7 @@ algorithms we use are the same ones. We implemented them ourselves because:
 2. what we need is small and fully specified (protocol §6), and implementing
    it lets us test every case: loss, duplicates, reordering, wrap-around;
 3. a library with its own sockets and threads would fight the ECS game loop,
-   which polls the network once per frame.
+   which takes the received datagrams once per frame.
 
 **How it works** (`src/network/Reliability/`):
 
@@ -230,12 +231,35 @@ at 144 FPS). Since the server is authoritative and clients will predict it
 | **One loop, non-blocking socket** | Simplest | Yes for 4 players, one socket for all | None   |
 | Network thread + game thread (#45) | Medium  | Yes                  | One queue between them |
 
-Today the server runs one loop: each frame it drains the socket (at most 1024
-datagrams, so a flood cannot stall a frame), simulates, then sends. Nothing
-ever blocks, which already satisfies "the game must run frame after frame
-regardless of clients". The subject also requires a multithreaded server:
-#45 will move socket I/O to its own thread, connected to the game thread by a
-queue, once the single-threaded version works and is tested.
+The subject: "The server MUST be multithreaded, so that it does not block or
+wait for clients messages, as the game must run frame after frame on the
+server regardless of clients' actions." The server has two threads (#45):
+
+```
+network thread                                game thread (main)
+io_context.run(), owns the socket             GameLoop::run(), owns the ecs::World
+  datagram received ──► inbox (mutex) ──────►   NetReceiveSystem: takeReceived()
+  send_to()        ◄── asio::post queue ◄─────   sendPacket(): send()
+```
+
+- **One owner per piece of data.** The network thread alone touches the
+  socket (Asio sockets must not be used from two threads at once); the game
+  thread alone touches the World. Gameplay code takes no lock at all.
+- **Two queues between them.** Received datagrams wait in an inbox behind a
+  `std::mutex`, which the game thread empties with one swap per frame. Sends
+  are posted to the `io_context` (`asio::post`, thread-safe) and run on the
+  network thread, in order.
+- **The network thread waits, the game thread never does.** It sleeps in
+  `async_receive_from` until a datagram arrives: no polling, ~0% CPU when idle.
+- **Flood.** The inbox holds at most 1024 datagrams; beyond, new ones are
+  dropped and counted, so memory stays bounded and the queued datagrams of the
+  players already there are kept.
+- **Shutdown.** The last DISCONNECTs are queued, then the socket is closed by
+  a task posted after them: they go out first, then `run()` returns and the
+  thread is joined (`std::jthread`, so an exception never leaves it running).
+
+Checked with ThreadSanitizer: no data race in the network and server tests.
+Running several games in parallel (#71) will reuse this split.
 
 ---
 

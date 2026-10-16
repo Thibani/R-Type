@@ -3,6 +3,7 @@
 | File            | Content                                              |
 |-----------------|------------------------------------------------------|
 | `UdpSocket.hpp` | Non-blocking UDP socket, `Endpoint`, `Datagram`      |
+| `NetworkThread.hpp` | A UDP socket served by its own thread (the server) |
 
 The only code that touches the operating system's sockets, through
 [standalone Asio](https://think-async.com/Asio/) so the same code builds on
@@ -52,3 +53,31 @@ while (true) {
 
 ICMP "port unreachable" replies (a client that disappeared) and oversized
 datagrams are skipped silently: they are not failures of the socket.
+
+---
+
+## NetworkThread: the server's socket on its own thread
+
+The server must never wait for clients (the subject requires a multithreaded
+server), so its socket lives on a thread of its own:
+
+```cpp
+auto network = network::NetworkThread::open(4242); // binds, starts the thread
+// Game thread, once per frame:
+for (const auto& datagram : (*network)->takeReceived()) {
+    // decode(datagram.bytes, Direction::ClientToServer), sender datagram.from
+}
+(*network)->send(bytes, to); // copied, sent by the network thread
+network->reset(); // sends what is queued, then joins the thread
+```
+
+| Data             | Used by        | Protection                       |
+|------------------|----------------|----------------------------------|
+| Socket           | network thread | used by that thread only         |
+| Inbox            | both           | `std::mutex`, emptied by one swap |
+| Datagrams to send | both          | `asio::post`, thread-safe        |
+
+At most 1024 datagrams wait in the inbox; beyond, new ones are dropped and
+counted (`droppedCount()`). Receive errors are skipped like `UdpSocket`'s
+(`isTransientReceiveError()`), others are logged: the thread never stops
+receiving until it is destroyed.
