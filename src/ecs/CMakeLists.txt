@@ -26,6 +26,9 @@ add_library(rtype_ecs
     Time/Time.hpp
     Time/FixedTimestep.hpp
     Time/FrameClock.hpp
+
+    Loop/GameLoop.hpp
+    Loop/GameLoop.cpp
 )
 add_library(rtype::ecs ALIAS rtype_ecs)
 

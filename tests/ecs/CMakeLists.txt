@@ -14,6 +14,7 @@ rtype_add_test(ecs_tests
         Time/TimeTests.cpp
         Time/FixedTimestepTests.cpp
         Time/FrameClockTests.cpp
+        Loop/GameLoopTests.cpp
     LIBRARIES
         rtype::ecs
 )
