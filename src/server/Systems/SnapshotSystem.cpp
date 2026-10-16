@@ -43,7 +43,7 @@ std::vector<Snapshot> snapshotParts(
     return parts;
 }
 
-SnapshotSystem::SnapshotSystem(network::UdpSocket& socket) noexcept
+SnapshotSystem::SnapshotSystem(network::NetworkThread& socket) noexcept
     : _socket(socket)
 {
 }

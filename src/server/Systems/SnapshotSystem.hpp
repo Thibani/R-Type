@@ -2,7 +2,7 @@
 
 #include "ecs/System/System.hpp"
 #include "network/Protocol/Packets.hpp"
-#include "network/Transport/UdpSocket.hpp"
+#include "network/Transport/NetworkThread.hpp"
 #include "server/Systems/ConnectionSystem.hpp"
 
 #include <cstdint>
@@ -26,12 +26,12 @@ public:
     static constexpr std::uint32_t TicksPerSnapshot
         = ConnectionSystem::TickRate / ConnectionSystem::SnapshotRate;
 
-    explicit SnapshotSystem(network::UdpSocket& socket) noexcept;
+    explicit SnapshotSystem(network::NetworkThread& socket) noexcept;
 
     void update(ecs::World& world, const ecs::Time& time) override;
 
 private:
-    network::UdpSocket& _socket;
+    network::NetworkThread& _socket;
 };
 
 /// Splits `entities` into the parts of one snapshot (at least one part, even
