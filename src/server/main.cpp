@@ -2,7 +2,7 @@
 
 #include "ecs/Loop/GameLoop.hpp"
 #include "ecs/World/World.hpp"
-#include "network/Transport/UdpSocket.hpp"
+#include "network/Transport/NetworkThread.hpp"
 #include "server/Network.hpp"
 #include "server/ServerOptions.hpp"
 #include "server/ServerSystems.hpp"
@@ -40,7 +40,8 @@ int run(std::span<const std::string_view> arguments)
         return 0;
     }
 
-    auto socket = network::UdpSocket::open(options->port);
+    // The network thread starts here; the game runs on this one
+    auto socket = network::NetworkThread::open(options->port);
     if (!socket) {
         std::cerr << "r-type_server: cannot listen on UDP port " << options->port << ": "
                   << socket.error().message() << '\n';
@@ -49,7 +50,7 @@ int run(std::span<const std::string_view> arguments)
 
     ecs::World world;
     ecs::GameLoop loop(world, {.sleepUntilNextStep = true});
-    server::installSystems(world, loop, *socket);
+    server::installSystems(world, loop, **socket);
 
     runningLoop = &loop;
     std::signal(SIGINT, onStopSignal);
@@ -61,7 +62,8 @@ int run(std::span<const std::string_view> arguments)
 
     runningLoop = nullptr;
     // The channels only use time for round-trip statistics: any recent value works
-    server::notifyShutdown(world, *socket, server::toTimePoint(loop.simulationTime()));
+    server::notifyShutdown(world, **socket, server::toTimePoint(loop.simulationTime()));
+    socket->reset(); // Sends the DISCONNECTs still queued, then joins the network thread
     std::cout << "r-type_server: stopped" << '\n';
     return 0;
 }

@@ -18,7 +18,7 @@
 
 namespace server {
 
-void installSystems(ecs::World& world, ecs::GameLoop& loop, network::UdpSocket& socket)
+void installSystems(ecs::World& world, ecs::GameLoop& loop, network::NetworkThread& socket)
 {
     loop.frameStart().add<NetReceiveSystem>(socket);
     loop.frameStart().add<ConnectionSystem>(socket);

@@ -5,7 +5,7 @@
 #include "network/Protocol/PacketCodec.hpp"
 #include "server/Components/ReceivedPacket.hpp"
 
-#include <iostream>
+#include <cstddef>
 #include <span>
 #include <utility>
 
@@ -21,32 +21,22 @@ constexpr std::size_t RejectDatagramSize = HeaderSize + 1;
 
 } // namespace
 
-NetReceiveSystem::NetReceiveSystem(network::UdpSocket& socket) noexcept
+NetReceiveSystem::NetReceiveSystem(network::NetworkThread& socket) noexcept
     : _socket(socket)
 {
 }
 
 void NetReceiveSystem::update(ecs::World& world, const ecs::Time& time)
 {
-    DatagramBuffer buffer{};
-
-    for (std::size_t i = 0; i < MaxDatagramsPerFrame; ++i) {
-        const auto received = _socket.receive(buffer);
-        if (!received) {
-            // The game must keep running: report and try again next frame
-            std::cerr << "r-type_server: receive failed: " << received.error().message() << '\n';
-            return;
-        }
-        if (!*received) {
-            return; // Nothing left this frame
-        }
-        const network::Endpoint& from = (*received)->from;
+    // At most NetworkThread::MaxQueuedDatagrams: a flood cannot stall a frame
+    for (const network::ReceivedDatagram& received : _socket.takeReceived()) {
+        const network::Endpoint& from = received.from;
         if (!withinRate(from, time.elapsedSeconds())) {
             ++_rateLimited;
             continue;
         }
 
-        const auto datagram = std::span(buffer).first((*received)->size);
+        const std::span<const std::byte> datagram = received.bytes;
         auto packet = decode(datagram, Direction::ClientToServer);
         if (!packet) {
             ++_dropped;

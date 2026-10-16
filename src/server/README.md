@@ -5,7 +5,7 @@ clients comply with.
 
 | File                                | Content                                                  |
 |-------------------------------------|----------------------------------------------------------|
-| `main.cpp`                          | Entry point: options, socket, World, GameLoop, Ctrl+C    |
+| `main.cpp`                          | Entry point: options, network thread, World, GameLoop, Ctrl+C |
 | `ServerOptions.hpp`                 | Command line parsing (`-p`, `-h`)                        |
 | `ServerSystems.hpp`                 | `installSystems()`: every system, in order               |
 | `Network.hpp`                       | Frame time → time point, send a packet, shutdown notice  |
@@ -16,7 +16,7 @@ clients comply with.
 | `Components/NetEntity.hpp`          | `NetEntity` (network id), `NetIdCounter`, `SimulationTick`, `LastSnapshot` |
 | `Singleton.hpp`                     | `singleton<T>(world)`: state shared by several systems   |
 | `NetIds.hpp`                        | `allocateNetId()`: ids for networked entities (§5.1)     |
-| `Systems/NetReceiveSystem.hpp`      | Socket → `ReceivedPacket`, rate limit, drops malformed   |
+| `Systems/NetReceiveSystem.hpp`      | Received datagrams → `ReceivedPacket`, rate limit, drops malformed |
 | `Systems/ConnectionSystem.hpp`      | CONNECT_REQUEST → session + ACCEPT, or REJECT            |
 | `Systems/SessionReceiveSystem.hpp`  | Packets → their session's channel → `ClientMessage`      |
 | `Systems/TimeoutSystem.hpp`         | Silent for 5 s → `Disconnecting`                         |
@@ -39,12 +39,19 @@ use the systems directly.
 ## Startup and shutdown
 
 1. Parse the command line. Invalid → usage on stderr, exit 84.
-2. Open the UDP socket on the port. Port in use → message, exit 84.
+2. Open the `NetworkThread` on the port: it binds the UDP socket and starts
+   the network thread. Port in use → message, exit 84.
 3. Build an `ecs::World` and an `ecs::GameLoop` that sleeps between steps
    (no busy waiting, ~0% CPU when idle).
 4. `installSystems()`, then install the `SIGINT` / `SIGTERM` handler.
 5. `loop.run()` until `Ctrl+C`.
-6. Send DISCONNECT (SERVER_SHUTDOWN) 3 times to every client, exit 0.
+6. Queue DISCONNECT (SERVER_SHUTDOWN) 3 times for every client, then stop the
+   network thread: it sends them first, then is joined. Exit 0.
+
+**Two threads.** The game runs on the main thread, which owns the whole
+`ecs::World`; the network thread only moves datagrams, so the game never
+waits for clients. Every system runs on the game thread and none takes a
+lock. See `docs/technical-study/network.md` §7.
 
 Any exception that escapes is caught in `main`: message on stderr, exit 84.
 
@@ -53,7 +60,7 @@ Any exception that escapes is caught in `main`: message on stderr, exit 84.
 ## Systems, in order
 
 ```
-frameStart()  NetReceiveSystem        socket → ReceivedPacket / IncompatibleClient
+frameStart()  NetReceiveSystem        network thread inbox → ReceivedPacket / IncompatibleClient
               ConnectionSystem        CONNECT_REQUEST → NetClient entity, ACCEPT / REJECT
               SessionReceiveSystem    packet → its session's channel → ClientMessage
               TimeoutSystem           silent session → Disconnecting
@@ -181,7 +188,7 @@ instantly.
 | Malformed datagram          | `decode()` rejects it (protocol §7): dropped, counted, never logged one by one |
 | Packet only servers may send | Rejected by `decode(…, ClientToServer)`                    |
 | Flood from one address      | 120 datagrams per second and per address, the rest dropped  |
-| Flood from everywhere       | 1024 datagrams per frame at most; the rest waits            |
+| Flood from everywhere       | The network thread queues 1024 datagrams at most; the rest is dropped, counted |
 | Injection into a session    | Address *and* random 32-bit token must match                |
 | Reflection / amplification  | A REJECT (21 bytes) only answers a request at least as large |
 | Guessable tokens            | `std::random_device`, backed by the OS secure generator     |
