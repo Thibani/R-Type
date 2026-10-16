@@ -3,9 +3,9 @@
 #include "ecs/Loop/GameLoop.hpp"
 #include "ecs/World/World.hpp"
 #include "network/Transport/UdpSocket.hpp"
+#include "server/Network.hpp"
 #include "server/ServerOptions.hpp"
-#include "server/Systems/DiscardPacketsSystem.hpp"
-#include "server/Systems/NetReceiveSystem.hpp"
+#include "server/ServerSystems.hpp"
 
 #include <csignal>
 #include <exception>
@@ -49,8 +49,7 @@ int run(std::span<const std::string_view> arguments)
 
     ecs::World world;
     ecs::GameLoop loop(world, {.sleepUntilNextStep = true});
-    loop.frameStart().add<server::NetReceiveSystem>(*socket);
-    loop.frameEnd().add<server::DiscardPacketsSystem>();
+    server::installSystems(loop, *socket);
 
     runningLoop = &loop;
     std::signal(SIGINT, onStopSignal);
@@ -61,6 +60,8 @@ int run(std::span<const std::string_view> arguments)
     loop.run();
 
     runningLoop = nullptr;
+    // The channels only use time for round-trip statistics: any recent value works
+    server::notifyShutdown(world, *socket, server::toTimePoint(loop.simulationTime()));
     std::cout << "r-type_server: stopped" << '\n';
     return 0;
 }
