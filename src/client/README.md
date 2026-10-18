@@ -80,4 +80,6 @@ screens. Players are told apart by colour, pattern and P1-P4 tag.
 - Datagrams from another address or with another session token are ignored (§7).
 - Older snapshots are ignored; a destroyed netId is ignored for 5 s (§4.3, §5.1).
 - Unknown entity kinds are drawn as a "?" placeholder (§5.2).
+- The PLAYER_JOINED sent right after CONNECT_ACCEPT for the players already
+  there fill the HUD without a notice; later ones are announced (§8.1).
 - Leaving or quitting sends DISCONNECT 3 times (§8.3).

@@ -13,7 +13,7 @@ namespace client {
 
 /// Seconds an ENTITY_DESTROY keeps its netId out of snapshots (§5.1).
 inline constexpr float DestroyedMemorySeconds = 5.0F;
-/// Seconds a notice ("P4 left the game") stays on screen.
+/// Seconds a notice ("P4 Dave left the game") stays on screen.
 inline constexpr float NoticeSeconds = 4.0F;
 
 /// Applies one game payload. `now` is the client's elapsed time in seconds.
