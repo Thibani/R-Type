@@ -1,10 +1,13 @@
 #pragma once
 
+#include "ecs/Command/CommandBuffer.hpp"
 #include "ecs/Component/Component.hpp"
 #include "ecs/Component/ComponentManager.hpp"
 #include "ecs/Component/ComponentStorage.hpp"
 #include "ecs/Entity/Entity.hpp"
 #include "ecs/Entity/EntityManager.hpp"
+#include "ecs/Event/EventBus.hpp"
+#include "ecs/Resource/Resources.hpp"
 #include "ecs/System/SystemManager.hpp"
 #include "ecs/Time/Time.hpp"
 
@@ -21,9 +24,10 @@ namespace ecs {
 /// The main entry point of the ECS.
 ///
 /// The World is a facade: it hides the `EntityManager`, the
-/// `ComponentManager` and the `SystemManager` behind one consistent API and
-/// keeps them in sync. For example, destroying an entity also removes all of
-/// its components.
+/// `ComponentManager`, the `SystemManager`, the `EventBus`, the
+/// `CommandBuffer` and the `Resources` behind one consistent API and keeps
+/// them in sync. For example, destroying an
+/// entity also removes all of its components.
 ///
 ///     ecs::World world;
 ///
@@ -32,7 +36,7 @@ namespace ecs {
 ///     world.addComponent(ship, Velocity{1.0F, 0.0F});
 ///
 ///     world.systems().add<MovementSystem>();
-///     world.update(time); // runs every system once
+///     world.update(time); // runs every system once, then delivers the events
 class World {
 public:
     // --- Entities -------------------------------------------------------------
@@ -52,8 +56,9 @@ public:
     [[nodiscard]]
     std::size_t entityCount() const noexcept;
 
-    /// Destroys every entity and every component.
-    /// Systems are kept: they are the configuration of the World, not its state.
+    /// Destroys every entity and every component, and drops pending events and
+    /// commands. Systems, event subscriptions and resources are kept: reset
+    /// resources explicitly with `resources()` if needed.
     void clear();
 
     // --- Components -----------------------------------------------------------
@@ -129,7 +134,7 @@ public:
     ///
     /// Do not create or destroy entities, nor add or remove components,
     /// inside the callback: it would modify the storages being iterated.
-    /// Defer those changes instead (see the CommandBuffer).
+    /// Record them with `commands()` instead: they are applied after the query.
     template <Component... Ts, typename Function>
         requires(sizeof...(Ts) > 0) && std::invocable<Function&, Entity, Ts&...>
     void query(Function function)
@@ -168,12 +173,54 @@ public:
     [[nodiscard]]
     const SystemManager& systems() const noexcept;
 
-    /// Runs every system once with the timing of the current frame.
+    /// Runs one frame, stage after stage (see `systems().scheduler()`).
+    /// For each stage:
+    ///  1. the systems of the stage run, in insertion order;
+    ///  2. `commands().apply()`: the structural changes they recorded;
+    ///  3. `events().dispatch()`: the events they emitted;
+    ///  4. `commands().apply()` again: the changes recorded by event handlers.
+    /// So each stage sees everything the previous stages did.
     void update(const Time& time);
 
+    // --- Events ---------------------------------------------------------------
+
+    /// The event bus systems use to communicate without knowing each other.
+    [[nodiscard]]
+    EventBus& events() noexcept;
+
+    [[nodiscard]]
+    const EventBus& events() const noexcept;
+
+    // --- Commands -------------------------------------------------------------
+
+    /// The deferred structural changes, applied by `update()`.
+    /// Use it to create or destroy entities, or add or remove components,
+    /// from inside a query or an event handler.
+    [[nodiscard]]
+    CommandBuffer& commands() noexcept;
+
+    // --- Resources ------------------------------------------------------------
+
+    /// Data that exists once per World and is shared by systems
+    /// (configuration, score, inputs of the frame...).
+    [[nodiscard]]
+    Resources& resources() noexcept;
+
+    [[nodiscard]]
+    const Resources& resources() const noexcept;
+
 private:
+    /// Applies the pending commands and delivers the pending events.
+    /// Run after every stage.
+    void synchronize();
+
     EntityManager _entities;
     ComponentManager _components;
+    // Declared before _systems: members are destroyed in reverse order, so the
+    // systems go first, while the resources and the bus they use still exist.
+    Resources _resources;
+    EventBus _events;
+    CommandBuffer _commands;
     SystemManager _systems;
 };
 

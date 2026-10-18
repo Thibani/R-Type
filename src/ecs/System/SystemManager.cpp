@@ -4,10 +4,29 @@
 
 namespace ecs {
 
+Scheduler& SystemManager::scheduler() noexcept
+{
+    return _scheduler;
+}
+
+const Scheduler& SystemManager::scheduler() const noexcept
+{
+    return _scheduler;
+}
+
 void SystemManager::update(World& world, const Time& time)
 {
+    for (const std::string& stage : _scheduler.stages()) {
+        updateStage(world, time, stage);
+    }
+}
+
+void SystemManager::updateStage(World& world, const Time& time, std::string_view stage)
+{
     for (const Entry& entry : _entries) {
-        entry.system->update(world, time);
+        if (entry.stage == stage) {
+            entry.system->update(world, time);
+        }
     }
 }
 

@@ -8,11 +8,12 @@ namespace game {
 
 void MovementSystem::update(ecs::World& world, const ecs::Time& time)
 {
-    const float delta = time.deltaSeconds();
+    const float deltaSeconds = time.deltaSeconds();
+
     world.query<Position, Velocity>(
-        [&](ecs::Entity /*entity*/, Position& position, Velocity& velocity) {
-            position.x += velocity.dx * delta;
-            position.y += velocity.dy * delta;
+        [deltaSeconds](ecs::Entity /*entity*/, Position& position, const Velocity& velocity) {
+            position.x += velocity.dx * deltaSeconds;
+            position.y += velocity.dy * deltaSeconds;
         });
 }
 

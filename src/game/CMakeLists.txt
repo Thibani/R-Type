@@ -11,9 +11,26 @@ add_library(rtype_game
     Ship.hpp
 
     Components/Motion.hpp
+    Components/Confinement.hpp
+    Components/Collision.hpp
+    Components/Lifetime.hpp
+    Components/ArenaExit.hpp
+
+    Events/CollisionEvent.hpp
+    Events/DespawnEvent.hpp
 
     Systems/MovementSystem.hpp
     Systems/MovementSystem.cpp
+    Systems/ConfinementSystem.hpp
+    Systems/ConfinementSystem.cpp
+    Systems/CollisionSystem.hpp
+    Systems/CollisionSystem.cpp
+    Systems/LifetimeSystem.hpp
+    Systems/LifetimeSystem.cpp
+    Systems/ArenaExitSystem.hpp
+    Systems/ArenaExitSystem.cpp
+    Systems/DespawnSystem.hpp
+    Systems/DespawnSystem.cpp
 )
 add_library(rtype::game ALIAS rtype_game)
 

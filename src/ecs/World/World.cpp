@@ -1,5 +1,9 @@
 #include "ecs/World/World.hpp"
 
+#include <span>
+#include <string>
+#include <vector>
+
 namespace ecs {
 
 Entity World::createEntity()
@@ -30,6 +34,8 @@ void World::clear()
 {
     _components.clear();
     _entities.clear();
+    _events.clear();
+    _commands.clear();
 }
 
 SystemManager& World::systems() noexcept
@@ -44,7 +50,46 @@ const SystemManager& World::systems() const noexcept
 
 void World::update(const Time& time)
 {
-    _systems.update(*this, time);
+    // Copied: a system may add a stage while the frame runs.
+    const std::span<const std::string> scheduled = _systems.scheduler().stages();
+    const std::vector<std::string> stages(scheduled.begin(), scheduled.end());
+
+    for (const std::string& stage : stages) {
+        _systems.updateStage(*this, time, stage);
+        synchronize();
+    }
+}
+
+void World::synchronize()
+{
+    _commands.apply(*this);
+    _events.dispatch();
+    _commands.apply(*this);
+}
+
+EventBus& World::events() noexcept
+{
+    return _events;
+}
+
+const EventBus& World::events() const noexcept
+{
+    return _events;
+}
+
+CommandBuffer& World::commands() noexcept
+{
+    return _commands;
+}
+
+Resources& World::resources() noexcept
+{
+    return _resources;
+}
+
+const Resources& World::resources() const noexcept
+{
+    return _resources;
 }
 
 } // namespace ecs

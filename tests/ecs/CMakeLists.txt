@@ -14,6 +14,17 @@ rtype_add_test(ecs_tests
         Time/TimeTests.cpp
         Time/FixedTimestepTests.cpp
         Time/FrameClockTests.cpp
+        Event/EventBusTests.cpp
+        Event/SubscriptionTests.cpp
+        World/WorldEventsTests.cpp
+        Command/CommandBufferTests.cpp
+        World/WorldCommandsTests.cpp
+        Scheduler/SchedulerTests.cpp
+        System/SystemStagesTests.cpp
+        World/WorldStagesTests.cpp
+        Resource/ResourcesTests.cpp
+        Resource/AssetManagerTests.cpp
+        World/WorldResourcesTests.cpp
         Loop/GameLoopTests.cpp
     LIBRARIES
         rtype::ecs

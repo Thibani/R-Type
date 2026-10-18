@@ -15,7 +15,10 @@ The ECS is made of independent building blocks:
 
 - the `EntityManager` ([`../Entity`](../Entity/README.md)) creates and validates entity handles;
 - the `ComponentManager` ([`../Component`](../Component/README.md)) stores components;
-- the `SystemManager` ([`../System`](../System/README.md)) owns and runs the systems.
+- the `SystemManager` ([`../System`](../System/README.md)) owns and runs the systems;
+- the `EventBus` ([`../Event`](../Event/README.md)) lets systems communicate;
+- the `CommandBuffer` ([`../Command`](../Command/README.md)) defers structural changes;
+- the `Resources` ([`../Resource`](../Resource/README.md)) hold the data shared by systems.
 
 None of them knows about the others. The `World` is a **facade** that owns them
 and keeps them consistent:
@@ -26,6 +29,9 @@ flowchart TD
     World --> EntityManager
     World --> ComponentManager
     World --> SystemManager
+    World --> EventBus
+    World --> CommandBuffer
+    World --> Resources
 ```
 
 Game code and systems only talk to the `World`. They never touch the managers
@@ -38,7 +44,7 @@ What the `World` adds on top of the two managers:
 | Destroying an entity also removes **all** its components | `destroyEntity`      |
 | A component can only be added to an **alive** entity   | `addComponent`         |
 | Iterating over entities owning a set of components     | `query`                |
-| Running every system with the time of the frame        | `update`               |
+| Running every system, applying their commands, delivering their events | `update` |
 
 ---
 
@@ -52,7 +58,7 @@ What the `World` adds on top of the two managers:
 | `destroyEntity(e)`    | Destroys `e` **and** removes all its components. `false` if `e` was not alive |
 | `isAlive(e)`          | `true` if `e` refers to an existing entity (id **and** generation match) |
 | `entityCount()`       | Number of alive entities                                         |
-| `clear()`             | Destroys every entity and every component (systems are kept)     |
+| `clear()`             | Destroys every entity and component, drops pending events and commands (systems, subscriptions and resources are kept) |
 
 ### Components
 
@@ -70,12 +76,15 @@ Why only `addComponent` checks that the entity is alive: since `destroyEntity`
 removes every component, a dead (or stale) handle can never own a component.
 `has`/`get`/`remove` naturally answer "no component" for it.
 
-### Systems
+### Systems, events, commands and resources
 
 | Method           | Behavior                                                       |
 |------------------|----------------------------------------------------------------|
 | `systems()`      | The `SystemManager` of this World: `world.systems().add<MovementSystem>()` |
-| `update(time)`   | Runs every system once, in insertion order, with the given [`Time`](../Time/README.md) |
+| `update(time)`   | Runs one frame, [stage](../Scheduler/README.md) after stage: the systems of the stage (with the given [`Time`](../Time/README.md)), then `commands().apply()`, `events().dispatch()`, `commands().apply()` |
+| `events()`       | The [`EventBus`](../Event/README.md) of this World: `world.events().emit(...)` |
+| `commands()`     | The [`CommandBuffer`](../Command/README.md) of this World: `world.commands().destroyEntity(e)` |
+| `resources()`    | The [`Resources`](../Resource/README.md) of this World: `world.resources().get<Score>()` |
 
 ---
 
@@ -137,7 +146,8 @@ O(size of the smallest storage × number of types).
 - **Do not change the structure of the World inside a query callback**: no
   `createEntity`, `destroyEntity`, `addComponent` or `removeComponent`. These
   modify the storages being iterated. Modifying the *values* of components is
-  fine. Structural changes will be deferred with the `CommandBuffer`.
+  fine. Record structural changes with `world.commands()` instead: they are
+  applied after the query (see [`../Command`](../Command/README.md)).
 - **Do not keep the references** received by the callback after it returns
   (see the pitfalls in [`../Component`](../Component/README.md#pitfalls)).
 

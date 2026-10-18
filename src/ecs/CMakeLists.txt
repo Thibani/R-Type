@@ -27,6 +27,24 @@ add_library(rtype_ecs
     Time/FixedTimestep.hpp
     Time/FrameClock.hpp
 
+    Event/Event.hpp
+    Event/EventChannel.hpp
+    Event/Subscription.hpp
+    Event/Subscription.cpp
+    Event/EventBus.hpp
+    Event/EventBus.cpp
+
+    Command/CommandBuffer.hpp
+    Command/CommandBuffer.cpp
+
+    Scheduler/Scheduler.hpp
+    Scheduler/Scheduler.cpp
+
+    Resource/Resources.hpp
+    Resource/Resources.cpp
+    Resource/AssetManager.hpp
+    Resource/AssetManager.cpp
+
     Loop/GameLoop.hpp
     Loop/GameLoop.cpp
 )

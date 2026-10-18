@@ -4,10 +4,10 @@ A networked R-Type game written in modern C++ (C++23), built on top of a
 reusable Entity-Component-System (ECS) game engine.
 
 > **Status:** early development. The build system, tooling, the ECS core
-> (entities, components, World, queries, systems, time, game loop), the network
-> library (binary protocol, UDP transport, reliability) and the server bootstrap
-> are in place, with sessions and a first SFML client.
-> Gameplay comes next.
+> (entities, components, World, queries, systems, time, events, commands,
+> stages, resources, game loop), the network library (binary protocol, UDP
+> transport, reliability) and the server bootstrap are in place.
+> Sessions, gameplay and the client come next.
 
 ---
 
@@ -186,6 +186,10 @@ Helper scripts live in `scripts/` (run them from Git Bash on Windows).
 │   │   ├── World/        # World facade and queries
 │   │   ├── System/       # System base class and SystemManager
 │   │   ├── Time/         # Frame timing, fixed timestep and frame clock
+│   │   ├── Event/        # EventBus: systems communicate without knowing each other
+│   │   ├── Command/      # CommandBuffer: deferred structural changes
+│   │   ├── Scheduler/    # Stages: the order of the frame
+│   │   ├── Resource/     # Resources (shared data) and AssetManager (files)
 │   │   └── Loop/         # GameLoop shared by the server and the client
 │   ├── network/          # Network library (target: rtype_network)
 │   │   ├── Serialization/ # Bounded big-endian ByteReader / ByteWriter
