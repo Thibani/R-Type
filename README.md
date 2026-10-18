@@ -6,8 +6,8 @@ reusable Entity-Component-System (ECS) game engine.
 > **Status:** early development. The build system, tooling, the ECS core
 > (entities, components, World, queries, systems, time, game loop), the network
 > library (binary protocol, UDP transport, reliability) and the server bootstrap
-> are in place.
-> Sessions, gameplay and the client come next.
+> are in place, with sessions and a first SFML client.
+> Gameplay comes next.
 
 ---
 
@@ -22,10 +22,13 @@ reusable Entity-Component-System (ECS) game engine.
 
 Optional, for code quality: `clang-format` and `clang-tidy`.
 
+On Linux, the client (SFML) also needs the X11, OpenGL and udev headers:
+`sudo apt install libx11-dev libxrandr-dev libxcursor-dev libxi-dev libudev-dev libgl-dev`.
+
 On Windows, run the commands below from the **Developer PowerShell for VS**
 (it provides the compiler and Ninja) or from Git Bash for the shell scripts.
 
-Third-party libraries (GoogleTest and standalone Asio) are downloaded automatically
+Third-party libraries (GoogleTest, standalone Asio and SFML) are downloaded automatically
 at configure time with [CPM.cmake](https://github.com/cpm-cmake/CPM.cmake).
 Nothing third-party is committed to the repository.
 
@@ -117,6 +120,19 @@ Stop it with `Ctrl+C`: it finishes the current frame and exits cleanly.
 On Windows the binary is `build\<preset>\r-type_server.exe`; allow it through the
 firewall when asked, or clients on other machines cannot reach it.
 
+### Client
+
+```sh
+./build/debug/r-type_client                          # server 127.0.0.1:4242, name "Player"
+./build/debug/r-type_client -s 10.0.0.2 -p 5000 -n Thibani
+./build/debug/r-type_client --help
+```
+
+The options fill the connection form; press Enter to connect. In game: arrows to
+move, Space to fire, Esc for the menu. The `assets/` folder is copied next to the
+binary at build time. Exit code `84` on invalid arguments or missing assets.
+Details: [`src/client/README.md`](src/client/README.md).
+
 ---
 
 ## Tests
@@ -160,6 +176,7 @@ Helper scripts live in `scripts/` (run them from Git Bash on Windows).
 ├── CMakeLists.txt        # Root build script
 ├── CMakePresets.json     # Ready-made build configurations
 ├── cmake/                # Options, compiler warnings, dependencies (CPM)
+├── assets/               # Client sprites, fonts and sounds
 ├── docs/                 # Protocol spec (protocol.md) and technical studies (technical-study/)
 ├── scripts/              # format / lint / test helpers
 ├── src/
