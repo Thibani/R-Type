@@ -7,12 +7,14 @@ clients comply with.
 |-------------------------------------|----------------------------------------------------------|
 | `main.cpp`                          | Entry point: options, network thread, World, GameLoop, Ctrl+C |
 | `ServerOptions.hpp`                 | Command line parsing (`-p`, `-h`)                        |
-| `ServerSystems.hpp`                 | `installSystems()`: every system, in order               |
+| `ServerSystems.hpp`                 | `installSystems()`: every system, in order; `installSimulation()` |
+| `Spawn.hpp`                         | Create ships, missiles and Bydos with all their components |
 | `Network.hpp`                       | Frame time → time point, send a packet, shutdown notice  |
 | `Components/ReceivedPacket.hpp`     | A valid packet received this frame; `IncompatibleClient` |
 | `Components/NetClient.hpp`          | A connected player's session; `Disconnecting`            |
 | `Components/ClientMessage.hpp`      | A game payload from a connected player                   |
-| `Components/Player.hpp`             | `PlayerInput` (on the player), `PlayerShip` (on the ship) |
+| `Components/Player.hpp`             | `PlayerInput`, `RespawnTimer` (on the player), `PlayerShip` (on the ship) |
+| `Components/Combat.hpp`             | `FireCooldown`, `Bydo`, `BydoSpawner`, `TeamScore`       |
 | `Components/NetEntity.hpp`          | `NetEntity` (network id), `NetIdCounter`, `SimulationTick`, `LastSnapshot` |
 | `Singleton.hpp`                     | `singleton<T>(world)`: state shared by several systems   |
 | `NetIds.hpp`                        | `allocateNetId()`: ids for networked entities (§5.1)     |
@@ -22,11 +24,16 @@ clients comply with.
 | `Systems/TimeoutSystem.hpp`         | Silent for 5 s → `Disconnecting`                         |
 | `Systems/SessionCleanupSystem.hpp`  | `Disconnecting` → PLAYER_LEFT to the others, entity gone |
 | `Systems/InputSystem.hpp`           | INPUT → the player's `PlayerInput`                       |
-| `Systems/PlayerShipSystem.hpp`      | One ship per connected player                            |
+| `Systems/PlayerShipSystem.hpp`      | One ship per connected player, back 3 s after its death  |
 | `Systems/TickSystem.hpp`            | Counts simulation steps                                  |
 | `Systems/PlayerControlSystem.hpp`   | `PlayerInput` → ship `Velocity` (normalised diagonals)   |
+| `Systems/PlayerFireSystem.hpp`      | FIRE held → a player missile every 0.25 s                |
+| `Systems/BydoSpawnSystem.hpp`       | A Bydo from the right every 1.5 s, while ships exist     |
+| `Systems/BydoMovementSystem.hpp`    | Bydos fly left in a wave                                 |
+| `Systems/BydoFireSystem.hpp`        | Each Bydo fires at the nearest ship every 2.5 s          |
 | `Systems/PlayerBoundsSystem.hpp`    | Ships kept inside the arena                              |
-| `Systems/ReplicationSystem.hpp`     | ENTITY_SPAWN / ENTITY_DESTROY, so clients know who exists |
+| `Systems/DamageSystem.hpp`          | Collisions → hits, kills, team score, respawn timer      |
+| `Systems/ReplicationSystem.hpp`     | ENTITY_SPAWN / ENTITY_DESTROY (real reason), PLAYER_DIED, GAME_STATE |
 | `Systems/NetSendSystem.hpp`         | Reliable messages, resends, heartbeats                   |
 | `Systems/SnapshotSystem.hpp`        | SNAPSHOT of every networked entity, 30 Hz                |
 | `Systems/DiscardPacketsSystem.hpp`  | Destroys the messages no system handled                  |
@@ -65,13 +72,22 @@ frameStart()  NetReceiveSystem        network thread inbox → ReceivedPacket / 
               SessionReceiveSystem    packet → its session's channel → ClientMessage
               TimeoutSystem           silent session → Disconnecting
               InputSystem             ClientMessage (INPUT) → the player's PlayerInput
-              PlayerShipSystem        one ship per connected player
+              PlayerShipSystem        one ship per connected player, after its respawn delay
 simulation    TickSystem              SimulationTick + 1, first of every step
               PlayerControlSystem     PlayerInput → ship Velocity
+              PlayerFireSystem        FIRE → player missile (cooldown 0.25 s)
+              BydoSpawnSystem         a Bydo enters from the right every 1.5 s
+              BydoMovementSystem      Bydo Velocity: left, in a wave
+              BydoFireSystem          Bydo missile at the nearest ship every 2.5 s
               game::MovementSystem    Position += Velocity × step (shared with the client)
               PlayerBoundsSystem      ships kept inside the arena, velocity into an edge → 0
+              game::ArenaExitSystem   missiles and Bydos that left → DespawnRequest (OUT_OF_BOUNDS)
+              game::CollisionSystem   overlapping hitboxes → CollisionEvent
+              DamageSystem            CollisionEvent → −1 HP, kill → DespawnRequest (KILLED), score
+              game::DespawnSystem     DespawnRequest → DespawnEvent, entity destroyed
 frameEnd()    SessionCleanupSystem    Disconnecting → PLAYER_LEFT, entity destroyed
-              ReplicationSystem       new NetEntity → ENTITY_SPAWN, gone → ENTITY_DESTROY
+              ReplicationSystem       new NetEntity → ENTITY_SPAWN, gone → ENTITY_DESTROY,
+                                      ship killed → PLAYER_DIED, score changed → GAME_STATE
               NetSendSystem           reliable messages, resends, heartbeats
               SnapshotSystem          every 2 steps: SNAPSHOT of all NetEntity, to everyone
               DiscardPacketsSystem    unhandled messages destroyed
@@ -150,6 +166,48 @@ its inputs the state already includes.
 **Singletons.** State shared by several systems (the tick, the netId counter)
 lives on its own entity, reached with `singleton<T>(world)`: no globals, no
 state hidden in a system.
+
+---
+
+## The first game (#54 – #61)
+
+Everything that moves is a networked entity made by `Spawn.hpp`, so
+`ReplicationSystem` and `SnapshotSystem` send it without extra code:
+
+| Entity          | Kind             | Hitbox hits         | Health | Leaves when                         |
+|-----------------|------------------|---------------------|--------|-------------------------------------|
+| Player ship     | `PLAYER_SHIP`    | Bydos, Bydo missiles | 3     | killed (back 3 s later, full health) |
+| Player missile  | `PLAYER_MISSILE` | Bydos               | –      | it hits, or leaves the arena        |
+| Bydo            | `BYDO`           | ships, player missiles | 1   | killed (+100 team score), or leaves on the left |
+| Bydo missile    | `ENEMY_MISSILE`  | ships               | –      | it hits, or leaves the arena        |
+
+The rules (speeds, sizes, rates, points) are constants in `src/game/Ship.hpp`
+and `src/game/Bydo.hpp`, shared with the client.
+
+**Systems talk through events, never through calls.** `game::CollisionSystem`
+only detects overlaps (`CollisionEvent`); `DamageSystem` decides what they
+mean and asks for despawns (`DespawnRequest`); `game::DespawnSystem` announces
+them (`DespawnEvent`, the entity still alive) and destroys the entity;
+`ReplicationSystem` listens to `DespawnEvent` to send ENTITY_DESTROY with the
+real reason and killer, and PLAYER_DIED for a ship.
+
+**What clients are told:**
+
+| Event in the game              | Messages                                          |
+|--------------------------------|---------------------------------------------------|
+| A player fires                 | ENTITY_SPAWN `PLAYER_MISSILE`, `owner` = the shooter |
+| A Bydo appears / fires         | ENTITY_SPAWN `BYDO` / `ENEMY_MISSILE`             |
+| Something is hit               | its `health` drops in the next SNAPSHOT           |
+| Something is killed            | ENTITY_DESTROY `KILLED`, `killerNetId`            |
+| Something leaves the arena     | ENTITY_DESTROY `OUT_OF_BOUNDS`                    |
+| A ship is killed               | PLAYER_DIED (`playerId`, `killerNetId`), then ENTITY_DESTROY |
+| The team score changes         | GAME_STATE (`RUNNING`, score); a newcomer gets it at once |
+
+shortcut: the match never ends and ships come back forever; lobby, game over
+and the return to the lobby are the game phases of #110.
+
+Tests: `tests/server/GameplayTests.cpp` (the rules, step by step) and
+`Session.FiringAndBydosReachTheClients` (over UDP).
 
 ---
 

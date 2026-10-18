@@ -3,11 +3,11 @@
 A networked R-Type game written in modern C++ (C++23), built on top of a
 reusable Entity-Component-System (ECS) game engine.
 
-> **Status:** early development. The build system, tooling, the ECS core
-> (entities, components, World, queries, systems, time, events, commands,
-> stages, resources, game loop), the network library (binary protocol, UDP
-> transport, reliability) and the server bootstrap are in place.
-> Sessions, gameplay and the client come next.
+> **Status:** Part 1 prototype. Up to 4 players join an authoritative server
+> with the graphical client, fly their ships, shoot the Bydos that come in
+> waves and shoot back, and share a team score. A client that crashes or
+> leaves does not stop the game. Next (Part 2): game phases (lobby, game
+> over), levels, bosses, and the advanced networking track.
 
 ---
 
@@ -169,6 +169,51 @@ Helper scripts live in `scripts/` (run them from Git Bash on Windows).
 
 ---
 
+## Architecture
+
+```text
+ r-type_client (×4)                         r-type_server (authoritative)
+┌───────────────────────┐   UDP, binary   ┌──────────────────────────────────┐
+│ keyboard → INPUT ─────┼────────────────►│ network thread: socket, queues   │
+│                       │   protocol      │ game thread: ecs::World          │
+│ render ◄── SNAPSHOT,  │◄────────────────┼── inputs → simulation (60 Hz)    │
+│    ENTITY_SPAWN, ...  │  (docs/protocol)│   → snapshots (30 Hz) + events   │
+└───────────────────────┘                 └──────────────────────────────────┘
+```
+
+- **The server decides everything.** Clients send which keys are held; the
+  server moves ships, spawns Bydos, detects collisions, applies damage and
+  keeps the score, then tells every client what happened.
+- **Everything is ECS.** Game state lives in components on an `ecs::World`,
+  behaviour in systems that query them; systems talk through events, never
+  by calling each other. Server and client both run the same `ecs::GameLoop`
+  (frame start → fixed 60 Hz simulation → frame end).
+- **Decoupled layers**, one library each, each depending only on the ones
+  below it:
+
+| Layer              | Folder          | Depends on      | Role                                          |
+|--------------------|-----------------|-----------------|-----------------------------------------------|
+| Engine             | `src/ecs/`      | the standard library | Entities, components, systems, events, game loop |
+| Networking         | `src/network/`  | Asio            | Binary protocol, UDP transport, reliability; no game knowledge |
+| Game logic         | `src/game/`     | `ecs`           | Rules and systems shared by server and client (movement, collisions, despawn) |
+| Server             | `src/server/`   | `ecs`, `network`, `game` | Sessions, gameplay rules, replication |
+| Client             | `src/client/`   | `ecs`, `network`, `game`, SFML | Rendering, input, audio |
+
+Developer documentation:
+
+| Topic                               | Where                                                           |
+|-------------------------------------|-----------------------------------------------------------------|
+| How to work in the codebase         | [`docs/developer-guide.md`](docs/developer-guide.md)           |
+| Accessibility                       | [`docs/accessibility.md`](docs/accessibility.md)               |
+| Network protocol (wire format)      | [`docs/protocol.md`](docs/protocol.md)                         |
+| Why these technologies              | [`docs/technical-study/network.md`](docs/technical-study/network.md) |
+| ECS engine                          | [`src/ecs/`](src/ecs) (a README per concept)                   |
+| Gameplay rules                      | [`src/game/README.md`](src/game/README.md), [`src/server/README.md`](src/server/README.md) |
+| Server internals, threads, security | [`src/server/README.md`](src/server/README.md)                 |
+| Client internals                    | [`src/client/README.md`](src/client/README.md)                 |
+
+---
+
 ## Project structure
 
 ```text
@@ -177,7 +222,7 @@ Helper scripts live in `scripts/` (run them from Git Bash on Windows).
 ├── CMakePresets.json     # Ready-made build configurations
 ├── cmake/                # Options, compiler warnings, dependencies (CPM)
 ├── assets/               # Client sprites, fonts and sounds
-├── docs/                 # Protocol spec (protocol.md) and technical studies (technical-study/)
+├── docs/                 # Protocol, developer guide, accessibility, technical studies
 ├── scripts/              # format / lint / test helpers
 ├── src/
 │   ├── ecs/              # Generic ECS library (target: rtype_ecs)
@@ -194,15 +239,17 @@ Helper scripts live in `scripts/` (run them from Git Bash on Windows).
 │   ├── network/          # Network library (target: rtype_network)
 │   │   ├── Serialization/ # Bounded big-endian ByteReader / ByteWriter
 │   │   ├── Protocol/     # Packet types and encode / decode (docs/protocol.md)
-│   │   ├── Transport/    # Non-blocking UDP socket (Asio)
+│   │   ├── Transport/    # UDP socket (Asio), and the server's network thread
 │   │   └── Reliability/  # Sequences, acks, resends, ordering (docs/protocol.md §6)
 │   ├── game/             # Gameplay shared by server and client (target: rtype_game)
-│   └── server/           # r-type_server: options, components, systems, main.cpp
+│   ├── server/           # r-type_server: sessions, gameplay rules, replication, main.cpp
+│   └── client/           # r-type_client: rendering, input, audio (SFML)
 └── tests/
     ├── ecs/              # Mirrors src/ecs (Entity/, Component/, ...)
     ├── network/          # Mirrors src/network
     ├── game/             # Mirrors src/game
-    └── server/           # Mirrors src/server
+    ├── server/           # Mirrors src/server
+    └── client/           # Mirrors src/client
 ```
 
 Conventions:
