@@ -11,10 +11,16 @@ decide, the client to predict).
 | `Components/Motion.hpp`         | `Position`, `Velocity`                               |
 | `Components/Confinement.hpp`    | `ConfinedToArena`: keeps an entity inside the field  |
 | `Components/Collision.hpp`      | `Hitbox` and collision layers                        |
+| `Components/Lifetime.hpp`       | `Lifetime`: despawned when the time runs out         |
+| `Components/ArenaExit.hpp`      | `DespawnOutsideArena`: despawned once off screen     |
 | `Events/CollisionEvent.hpp`     | `CollisionEvent`: two hitboxes overlap               |
+| `Events/DespawnEvent.hpp`       | `DespawnRequest`, `DespawnEvent` and their reason    |
 | `Systems/MovementSystem.hpp`    | `Position += Velocity × delta` for every entity      |
 | `Systems/ConfinementSystem.hpp` | Puts confined entities back inside the field         |
 | `Systems/CollisionSystem.hpp`   | Detects overlapping hitboxes, emits `CollisionEvent` |
+| `Systems/LifetimeSystem.hpp`    | Counts down lifetimes, requests `Expired` despawns   |
+| `Systems/ArenaExitSystem.hpp`   | Requests `OutOfBounds` despawns                      |
+| `Systems/DespawnSystem.hpp`     | Announces (`DespawnEvent`) then destroys entities    |
 
 The server's systems **decide** with these components (it is authoritative);
 the client's systems **display** them. Keeping them here means both sides
@@ -142,19 +148,73 @@ a collision means. Detection and consequences stay independent.
 
 ---
 
+## Despawning
+
+Missiles and enemies must disappear: when they leave the screen, when their
+time is up, or when they are killed. Gameplay systems **never destroy** these
+entities themselves; they emit a `DespawnRequest` and `DespawnSystem` does the
+rest:
+
+```text
+LifetimeSystem    Lifetime ran out           -> DespawnRequest{Expired}
+ArenaExitSystem   left arena + margin        -> DespawnRequest{OutOfBounds}
+(damage, later)   no health left             -> DespawnRequest{Killed, killer}
+
+DespawnSystem     first request per entity   -> DespawnEvent{entity, reason, killer}
+                                                then the entity is destroyed
+```
+
+```cpp
+world.addComponent(missile, game::Lifetime{.remainingSeconds = 3.0F});
+world.addComponent(missile, game::DespawnOutsideArena{}); // margin: 128 units
+```
+
+| Situation                                        | Result                                     |
+|--------------------------------------------------|--------------------------------------------|
+| `Lifetime` reaches 0                             | Despawned, reason `Expired`                |
+| Centre more than `margin` outside the arena      | Despawned, reason `OutOfBounds`            |
+| Off screen but within the margin                 | Kept (sprite sliding out, enemy flying in) |
+| Expired and off screen in the same step          | One `DespawnEvent`, first reason kept      |
+| Request for an entity already destroyed          | Ignored                                    |
+| No `Lifetime` / no `DespawnOutsideArena`         | Never despawned for that reason            |
+
+**Listeners see the entity alive.** `DespawnSystem` emits `DespawnEvent` while
+the events are being delivered, and records the destruction as a command. The
+World applies commands only after every event was delivered (see
+[World](../ecs/World/README.md)), so every listener can still read the
+entity's components: the server finds its netId to send ENTITY_DESTROY, the
+client its sprite to play an explosion.
+
+`DespawnReason` values are the `reason` byte of ENTITY_DESTROY
+(`0` KILLED, `1` OUT_OF_BOUNDS, `2` EXPIRED, `docs/protocol.md` §5): the
+server can send them as they are.
+
+`DespawnSystem` reacts to events, so it is created with the World:
+
+```cpp
+world.systems().add<game::DespawnSystem>(world);
+```
+
+Without it, requests are simply dropped and nothing is destroyed.
+
+---
+
 ## Running the systems
 
-Order matters: confinement must see the position **after** movement, and
-collisions the final position of the step. Add them in this order, in the same
-stage of the simulation:
+Order matters: confinement and arena exit must see the position **after**
+movement, and collisions the final position of the step. Add them in this
+order, in the same stage of the simulation:
 
 ```cpp
 world.systems().add<game::MovementSystem>();
 world.systems().add<game::ConfinementSystem>();
+world.systems().add<game::LifetimeSystem>();
+world.systems().add<game::ArenaExitSystem>();
 world.systems().add<game::CollisionSystem>();
+world.systems().add<game::DespawnSystem>(world);
 ```
 
-The collision events are delivered at the end of the stage (see
+The collision and despawn events are delivered at the end of the stage (see
 [Scheduler](../ecs/Scheduler/README.md)), once every entity has moved.
 
 On the server they belong to the World's own systems (run at the fixed
