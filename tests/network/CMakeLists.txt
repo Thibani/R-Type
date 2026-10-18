@@ -8,6 +8,7 @@ rtype_add_test(network_tests
         Protocol/PacketCodecTests.cpp
         Protocol/PacketCodecRobustnessTests.cpp
         Transport/UdpSocketTests.cpp
+        Transport/NetworkThreadTests.cpp
         Reliability/ReliableChannelTests.cpp
     LIBRARIES
         rtype::network

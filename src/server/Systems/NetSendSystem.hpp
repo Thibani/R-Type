@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ecs/System/System.hpp"
-#include "network/Transport/UdpSocket.hpp"
+#include "network/Transport/NetworkThread.hpp"
 
 #include <chrono>
 
@@ -15,12 +15,12 @@ class NetSendSystem final : public ecs::System {
 public:
     static constexpr std::chrono::milliseconds HeartbeatInterval{250};
 
-    explicit NetSendSystem(network::UdpSocket& socket) noexcept;
+    explicit NetSendSystem(network::NetworkThread& socket) noexcept;
 
     void update(ecs::World& world, const ecs::Time& time) override;
 
 private:
-    network::UdpSocket& _socket;
+    network::NetworkThread& _socket;
 };
 
 } // namespace server

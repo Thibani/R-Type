@@ -5,7 +5,7 @@ clients comply with.
 
 | File                                | Content                                                  |
 |-------------------------------------|----------------------------------------------------------|
-| `main.cpp`                          | Entry point: options, socket, World, GameLoop, Ctrl+C    |
+| `main.cpp`                          | Entry point: options, network thread, World, GameLoop, Ctrl+C |
 | `ServerOptions.hpp`                 | Command line parsing (`-p`, `-h`)                        |
 | `ServerSystems.hpp`                 | `installSystems()`: every system, in order               |
 | `Network.hpp`                       | Frame time → time point, send a packet, shutdown notice  |
@@ -13,10 +13,10 @@ clients comply with.
 | `Components/NetClient.hpp`          | A connected player's session; `Disconnecting`            |
 | `Components/ClientMessage.hpp`      | A game payload from a connected player                   |
 | `Components/Player.hpp`             | `PlayerInput` (on the player), `PlayerShip` (on the ship) |
-| `Components/NetEntity.hpp`          | `NetEntity` (network id), `NetIdCounter`, `SimulationTick` |
+| `Components/NetEntity.hpp`          | `NetEntity` (network id), `NetIdCounter`, `SimulationTick`, `LastSnapshot` |
 | `Singleton.hpp`                     | `singleton<T>(world)`: state shared by several systems   |
 | `NetIds.hpp`                        | `allocateNetId()`: ids for networked entities (§5.1)     |
-| `Systems/NetReceiveSystem.hpp`      | Socket → `ReceivedPacket`, rate limit, drops malformed   |
+| `Systems/NetReceiveSystem.hpp`      | Received datagrams → `ReceivedPacket`, rate limit, drops malformed |
 | `Systems/ConnectionSystem.hpp`      | CONNECT_REQUEST → session + ACCEPT, or REJECT            |
 | `Systems/SessionReceiveSystem.hpp`  | Packets → their session's channel → `ClientMessage`      |
 | `Systems/TimeoutSystem.hpp`         | Silent for 5 s → `Disconnecting`                         |
@@ -26,7 +26,9 @@ clients comply with.
 | `Systems/TickSystem.hpp`            | Counts simulation steps                                  |
 | `Systems/PlayerControlSystem.hpp`   | `PlayerInput` → ship `Velocity` (normalised diagonals)   |
 | `Systems/PlayerBoundsSystem.hpp`    | Ships kept inside the arena                              |
+| `Systems/ReplicationSystem.hpp`     | ENTITY_SPAWN / ENTITY_DESTROY, so clients know who exists |
 | `Systems/NetSendSystem.hpp`         | Reliable messages, resends, heartbeats                   |
+| `Systems/SnapshotSystem.hpp`        | SNAPSHOT of every networked entity, 30 Hz                |
 | `Systems/DiscardPacketsSystem.hpp`  | Destroys the messages no system handled                  |
 
 Everything except `main.cpp` is the `rtype_server` library, so the tests can
@@ -37,12 +39,19 @@ use the systems directly.
 ## Startup and shutdown
 
 1. Parse the command line. Invalid → usage on stderr, exit 84.
-2. Open the UDP socket on the port. Port in use → message, exit 84.
+2. Open the `NetworkThread` on the port: it binds the UDP socket and starts
+   the network thread. Port in use → message, exit 84.
 3. Build an `ecs::World` and an `ecs::GameLoop` that sleeps between steps
    (no busy waiting, ~0% CPU when idle).
 4. `installSystems()`, then install the `SIGINT` / `SIGTERM` handler.
 5. `loop.run()` until `Ctrl+C`.
-6. Send DISCONNECT (SERVER_SHUTDOWN) 3 times to every client, exit 0.
+6. Queue DISCONNECT (SERVER_SHUTDOWN) 3 times for every client, then stop the
+   network thread: it sends them first, then is joined. Exit 0.
+
+**Two threads.** The game runs on the main thread, which owns the whole
+`ecs::World`; the network thread only moves datagrams, so the game never
+waits for clients. Every system runs on the game thread and none takes a
+lock. See `docs/technical-study/network.md` §7.
 
 Any exception that escapes is caught in `main`: message on stderr, exit 84.
 
@@ -51,7 +60,7 @@ Any exception that escapes is caught in `main`: message on stderr, exit 84.
 ## Systems, in order
 
 ```
-frameStart()  NetReceiveSystem        socket → ReceivedPacket / IncompatibleClient
+frameStart()  NetReceiveSystem        network thread inbox → ReceivedPacket / IncompatibleClient
               ConnectionSystem        CONNECT_REQUEST → NetClient entity, ACCEPT / REJECT
               SessionReceiveSystem    packet → its session's channel → ClientMessage
               TimeoutSystem           silent session → Disconnecting
@@ -62,8 +71,9 @@ simulation    TickSystem              SimulationTick + 1, first of every step
               game::MovementSystem    Position += Velocity × step (shared with the client)
               PlayerBoundsSystem      ships kept inside the arena, velocity into an edge → 0
 frameEnd()    SessionCleanupSystem    Disconnecting → PLAYER_LEFT, entity destroyed
-              (snapshots)             #60
+              ReplicationSystem       new NetEntity → ENTITY_SPAWN, gone → ENTITY_DESTROY
               NetSendSystem           reliable messages, resends, heartbeats
+              SnapshotSystem          every 2 steps: SNAPSHOT of all NetEntity, to everyone
               DiscardPacketsSystem    unhandled messages destroyed
 ```
 
@@ -123,6 +133,20 @@ client-side prediction, #80).
 its ECS handle. Ids are taken in a cycle, skipping those in use and `0xFFFF`
 ("none"), so a freed id is not reused within 5 seconds.
 
+**What clients see (§4.3).** Clients only display what the server sends:
+
+| Message        | When                                           | How                                |
+|----------------|------------------------------------------------|------------------------------------|
+| ENTITY_SPAWN   | A `NetEntity` the client was not told about (a new one, or every one for a newcomer) | Reliable, `ReplicationSystem` |
+| ENTITY_DESTROY | A netId the client knows is gone               | Reliable, `ReplicationSystem`      |
+| SNAPSHOT       | Every 2 simulation steps (30 Hz)               | Unreliable, `SnapshotSystem`; split every 89 entities |
+
+Each `NetClient` keeps the netIds it was told about (`knownEntities`), so
+there is a single rule for newcomers and for new entities, and any future
+networked entity (missiles, Bydos) is replicated without new code. Each
+player gets its own `lastInputTick` in the snapshot, so it knows which of
+its inputs the state already includes.
+
 **Singletons.** State shared by several systems (the tick, the netId counter)
 lives on its own entity, reached with `singleton<T>(world)`: no globals, no
 state hidden in a system.
@@ -164,7 +188,7 @@ instantly.
 | Malformed datagram          | `decode()` rejects it (protocol §7): dropped, counted, never logged one by one |
 | Packet only servers may send | Rejected by `decode(…, ClientToServer)`                    |
 | Flood from one address      | 120 datagrams per second and per address, the rest dropped  |
-| Flood from everywhere       | 1024 datagrams per frame at most; the rest waits            |
+| Flood from everywhere       | The network thread queues 1024 datagrams at most; the rest is dropped, counted |
 | Injection into a session    | Address *and* random 32-bit token must match                |
 | Reflection / amplification  | A REJECT (21 bytes) only answers a request at least as large |
 | Guessable tokens            | `std::random_device`, backed by the OS secure generator     |

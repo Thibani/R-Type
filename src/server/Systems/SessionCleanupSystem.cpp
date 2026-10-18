@@ -29,7 +29,7 @@ std::string_view describe(LeaveReason reason) noexcept
 
 } // namespace
 
-SessionCleanupSystem::SessionCleanupSystem(network::UdpSocket& socket) noexcept
+SessionCleanupSystem::SessionCleanupSystem(network::NetworkThread& socket) noexcept
     : _socket(socket)
 {
 }

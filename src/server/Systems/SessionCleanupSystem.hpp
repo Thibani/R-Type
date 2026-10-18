@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ecs/System/System.hpp"
-#include "network/Transport/UdpSocket.hpp"
+#include "network/Transport/NetworkThread.hpp"
 
 namespace server {
 
@@ -12,12 +12,12 @@ namespace server {
 /// Runs first in `frameEnd()`, so PLAYER_LEFT leaves in the same frame.
 class SessionCleanupSystem final : public ecs::System {
 public:
-    explicit SessionCleanupSystem(network::UdpSocket& socket) noexcept;
+    explicit SessionCleanupSystem(network::NetworkThread& socket) noexcept;
 
     void update(ecs::World& world, const ecs::Time& time) override;
 
 private:
-    network::UdpSocket& _socket;
+    network::NetworkThread& _socket;
 };
 
 } // namespace server

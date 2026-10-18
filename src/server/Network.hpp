@@ -3,7 +3,7 @@
 #include "ecs/Time/Time.hpp"
 #include "network/Protocol/Packets.hpp"
 #include "network/Reliability/ReliableChannel.hpp"
-#include "network/Transport/UdpSocket.hpp"
+#include "network/Transport/NetworkThread.hpp"
 
 namespace ecs {
 class World;
@@ -21,13 +21,14 @@ using TimePoint = Clock::time_point;
 [[nodiscard]]
 TimePoint toTimePoint(const ecs::Time& time) noexcept;
 
-/// Encodes and sends one packet. Failures are reported on stderr and the
-/// packet is lost, as UDP allows: the game keeps running.
-void sendPacket(network::UdpSocket& socket, const network::protocol::Packet& packet,
+/// Encodes one packet and queues it for the network thread, which sends it.
+/// Failures are reported on stderr and the packet is lost, as UDP allows:
+/// the game keeps running.
+void sendPacket(network::NetworkThread& socket, const network::protocol::Packet& packet,
     const network::Endpoint& to);
 
 /// Tells every connected client that the server stops (DISCONNECT
 /// SERVER_SHUTDOWN, sent 3 times as §8.3 recommends).
-void notifyShutdown(ecs::World& world, network::UdpSocket& socket, TimePoint now);
+void notifyShutdown(ecs::World& world, network::NetworkThread& socket, TimePoint now);
 
 } // namespace server

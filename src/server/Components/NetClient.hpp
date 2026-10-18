@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <set>
 #include <string>
 
 namespace server {
@@ -22,6 +23,7 @@ struct NetClient {
     network::ReliableChannel channel;
     network::ReliableChannel::Clock::time_point lastReceived; // For the 5 s timeout
     network::ReliableChannel::Clock::time_point lastSent; // For the 250 ms heartbeat
+    std::set<std::uint16_t> knownEntities; // netIds sent in ENTITY_SPAWN, not destroyed since
 };
 
 /// Marks a session to close at the end of the frame (`SessionCleanupSystem`),
