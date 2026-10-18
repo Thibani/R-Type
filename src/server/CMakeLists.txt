@@ -22,6 +22,9 @@ add_library(rtype_server
     Components/ClientMessage.hpp
     Components/Player.hpp
     Components/NetEntity.hpp
+    Components/Combat.hpp
+    Spawn.hpp
+    Spawn.cpp
 
     Systems/NetReceiveSystem.hpp
     Systems/NetReceiveSystem.cpp
@@ -45,6 +48,16 @@ add_library(rtype_server
     Systems/PlayerControlSystem.cpp
     Systems/PlayerBoundsSystem.hpp
     Systems/PlayerBoundsSystem.cpp
+    Systems/PlayerFireSystem.hpp
+    Systems/PlayerFireSystem.cpp
+    Systems/BydoSpawnSystem.hpp
+    Systems/BydoSpawnSystem.cpp
+    Systems/BydoMovementSystem.hpp
+    Systems/BydoMovementSystem.cpp
+    Systems/BydoFireSystem.hpp
+    Systems/BydoFireSystem.cpp
+    Systems/DamageSystem.hpp
+    Systems/DamageSystem.cpp
     Systems/ReplicationSystem.hpp
     Systems/ReplicationSystem.cpp
     Systems/SnapshotSystem.hpp

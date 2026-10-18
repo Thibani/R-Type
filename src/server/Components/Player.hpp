@@ -15,6 +15,11 @@ struct PlayerInput {
     bool received{false}; // False until the first INPUT: lastTick is meaningless
 };
 
+/// On a player whose ship was destroyed: seconds before a new one appears.
+struct RespawnTimer {
+    float remaining{};
+};
+
 /// Marks a player's ship, a separate entity from the player: a ship can be
 /// destroyed (killed) while its player stays connected.
 struct PlayerShip {
