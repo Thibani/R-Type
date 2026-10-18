@@ -578,6 +578,9 @@ TEST(Session, SnapshotsCarryEveryShip)
         EXPECT_EQ(snapshot->partCount, 1);
         std::set<std::uint8_t> owners;
         for (const EntityState& state : snapshot->entities) {
+            if (state.kind != EntityKind::PlayerShip) {
+                continue; // Bydos may already be there
+            }
             owners.insert(state.owner);
             EXPECT_EQ(state.health, game::ship::MaxHealth); // 3 hearts each
         }
@@ -625,6 +628,47 @@ TEST(Session, LeavingShipIsDestroyedForTheOthers)
         ASSERT_TRUE(destroyed.has_value());
         EXPECT_EQ(destroyed->netId, leavingShip->netId);
     }
+}
+
+// --- A first game (#61) ----------------------------------------------------------
+
+TEST(Session, FiringAndBydosReachTheClients)
+{
+    // The whole chain over UDP: FIRE → missile spawned with its shooter, and
+    // Bydos entering the arena, as every client sees them
+    TestServer server;
+    TestClient client(server.address());
+    (void)connectOrFail(server, client, "Thibani");
+
+    std::optional<EntitySpawn> missile;
+    std::optional<EntitySpawn> bydo;
+    std::optional<GameState> state;
+    for (int frame = 0; frame < 200 && !(missile && bydo && state); ++frame) {
+        client.send(Input{.firstTick = static_cast<std::uint32_t>(frame + 1),
+            .count = 1,
+            .masks = {input::Fire}});
+        std::this_thread::sleep_for(1ms);
+        server.frame(1.0F / 60.0F);
+        client.poll();
+        while (auto spawn = client.take<EntitySpawn>()) {
+            if (spawn->kind == EntityKind::PlayerMissile) {
+                missile = spawn;
+            } else if (spawn->kind == EntityKind::Bydo) {
+                bydo = spawn;
+            }
+        }
+        if (auto received = client.take<GameState>()) {
+            state = received;
+        }
+    }
+
+    ASSERT_TRUE(missile.has_value()) << "no missile fired";
+    EXPECT_EQ(missile->owner, 0);
+    EXPECT_GT(missile->vx, 0);
+    ASSERT_TRUE(bydo.has_value()) << "no Bydo arrived";
+    EXPECT_EQ(bydo->owner, NoPlayer);
+    ASSERT_TRUE(state.has_value());
+    EXPECT_EQ(state->phase, GamePhase::Running);
 }
 
 // --- Leaving (§8.2, §8.3) -------------------------------------------------------
