@@ -44,6 +44,9 @@ add_library(rtype_ecs
     Resource/Resources.cpp
     Resource/AssetManager.hpp
     Resource/AssetManager.cpp
+
+    Loop/GameLoop.hpp
+    Loop/GameLoop.cpp
 )
 add_library(rtype::ecs ALIAS rtype_ecs)
 

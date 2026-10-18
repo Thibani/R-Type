@@ -25,6 +25,7 @@ rtype_add_test(ecs_tests
         Resource/ResourcesTests.cpp
         Resource/AssetManagerTests.cpp
         World/WorldResourcesTests.cpp
+        Loop/GameLoopTests.cpp
     LIBRARIES
         rtype::ecs
 )

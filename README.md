@@ -3,9 +3,11 @@
 A networked R-Type game written in modern C++ (C++23), built on top of a
 reusable Entity-Component-System (ECS) game engine.
 
-> **Status:** early development. The build system, tooling and the ECS core
-> (entities, components, World, queries, systems, time, events, commands, stages
-> and resources) are in place. Gameplay, client and server come next.
+> **Status:** early development. The build system, tooling, the ECS core
+> (entities, components, World, queries, systems, time, events, commands,
+> stages, resources, game loop), the network library (binary protocol, UDP
+> transport, reliability) and the server bootstrap are in place.
+> Sessions, gameplay and the client come next.
 
 ---
 
@@ -94,6 +96,29 @@ Pass them at configure time, e.g. `cmake --preset debug -DRTYPE_BUILD_TESTS=OFF`
 
 ---
 
+## Run
+
+### Server
+
+```sh
+./build/debug/r-type_server              # listens on UDP port 4242
+./build/debug/r-type_server -p 5000      # another port
+./build/debug/r-type_server --help
+```
+
+The binary is written at the root of the build folder (`build/<preset>/`).
+Stop it with `Ctrl+C`: it finishes the current frame and exits cleanly.
+
+| Exit code | Meaning                                                  |
+|-----------|----------------------------------------------------------|
+| `0`       | Stopped normally, or `--help`                            |
+| `84`      | Invalid arguments, port unavailable, or a fatal error    |
+
+On Windows the binary is `build\<preset>\r-type_server.exe`; allow it through the
+firewall when asked, or clients on other machines cannot reach it.
+
+---
+
 ## Tests
 
 Tests use [GoogleTest](https://github.com/google/googletest) and are run
@@ -135,7 +160,7 @@ Helper scripts live in `scripts/` (run them from Git Bash on Windows).
 ├── CMakeLists.txt        # Root build script
 ├── CMakePresets.json     # Ready-made build configurations
 ├── cmake/                # Options, compiler warnings, dependencies (CPM)
-├── docs/                 # Developer documentation (network protocol: docs/protocol.md)
+├── docs/                 # Protocol spec (protocol.md) and technical studies (technical-study/)
 ├── scripts/              # format / lint / test helpers
 ├── src/
 │   ├── ecs/              # Generic ECS library (target: rtype_ecs)
@@ -147,14 +172,20 @@ Helper scripts live in `scripts/` (run them from Git Bash on Windows).
 │   │   ├── Event/        # EventBus: systems communicate without knowing each other
 │   │   ├── Command/      # CommandBuffer: deferred structural changes
 │   │   ├── Scheduler/    # Stages: the order of the frame
-│   │   └── Resource/     # Resources (shared data) and AssetManager (files)
-│   └── network/          # Network library (target: rtype_network)
-│       ├── Serialization/ # Bounded big-endian ByteReader / ByteWriter
-│       ├── Protocol/     # Packet types and encode / decode (docs/protocol.md)
-│       └── Transport/    # Non-blocking UDP socket (Asio)
+│   │   ├── Resource/     # Resources (shared data) and AssetManager (files)
+│   │   └── Loop/         # GameLoop shared by the server and the client
+│   ├── network/          # Network library (target: rtype_network)
+│   │   ├── Serialization/ # Bounded big-endian ByteReader / ByteWriter
+│   │   ├── Protocol/     # Packet types and encode / decode (docs/protocol.md)
+│   │   ├── Transport/    # Non-blocking UDP socket (Asio)
+│   │   └── Reliability/  # Sequences, acks, resends, ordering (docs/protocol.md §6)
+│   ├── game/             # Gameplay (target: rtype_game): components, movement, confinement
+│   └── server/           # r-type_server: options, components, systems, main.cpp
 └── tests/
     ├── ecs/              # Mirrors src/ecs (Entity/, Component/, ...)
-    └── network/          # Mirrors src/network
+    ├── network/          # Mirrors src/network
+    ├── server/           # Mirrors src/server
+    └── game/             # Mirrors src/game
 ```
 
 Conventions:

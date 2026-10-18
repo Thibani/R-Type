@@ -108,3 +108,18 @@ TEST(FixedTimestep, UsableAtCompileTime)
 
     static_assert(steps == 2);
 }
+
+TEST(FixedTimestep, TinyFramesDoNotLoseSteps)
+{
+    // An uncapped client can run millions of frames per second. With a float
+    // accumulator, each tiny frame was rounded off and whole steps were lost.
+    FixedTimestep timestep(1.0F / 60.0F);
+    constexpr int frames = 1'000'000;
+    int steps = 0;
+
+    for (int frame = 0; frame < frames; ++frame) {
+        steps += timestep.advance(1.001F / static_cast<float>(frames)); // Just over 1 s
+    }
+
+    EXPECT_EQ(steps, 60);
+}

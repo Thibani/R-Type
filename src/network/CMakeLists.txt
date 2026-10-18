@@ -1,4 +1,4 @@
-# rtype_network — binary protocol and UDP transport.
+# rtype_network — binary protocol, UDP transport and reliability.
 #
 # Depends only on the C++ standard library and Asio (Transport/). It knows
 # nothing about the ECS: the server and client translate between packets and
@@ -17,6 +17,9 @@ add_library(rtype_network
 
     Transport/UdpSocket.hpp
     Transport/UdpSocket.cpp
+
+    Reliability/ReliableChannel.hpp
+    Reliability/ReliableChannel.cpp
 )
 add_library(rtype::network ALIAS rtype_network)
 
