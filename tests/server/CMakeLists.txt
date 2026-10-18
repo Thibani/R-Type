@@ -6,6 +6,7 @@ rtype_add_test(server_tests
         NetReceiveSystemTests.cpp
         SessionTests.cpp
         GameStateTests.cpp
+        PlayerMovementTests.cpp
     LIBRARIES
         rtype::server
 )

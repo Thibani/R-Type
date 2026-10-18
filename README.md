@@ -192,13 +192,13 @@ Helper scripts live in `scripts/` (run them from Git Bash on Windows).
 │   │   ├── Protocol/     # Packet types and encode / decode (docs/protocol.md)
 │   │   ├── Transport/    # Non-blocking UDP socket (Asio)
 │   │   └── Reliability/  # Sequences, acks, resends, ordering (docs/protocol.md §6)
-│   ├── server/           # r-type_server: options, components, systems, main.cpp
-│   └── client/           # r-type_client: connection, systems, SFML screens, main.cpp
+│   ├── game/             # Gameplay shared by server and client (target: rtype_game)
+│   └── server/           # r-type_server: options, components, systems, main.cpp
 └── tests/
     ├── ecs/              # Mirrors src/ecs (Entity/, Component/, ...)
     ├── network/          # Mirrors src/network
-    ├── server/           # Mirrors src/server
-    └── client/           # Mirrors src/client
+    ├── game/             # Mirrors src/game
+    └── server/           # Mirrors src/server
 ```
 
 Conventions:
