@@ -10,8 +10,9 @@ namespace game {
 ///     x is kept in [halfWidth, arena::Width  - halfWidth]
 ///     y is kept in [halfHeight, arena::Height - halfHeight]
 ///
-/// Player ships have it; missiles and enemies do not (they must be able to
-/// leave the screen).
+/// Player ships have it, with `ship::HalfWidth` / `ship::HalfHeight`
+/// (see `Ship.hpp`); missiles and enemies do not (they enter and leave
+/// through the edges).
 struct ConfinedToArena {
     float halfWidth{};
     float halfHeight{};

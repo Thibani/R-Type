@@ -71,14 +71,39 @@ TEST_F(ConfinementSystemTest, StopsAtEveryEdgeKeepingTheWholeShipVisible)
         _world.getComponent<Position>(bottom).y, game::arena::Height - ShipSize.halfHeight);
 }
 
-TEST_F(ConfinementSystemTest, KeepsTheVelocity)
+TEST_F(ConfinementSystemTest, StopsTheVelocityOnlyOnTheBlockedAxis)
 {
+    // Pushed into the left wall while sliding down along it
     const Entity ship = spawnShip(_world, {.x = 20.0F, .y = 500.0F}, {.dx = -1000.0F, .dy = 5.0F});
 
     _world.update(Time{1.0F, 1.0F});
 
-    // Only the position is corrected: the controls decide the speed.
-    EXPECT_FLOAT_EQ(_world.getComponent<Velocity>(ship).dx, -1000.0F);
+    // Clients extrapolate with the velocity: it must not point through the wall
+    EXPECT_FLOAT_EQ(_world.getComponent<Velocity>(ship).dx, 0.0F);
+    EXPECT_FLOAT_EQ(_world.getComponent<Velocity>(ship).dy, 5.0F);
+}
+
+TEST_F(ConfinementSystemTest, KeepsTheVelocityOfShipsInsideTheArena)
+{
+    const Entity ship = spawnShip(_world, {.x = 500.0F, .y = 500.0F}, {.dx = 10.0F, .dy = -10.0F});
+
+    _world.update(Time{1.0F, 1.0F});
+
+    EXPECT_FLOAT_EQ(_world.getComponent<Velocity>(ship).dx, 10.0F);
+    EXPECT_FLOAT_EQ(_world.getComponent<Velocity>(ship).dy, -10.0F);
+}
+
+TEST_F(ConfinementSystemTest, ConfinesEntitiesWithoutVelocity)
+{
+    const Entity turret = _world.createEntity();
+    _world.addComponent(turret, Position{.x = -50.0F, .y = 5000.0F});
+    _world.addComponent(turret, ShipSize);
+
+    _world.update(Time{1.0F, 1.0F});
+
+    EXPECT_FLOAT_EQ(_world.getComponent<Position>(turret).x, ShipSize.halfWidth);
+    EXPECT_FLOAT_EQ(
+        _world.getComponent<Position>(turret).y, game::arena::Height - ShipSize.halfHeight);
 }
 
 TEST_F(ConfinementSystemTest, IgnoresEntitiesThatAreNotConfined)

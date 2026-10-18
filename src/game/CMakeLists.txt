@@ -1,21 +1,27 @@
 # rtype_game — R-Type gameplay shared by the server and the client.
 #
-# Components and constants (plain data) plus the gameplay systems that act on
-# them. The server runs the systems (it is authoritative); the client can run
-# the same ones to predict, and displays the components.
+# Components, constants and the systems both sides must run identically (the
+# server to decide, the client to predict). It knows nothing about the
+# network: the server and client translate between packets and game state.
 #
 # Headers are included from the src/ root, e.g. "game/Components/Motion.hpp".
 
 add_library(rtype_game
     Arena.hpp
+    Ship.hpp
 
     Components/Motion.hpp
     Components/Confinement.hpp
+    Components/Collision.hpp
+
+    Events/CollisionEvent.hpp
 
     Systems/MovementSystem.hpp
     Systems/MovementSystem.cpp
     Systems/ConfinementSystem.hpp
     Systems/ConfinementSystem.cpp
+    Systems/CollisionSystem.hpp
+    Systems/CollisionSystem.cpp
 )
 add_library(rtype::game ALIAS rtype_game)
 

@@ -41,6 +41,14 @@ add_library(rtype_server
     Systems/PlayerShipSystem.cpp
     Systems/TickSystem.hpp
     Systems/TickSystem.cpp
+    Systems/PlayerControlSystem.hpp
+    Systems/PlayerControlSystem.cpp
+    Systems/PlayerBoundsSystem.hpp
+    Systems/PlayerBoundsSystem.cpp
+    Systems/ReplicationSystem.hpp
+    Systems/ReplicationSystem.cpp
+    Systems/SnapshotSystem.hpp
+    Systems/SnapshotSystem.cpp
     Systems/DiscardPacketsSystem.hpp
     Systems/DiscardPacketsSystem.cpp
 )

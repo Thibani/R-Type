@@ -95,3 +95,25 @@ TEST(MovementSystem, DoesNotDependOnTheFrameRate)
     EXPECT_FLOAT_EQ(slow.getComponent<Position>(slowShip).x, 120.0F);
     EXPECT_NEAR(fast.getComponent<Position>(fastShip).x, 120.0F, 1e-3F);
 }
+
+TEST(MovementSystem, SameDistanceWhateverTheNumberOfSteps)
+{
+    // One 0.5 s step or four 0.125 s steps: same place (exact in float)
+    ecs::World world;
+    const ecs::Entity once = world.createEntity();
+    world.addComponent(once, Position{});
+    world.addComponent(once, Velocity{.dx = 64.0F, .dy = 0.0F});
+    ecs::World otherWorld;
+    const ecs::Entity often = otherWorld.createEntity();
+    otherWorld.addComponent(often, Position{});
+    otherWorld.addComponent(often, Velocity{.dx = 64.0F, .dy = 0.0F});
+    game::MovementSystem movement;
+
+    movement.update(world, ecs::Time{0.5F, 0.5F});
+    for (int step = 0; step < 4; ++step) {
+        movement.update(otherWorld, ecs::Time{0.125F, 0.0F});
+    }
+
+    EXPECT_FLOAT_EQ(
+        world.getComponent<Position>(once).x, otherWorld.getComponent<Position>(often).x);
+}

@@ -8,9 +8,10 @@ namespace game {
 ///
 ///     position += velocity * deltaSeconds
 ///
-/// Speeds are in world units per second, so the movement does not depend on
-/// the frame rate. The system does not know what it moves: ships, enemies and
-/// missiles all move the same way.
+/// Speeds are in world units per second. It runs in the fixed-step
+/// simulation, so the delta is always the same and the result does not
+/// depend on the frame rate. The system does not know what it moves: ships,
+/// Bydos and missiles all move the same way.
 class MovementSystem final : public ecs::System {
 public:
     void update(ecs::World& world, const ecs::Time& time) override;

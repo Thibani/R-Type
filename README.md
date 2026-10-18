@@ -179,13 +179,13 @@ Helper scripts live in `scripts/` (run them from Git Bash on Windows).
 │   │   ├── Protocol/     # Packet types and encode / decode (docs/protocol.md)
 │   │   ├── Transport/    # Non-blocking UDP socket (Asio)
 │   │   └── Reliability/  # Sequences, acks, resends, ordering (docs/protocol.md §6)
-│   ├── game/             # Gameplay (target: rtype_game): components, movement, confinement
+│   ├── game/             # Gameplay shared by server and client (target: rtype_game)
 │   └── server/           # r-type_server: options, components, systems, main.cpp
 └── tests/
     ├── ecs/              # Mirrors src/ecs (Entity/, Component/, ...)
     ├── network/          # Mirrors src/network
-    ├── server/           # Mirrors src/server
-    └── game/             # Mirrors src/game
+    ├── game/             # Mirrors src/game
+    └── server/           # Mirrors src/server
 ```
 
 Conventions:

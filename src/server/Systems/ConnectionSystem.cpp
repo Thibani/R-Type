@@ -20,7 +20,7 @@ using namespace network::protocol;
 namespace {
 
 /// Answer to an address without a session: no channel, so no sequence or ack.
-void reject(network::UdpSocket& socket, const network::Endpoint& to, RejectReason reason)
+void reject(network::NetworkThread& socket, const network::Endpoint& to, RejectReason reason)
 {
     const Packet packet{
         .sessionToken = 0,
@@ -32,7 +32,7 @@ void reject(network::UdpSocket& socket, const network::Endpoint& to, RejectReaso
     sendPacket(socket, packet, to);
 }
 
-void accept(network::UdpSocket& socket, NetClient& client, TimePoint now)
+void accept(network::NetworkThread& socket, NetClient& client, TimePoint now)
 {
     const ConnectAccept payload{
         .playerId = client.playerId,
@@ -79,7 +79,7 @@ NetClient* findClient(ecs::World& world, const network::Endpoint& endpoint)
 
 } // namespace
 
-ConnectionSystem::ConnectionSystem(network::UdpSocket& socket)
+ConnectionSystem::ConnectionSystem(network::NetworkThread& socket)
     : _socket(socket)
 {
 }
@@ -152,6 +152,7 @@ void ConnectionSystem::update(ecs::World& world, const ecs::Time& time)
                 .channel = network::ReliableChannel(token),
                 .lastReceived = now,
                 .lastSent = now,
+                .knownEntities = {},
             });
         trackRequest(client.channel, request.packet, now);
         for (const PlayerJoined& other : alreadyHere) {
