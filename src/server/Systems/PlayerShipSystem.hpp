@@ -8,12 +8,15 @@ namespace server {
 /// none, and destroys the ships whose player left. Runs at the end of
 /// `frameStart()`, after the sessions were updated.
 ///
-/// A ship is its own entity: `PlayerShip`, `Position`, `Velocity` and a
-/// `NetEntity`. It is not the player's entity, because a ship can die while
+/// A ship is its own entity (see `spawnPlayerShip`): `PlayerShip`,
+/// `Position`, `Velocity`, `Hitbox`, `Health` (3), `FireCooldown`, `NetEntity`. It is not the player's entity, because a ship can die while
 /// its player stays connected (#59).
 ///
-/// shortcut: a player without a ship gets a new one at once; respawn rules
-/// (delay, lives) come with damage and death (#59).
+/// A ship killed in combat (#59) comes back after `ship::RespawnDelay`
+/// seconds: `DamageSystem` gives the player a `RespawnTimer`, counted down here.
+///
+/// shortcut: no lives and no game over yet, ships come back forever; the
+/// game phases (#110) will end the match when every ship is dead.
 class PlayerShipSystem final : public ecs::System {
 public:
     void update(ecs::World& world, const ecs::Time& time) override;

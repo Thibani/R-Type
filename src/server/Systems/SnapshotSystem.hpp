@@ -19,8 +19,8 @@ namespace server {
 /// A snapshot is due when 2 simulation steps (60 Hz / 30 Hz) went by since
 /// the last one: a frame without a step sends nothing new.
 ///
-/// shortcut: `health` is always `ship::MaxHealth` (3), only ships exist; a
-/// `Health` component that damage lowers comes with damage and death (#59).
+/// `health` is the entity's `game::Health` (ships 0–3, Bydos 0–1), or 1 for
+/// entities without one (missiles): alive until destroyed.
 class SnapshotSystem final : public ecs::System {
 public:
     static constexpr std::uint32_t TicksPerSnapshot

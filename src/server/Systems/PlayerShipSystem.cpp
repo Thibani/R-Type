@@ -1,13 +1,10 @@
 #include "server/Systems/PlayerShipSystem.hpp"
 
 #include "ecs/World/World.hpp"
-#include "game/Arena.hpp"
-#include "game/Components/Motion.hpp"
 #include "network/Protocol/Protocol.hpp"
 #include "server/Components/NetClient.hpp"
-#include "server/Components/NetEntity.hpp"
 #include "server/Components/Player.hpp"
-#include "server/NetIds.hpp"
+#include "server/Spawn.hpp"
 
 #include <array>
 #include <cstdint>
@@ -17,12 +14,27 @@ namespace server {
 
 using namespace network::protocol;
 
-void PlayerShipSystem::update(ecs::World& world, const ecs::Time& /*time*/)
+void PlayerShipSystem::update(ecs::World& world, const ecs::Time& time)
 {
     std::array<bool, MaxPlayers> connected{};
     std::array<bool, MaxPlayers> hasShip{};
     world.query<NetClient>(
         [&](ecs::Entity /*entity*/, NetClient& client) { connected.at(client.playerId) = true; });
+
+    // A destroyed ship comes back after its delay: until then, the player waits
+    std::vector<ecs::Entity> respawned;
+    world.query<NetClient, RespawnTimer>(
+        [&](ecs::Entity entity, NetClient& client, RespawnTimer& timer) {
+            timer.remaining -= time.deltaSeconds();
+            if (timer.remaining > 0.0F) {
+                hasShip.at(client.playerId) = true; // Not yet
+            } else {
+                respawned.push_back(entity);
+            }
+        });
+    for (const ecs::Entity player : respawned) {
+        world.removeComponent<RespawnTimer>(player);
+    }
 
     std::vector<ecs::Entity> orphans;
     world.query<PlayerShip>([&](ecs::Entity entity, PlayerShip& ship) {
@@ -40,17 +52,7 @@ void PlayerShipSystem::update(ecs::World& world, const ecs::Time& /*time*/)
         if (!connected.at(playerId) || hasShip.at(playerId)) {
             continue;
         }
-        const auto spawn = game::arena::playerSpawn(playerId);
-        const ecs::Entity ship = world.createEntity();
-        world.addComponent(ship, PlayerShip{.playerId = playerId});
-        world.addComponent(ship, game::Position{.x = spawn.x, .y = spawn.y});
-        world.addComponent(ship, game::Velocity{});
-        world.addComponent(ship,
-            NetEntity{
-                .netId = allocateNetId(world),
-                .kind = EntityKind::PlayerShip,
-                .owner = playerId,
-            });
+        (void)spawnPlayerShip(world, playerId);
     }
 }
 

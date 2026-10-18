@@ -2,7 +2,7 @@
 
 #include "ecs/World/World.hpp"
 #include "game/Components/Motion.hpp"
-#include "game/Ship.hpp"
+#include "game/Components/Health.hpp"
 #include "server/Components/NetClient.hpp"
 #include "server/Components/NetEntity.hpp"
 #include "server/Components/Player.hpp"
@@ -58,15 +58,16 @@ void SnapshotSystem::update(ecs::World& world, const ecs::Time& time)
     last = tick;
 
     std::vector<EntityState> entities;
-    world.query<NetEntity, game::Position, game::Velocity>([&](ecs::Entity /*entity*/,
+    world.query<NetEntity, game::Position, game::Velocity>([&](ecs::Entity entity,
                                                                NetEntity& net,
                                                                game::Position& position,
                                                                game::Velocity& velocity) {
+        const auto* health = world.tryGetComponent<game::Health>(entity);
         entities.push_back(EntityState{
             .netId = net.netId,
             .kind = net.kind,
             .owner = net.owner,
-            .health = game::ship::MaxHealth,
+            .health = health != nullptr ? health->current : std::uint8_t{1},
             .x = quantize(position.x),
             .y = quantize(position.y),
             .vx = quantize(velocity.dx),
