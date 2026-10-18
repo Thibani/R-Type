@@ -28,7 +28,7 @@ disabilities.
 
 | What we do | Why it helps |
 |------------|--------------|
-| **No information is only audible.** Every sound (shot, explosion, death) comes from a server event that is also shown on screen (missile, explosion, ship removed) | Deaf and hard-of-hearing players miss nothing |
+| **No information is only audible.** Every sound (shot, explosion, death) comes from a server event that is also shown on screen (a missile appears, the Bydo or ship disappears, "P1 is down") | Deaf and hard-of-hearing players miss nothing |
 | **Players told apart by colour, pattern and a P1–P4 tag**, never by colour alone | Colour-blind players can tell the four ships apart |
 | **The window scales** to any size, with letterboxing that keeps the proportions | Large screens and zoomed displays work |
 | **Unknown entities are drawn as a "?"** instead of being hidden | Nothing on screen is ever invisible |

@@ -13,9 +13,10 @@ audio use **SFML 3.1** (fetched by CPM). Sprites, fonts and sounds are in
 `assets/`, copied next to the executable at build time.
 
 Sound effects only play on server events: a missile spawn (shot), a kill
-(explosion), PLAYER_DIED and another player joining. The current server sends
-only the last one, so in game only "player joined" is heard for now. Bydos and
-missiles are drawn as soon as the server sends them.
+(explosion), PLAYER_DIED and another player joining. Each one is also visible
+on screen, so no information is only audible.
+
+Technology choices: [`docs/technical-study/client.md`](../../docs/technical-study/client.md).
 
 | File                               | Content                                                    |
 |------------------------------------|------------------------------------------------------------|
@@ -83,3 +84,49 @@ screens. Players are told apart by colour, pattern and P1-P4 tag.
 - The PLAYER_JOINED sent right after CONNECT_ACCEPT for the players already
   there fill the HUD without a notice; later ones are announced (§8.1).
 - Leaving or quitting sends DISCONNECT 3 times (§8.3).
+
+---
+
+## How to…
+
+### Draw a new kind of entity
+
+1. Add a value to `Look` and a case to `lookOf()` in `Components/Appearance.hpp`.
+2. Give it a frame in `spriteFrame()` (`Assets.cpp`): texture, rectangle in
+   the sheet, scale. A new sheet goes in `assets/sprites/` and in `Assets`.
+3. Until then, the kind is drawn as a "?": nothing else to change, the
+   network code already creates the entity.
+
+### Add a sound
+
+1. Put the WAV file in `assets/sounds/`, add a value to `Sound`
+   (`Components/SoundEvent.hpp`) and the file name to `Assets::load()`, in the
+   same order.
+2. Where the event is applied (`Replication.cpp`), call
+   `playSound(world, Sound::…)`. `AudioSystem` plays it.
+
+### Add a screen
+
+1. Add a value to `Screen` (`Components/Session.hpp`) and set
+   `session.screen` where it starts (usually in `Replication.cpp`).
+2. Draw it: a `draw…()` function and a `case` in `InterfaceSystem.cpp`.
+3. Handle its keys and clicks: a `case` in `InputSystem.cpp`.
+
+### Add a system
+
+1. Write a class deriving from `ecs::System` in `Systems/`: it reads and
+   writes components, never calls another system.
+2. Add it to `src/client/CMakeLists.txt` and to `installSystems()`
+   (`ClientSystems.cpp`): `frameStart` for once-per-frame input,
+   the simulation for 60 Hz updates, `frameEnd` for output.
+3. State shared with other systems goes in a component, or in a singleton
+   (`singleton<T>(world)`) when there is only one.
+
+### Test
+
+```sh
+./build/debug/tests/client/client_tests   # no window or server needed
+```
+
+`Replication` and `ServerConnection` are tested by feeding them packets
+directly (`tests/client/`).
