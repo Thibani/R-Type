@@ -1,8 +1,11 @@
-// Real sockets on the loopback interface, like the transport tests.
+// Real sockets on the loopback interface, like the transport tests. The
+// server side is a NetworkThread, as in r-type_server.
 
 #include "ecs/Time/Time.hpp"
 #include "ecs/World/World.hpp"
 #include "network/Protocol/PacketCodec.hpp"
+#include "network/Transport/NetworkThread.hpp"
+#include "network/Transport/UdpSocket.hpp"
 #include "server/Components/ReceivedPacket.hpp"
 #include "server/Systems/DiscardPacketsSystem.hpp"
 #include "server/Systems/NetReceiveSystem.hpp"
@@ -13,11 +16,13 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdlib>
+#include <memory>
 #include <thread>
 #include <utility>
 #include <vector>
 
 using network::Endpoint;
+using network::NetworkThread;
 using network::UdpSocket;
 using namespace network::protocol;
 using server::DiscardPacketsSystem;
@@ -36,9 +41,19 @@ UdpSocket openOrFail()
     return std::move(*socket);
 }
 
-Endpoint loopbackOf(const UdpSocket& socket)
+std::unique_ptr<NetworkThread> openServerOrFail()
 {
-    return {asio::ip::address_v4::loopback(), socket.localEndpoint()->port()};
+    auto network = NetworkThread::open(0);
+    if (!network) {
+        ADD_FAILURE() << "cannot open network thread: " << network.error().message();
+        std::abort();
+    }
+    return std::move(*network);
+}
+
+Endpoint loopbackOf(const NetworkThread& server)
+{
+    return {asio::ip::address_v4::loopback(), server.localEndpoint().port()};
 }
 
 void sendPacket(UdpSocket& from, const Packet& packet, const Endpoint& to)
@@ -84,12 +99,12 @@ Packet heartbeat(std::uint16_t sequence)
 
 TEST(NetReceiveSystem, ValidPacketBecomesAnEntity)
 {
-    auto server = openOrFail();
+    const auto server = openServerOrFail();
     auto client = openOrFail();
     ecs::World world;
-    NetReceiveSystem system(server);
+    NetReceiveSystem system(*server);
 
-    sendPacket(client, heartbeat(7), loopbackOf(server));
+    sendPacket(client, heartbeat(7), loopbackOf(*server));
     receiveUntil(system, world, 1);
 
     const auto packets = receivedPackets(world);
@@ -101,13 +116,13 @@ TEST(NetReceiveSystem, ValidPacketBecomesAnEntity)
 
 TEST(NetReceiveSystem, EveryPendingDatagramIsReadInOneFrame)
 {
-    auto server = openOrFail();
+    const auto server = openServerOrFail();
     auto client = openOrFail();
     ecs::World world;
-    NetReceiveSystem system(server);
+    NetReceiveSystem system(*server);
 
     for (std::uint16_t sequence = 0; sequence < 5; ++sequence) {
-        sendPacket(client, heartbeat(sequence), loopbackOf(server));
+        sendPacket(client, heartbeat(sequence), loopbackOf(*server));
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(50)); // Let all five arrive
     system.update(world, ecs::Time{});
@@ -117,13 +132,13 @@ TEST(NetReceiveSystem, EveryPendingDatagramIsReadInOneFrame)
 
 TEST(NetReceiveSystem, MalformedDatagramIsDroppedAndCounted)
 {
-    auto server = openOrFail();
+    const auto server = openServerOrFail();
     auto client = openOrFail();
     ecs::World world;
-    NetReceiveSystem system(server);
+    NetReceiveSystem system(*server);
 
     const std::vector<std::byte> garbage(32, std::byte{0xAB});
-    ASSERT_TRUE(client.sendTo(garbage, loopbackOf(server)).has_value());
+    ASSERT_TRUE(client.sendTo(garbage, loopbackOf(*server)).has_value());
     receiveUntil(system, world, 1);
 
     EXPECT_EQ(system.droppedCount(), 1U);
@@ -132,10 +147,10 @@ TEST(NetReceiveSystem, MalformedDatagramIsDroppedAndCounted)
 
 TEST(NetReceiveSystem, PacketMeantForClientsIsDropped)
 {
-    auto server = openOrFail();
+    const auto server = openServerOrFail();
     auto client = openOrFail();
     ecs::World world;
-    NetReceiveSystem system(server);
+    NetReceiveSystem system(*server);
 
     // A SNAPSHOT only travels from the server to the clients
     const Snapshot emptySnapshot;
@@ -146,7 +161,7 @@ TEST(NetReceiveSystem, PacketMeantForClientsIsDropped)
         .reliableId = 0,
         .payload = emptySnapshot,
     };
-    sendPacket(client, snapshot, loopbackOf(server));
+    sendPacket(client, snapshot, loopbackOf(*server));
     receiveUntil(system, world, 1);
 
     EXPECT_EQ(system.droppedCount(), 1U);
@@ -155,9 +170,9 @@ TEST(NetReceiveSystem, PacketMeantForClientsIsDropped)
 
 TEST(NetReceiveSystem, NothingReceivedCreatesNothing)
 {
-    auto server = openOrFail();
+    const auto server = openServerOrFail();
     ecs::World world;
-    NetReceiveSystem system(server);
+    NetReceiveSystem system(*server);
 
     system.update(world, ecs::Time{});
 

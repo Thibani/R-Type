@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ecs/System/System.hpp"
-#include "network/Transport/UdpSocket.hpp"
+#include "network/Transport/NetworkThread.hpp"
 
 #include <cstdint>
 #include <random>
@@ -23,7 +23,7 @@ public:
     static constexpr std::uint8_t TickRate = 60; // §9, matches GameLoop's default step
     static constexpr std::uint8_t SnapshotRate = 30; // §9
 
-    explicit ConnectionSystem(network::UdpSocket& socket);
+    explicit ConnectionSystem(network::NetworkThread& socket);
 
     void update(ecs::World& world, const ecs::Time& time) override;
 
@@ -32,7 +32,7 @@ private:
     [[nodiscard]]
     std::uint32_t newToken(ecs::World& world);
 
-    network::UdpSocket& _socket;
+    network::NetworkThread& _socket;
     // Non-deterministic source: tokens must not be guessable. libstdc++, libc++
     // and MSVC back it with the OS's secure generator (getrandom, RtlGenRandom).
     std::random_device _random;

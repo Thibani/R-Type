@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 /// Player ship rules, shared by the server (which applies them) and the
 /// client (which will predict them, #80): both must use the same numbers.
 namespace game::ship {
@@ -12,5 +14,8 @@ inline constexpr float Speed = 480.0F;
 /// this far from the arena edges, so the whole ship is always visible.
 inline constexpr float HalfWidth = 32.0F;
 inline constexpr float HalfHeight = 16.0F;
+
+/// Hit points of a new ship: the 3 hearts shown to the player.
+inline constexpr std::uint8_t MaxHealth = 3;
 
 } // namespace game::ship

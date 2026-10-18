@@ -9,14 +9,16 @@
 #include "server/Systems/PlayerBoundsSystem.hpp"
 #include "server/Systems/PlayerControlSystem.hpp"
 #include "server/Systems/PlayerShipSystem.hpp"
+#include "server/Systems/ReplicationSystem.hpp"
 #include "server/Systems/SessionCleanupSystem.hpp"
 #include "server/Systems/SessionReceiveSystem.hpp"
+#include "server/Systems/SnapshotSystem.hpp"
 #include "server/Systems/TickSystem.hpp"
 #include "server/Systems/TimeoutSystem.hpp"
 
 namespace server {
 
-void installSystems(ecs::World& world, ecs::GameLoop& loop, network::UdpSocket& socket)
+void installSystems(ecs::World& world, ecs::GameLoop& loop, network::NetworkThread& socket)
 {
     loop.frameStart().add<NetReceiveSystem>(socket);
     loop.frameStart().add<ConnectionSystem>(socket);
@@ -31,7 +33,9 @@ void installSystems(ecs::World& world, ecs::GameLoop& loop, network::UdpSocket& 
     world.systems().add<PlayerBoundsSystem>();
 
     loop.frameEnd().add<SessionCleanupSystem>(socket);
+    loop.frameEnd().add<ReplicationSystem>();
     loop.frameEnd().add<NetSendSystem>(socket);
+    loop.frameEnd().add<SnapshotSystem>(socket);
     loop.frameEnd().add<DiscardPacketsSystem>();
 }
 
