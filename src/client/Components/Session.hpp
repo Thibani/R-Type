@@ -49,8 +49,11 @@ struct Session {
     // Game
     std::optional<std::uint8_t> playerId; // Ours, from CONNECT_ACCEPT
     std::array<PlayerSlot, network::protocol::MaxPlayers> players{};
+    // From CONNECT_ACCEPT to the next reliable event: the PLAYER_JOINED received
+    // meanwhile are the players already there (§8.1), not arrivals to announce
+    bool catchingUp{false};
     std::uint32_t score{0}; // Team score from GAME_STATE
-    std::string notice; // Short message ("P4 left the game"), shown until noticeUntil
+    std::string notice; // Short message ("P4 Dave left the game"), shown until noticeUntil
     float noticeUntil{0.0F};
 };
 

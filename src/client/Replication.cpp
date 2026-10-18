@@ -126,7 +126,7 @@ void apply(ecs::World& world, const PlayerJoined& joined, float now)
     Session& session = singleton<Session>(world);
     session.players.at(joined.playerId)
         = PlayerSlot{.present = true, .left = false, .down = false, .name = joined.name};
-    if (joined.playerId != session.playerId) {
+    if (joined.playerId != session.playerId && !session.catchingUp) {
         notify(world, playerLabel(joined.playerId) + " " + joined.name + " joined the game", now);
         playSound(world, Sound::PlayerJoined);
     }
@@ -143,7 +143,7 @@ void apply(ecs::World& world, const PlayerLeft& left, float now)
     const char* why = left.reason == LeaveReason::Timeout ? " (connection lost)"
         : left.reason == LeaveReason::Kicked              ? " (kicked)"
                                                           : "";
-    notify(world, playerLabel(left.playerId) + " left the game" + why, now);
+    notify(world, playerLabel(left.playerId) + " " + slot.name + " left the game" + why, now);
 }
 
 void apply(ecs::World& world, const PlayerDied& died, float now)
@@ -189,6 +189,12 @@ void apply(ecs::World& /*world*/, const Other& /*payload*/, float /*now*/)
 
 void applyPayload(ecs::World& world, const Payload& payload, float now)
 {
+    // §8.1: the PLAYER_JOINED of the players already there come first. Any other
+    // reliable event ends them; a SNAPSHOT does not (unreliable, it can overtake one)
+    if (!std::holds_alternative<PlayerJoined>(payload)
+        && !std::holds_alternative<Snapshot>(payload)) {
+        singleton<Session>(world).catchingUp = false;
+    }
     std::visit([&](const auto& packet) { apply(world, packet, now); }, payload);
 }
 
@@ -204,6 +210,7 @@ void startSession(ecs::World& world, const ConnectAccept& accept, const std::str
     // The current server spawns our ship at once and may never send GAME_STATE:
     // play now. A GAME_STATE (WAITING_FOR_PLAYERS) moves us to the waiting room.
     session.screen = Screen::Game;
+    session.catchingUp = true;
     session.focus = 0;
     session.status.clear();
     session.error.clear();

@@ -190,6 +190,7 @@ TEST(Replication, PlayerEventsUpdateTheSlots)
     client::startSession(world,
         ConnectAccept{.playerId = 0, .tickRate = 60, .snapshotRate = 30, .maxPlayers = 4}, "A");
     auto& session = client::singleton<client::Session>(world);
+    client::applyPayload(world, GameState{.phase = GamePhase::Running, .score = 0}, 0.5F);
 
     client::applyPayload(world, PlayerJoined{.playerId = 3, .name = "D"}, 1.0F);
     EXPECT_TRUE(session.players.at(3).present);
@@ -201,8 +202,31 @@ TEST(Replication, PlayerEventsUpdateTheSlots)
     client::applyPayload(world, PlayerLeft{.playerId = 3, .reason = LeaveReason::Timeout}, 3.0F);
     EXPECT_FALSE(session.players.at(3).present);
     EXPECT_TRUE(session.players.at(3).left);
-    EXPECT_EQ(session.notice, "P4 left the game (connection lost)");
+    EXPECT_EQ(session.notice, "P4 D left the game (connection lost)");
     EXPECT_FLOAT_EQ(session.noticeUntil, 3.0F + client::NoticeSeconds);
+}
+
+TEST(Replication, PlayersAlreadyThereAreShownButNotAnnounced)
+{
+    // §8.1: a newcomer first receives PLAYER_JOINED for every player already
+    // connected. They fill the HUD; only later arrivals get a notice and a sound.
+    ecs::World world;
+    client::startSession(world,
+        ConnectAccept{.playerId = 1, .tickRate = 60, .snapshotRate = 30, .maxPlayers = 4}, "B");
+    auto& session = client::singleton<client::Session>(world);
+
+    client::applyPayload(world, PlayerJoined{.playerId = 0, .name = "A"}, 0.1F);
+    client::applyPayload(world, snapshot(1, {shipState(1, 0.0F, 0.0F)}), 0.1F);
+    client::applyPayload(world, PlayerJoined{.playerId = 2, .name = "C"}, 0.2F);
+    EXPECT_TRUE(session.players.at(0).present);
+    EXPECT_TRUE(session.players.at(2).present);
+    EXPECT_TRUE(session.notice.empty());
+    EXPECT_EQ(soundCount(world, client::Sound::PlayerJoined), 0U);
+
+    client::applyPayload(world, GameState{.phase = GamePhase::Running, .score = 0}, 0.3F);
+    client::applyPayload(world, PlayerJoined{.playerId = 3, .name = "D"}, 5.0F);
+    EXPECT_EQ(session.notice, "P4 D joined the game");
+    EXPECT_EQ(soundCount(world, client::Sound::PlayerJoined), 1U);
 }
 
 TEST(Replication, ClearSessionForgetsNetworkEntitiesButKeepsTheStars)
