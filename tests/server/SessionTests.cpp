@@ -5,6 +5,8 @@
 #include "ecs/Loop/GameLoop.hpp"
 #include "ecs/System/System.hpp"
 #include "ecs/World/World.hpp"
+#include "game/Components/Motion.hpp"
+#include "game/Ship.hpp"
 #include "network/Protocol/PacketCodec.hpp"
 #include "network/Reliability/ReliableChannel.hpp"
 #include "network/Transport/UdpSocket.hpp"
@@ -107,6 +109,20 @@ public:
             [&](ecs::Entity /*entity*/, server::NetClient& client, server::PlayerInput& input) {
                 if (client.playerId == playerId) {
                     found = &input;
+                }
+            });
+        return found;
+    }
+
+    /// Position of the ship of player `playerId`, or nullopt if it has none.
+    [[nodiscard]]
+    std::optional<game::Position> shipPosition(std::uint8_t playerId)
+    {
+        std::optional<game::Position> found;
+        _world.query<server::PlayerShip, game::Position>(
+            [&](ecs::Entity /*entity*/, server::PlayerShip& ship, game::Position& position) {
+                if (ship.playerId == playerId) {
+                    found = position;
                 }
             });
         return found;
@@ -400,6 +416,28 @@ TEST(Session, ConnectedPlayerGetsAShip)
     server.frame();
 
     EXPECT_EQ(server.shipCount(), 1U);
+}
+
+TEST(Session, ShipMovesWhereThePlayerSteers)
+{
+    // The whole chain: keys over UDP → PlayerInput → velocity → position
+    TestServer server;
+    TestClient client(server.address());
+    (void)connectOrFail(server, client, "Thibani");
+    server.frame();
+    const auto start = server.shipPosition(0);
+    ASSERT_TRUE(start.has_value());
+
+    client.send(Input{.firstTick = 1, .count = 1, .masks = {input::Right}});
+    deliver(server, 1.0F / 60.0F); // The input arrives, then one simulation step
+    for (int step = 1; step < 60; ++step) {
+        server.frame(1.0F / 60.0F); // The key stays held until the next INPUT
+    }
+
+    const auto end = server.shipPosition(0);
+    ASSERT_TRUE(end.has_value());
+    EXPECT_NEAR(end->x, start->x + game::ship::Speed, 1.0F);
+    EXPECT_FLOAT_EQ(end->y, start->y);
 }
 
 TEST(Session, ShipGoesAwayWithItsPlayer)

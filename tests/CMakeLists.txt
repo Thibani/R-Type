@@ -15,4 +15,5 @@ endfunction()
 
 add_subdirectory(ecs)
 add_subdirectory(network)
+add_subdirectory(game)
 add_subdirectory(server)

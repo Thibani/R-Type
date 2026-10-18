@@ -24,6 +24,8 @@ clients comply with.
 | `Systems/InputSystem.hpp`           | INPUT → the player's `PlayerInput`                       |
 | `Systems/PlayerShipSystem.hpp`      | One ship per connected player                            |
 | `Systems/TickSystem.hpp`            | Counts simulation steps                                  |
+| `Systems/PlayerControlSystem.hpp`   | `PlayerInput` → ship `Velocity` (normalised diagonals)   |
+| `Systems/PlayerBoundsSystem.hpp`    | Ships kept inside the arena                              |
 | `Systems/NetSendSystem.hpp`         | Reliable messages, resends, heartbeats                   |
 | `Systems/DiscardPacketsSystem.hpp`  | Destroys the messages no system handled                  |
 
@@ -56,7 +58,9 @@ frameStart()  NetReceiveSystem        socket → ReceivedPacket / IncompatibleCl
               InputSystem             ClientMessage (INPUT) → the player's PlayerInput
               PlayerShipSystem        one ship per connected player
 simulation    TickSystem              SimulationTick + 1, first of every step
-              (gameplay systems)      60 Hz fixed steps: movement (#52)...
+              PlayerControlSystem     PlayerInput → ship Velocity
+              game::MovementSystem    Position += Velocity × step (shared with the client)
+              PlayerBoundsSystem      ships kept inside the arena, velocity into an edge → 0
 frameEnd()    SessionCleanupSystem    Disconnecting → PLAYER_LEFT, entity destroyed
               (snapshots)             #60
               NetSendSystem           reliable messages, resends, heartbeats
@@ -104,7 +108,8 @@ ship entity     PlayerShip, Position, Velocity,   what is in the game: can die (
 | Data                | Where                                   | Written by                 |
 |---------------------|-----------------------------------------|----------------------------|
 | Latest input        | `PlayerInput` on the player             | `InputSystem`              |
-| Ship position/speed | `game::Position`, `game::Velocity` on the ship | gameplay systems (#52) |
+| Ship velocity       | `game::Velocity` on the ship            | `PlayerControlSystem`, `PlayerBoundsSystem` |
+| Ship position       | `game::Position` on the ship            | `game::MovementSystem`, `PlayerBoundsSystem` |
 | Network identity    | `NetEntity {netId, kind, owner}` on the ship | `PlayerShipSystem`    |
 | Simulation tick     | `SimulationTick` singleton              | `TickSystem`               |
 
