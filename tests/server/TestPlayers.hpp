@@ -5,6 +5,7 @@
 #include "server/Components/NetClient.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 /// Helpers for server tests that run systems on a plain World, without sockets.
@@ -24,6 +25,7 @@ inline ecs::Entity addPlayer(ecs::World& world, std::uint8_t playerId)
             .lastReceived = {},
             .lastSent = {},
             .knownEntities = {},
+            .knownScore = std::nullopt,
         });
     return player;
 }

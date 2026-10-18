@@ -58,7 +58,7 @@ void installSystems(ecs::World& world, ecs::GameLoop& loop, network::NetworkThre
     installSimulation(world);
 
     loop.frameEnd().add<SessionCleanupSystem>(socket);
-    loop.frameEnd().add<ReplicationSystem>();
+    loop.frameEnd().add<ReplicationSystem>(world);
     loop.frameEnd().add<NetSendSystem>(socket);
     loop.frameEnd().add<SnapshotSystem>(socket);
     loop.frameEnd().add<DiscardPacketsSystem>();

@@ -153,6 +153,7 @@ void ConnectionSystem::update(ecs::World& world, const ecs::Time& time)
                 .lastReceived = now,
                 .lastSent = now,
                 .knownEntities = {},
+                .knownScore = std::nullopt,
             });
         trackRequest(client.channel, request.packet, now);
         for (const PlayerJoined& other : alreadyHere) {

@@ -296,7 +296,7 @@ TEST(GameState, EveryoneIsToldAboutEveryShip)
     const ecs::Entity first = addPlayer(world, 0);
     const ecs::Entity second = addPlayer(world, 1);
     PlayerShipSystem ships;
-    ReplicationSystem replication;
+    ReplicationSystem replication(world);
     ships.update(world, ecs::Time{});
 
     replication.update(world, ecs::Time{});
@@ -322,7 +322,7 @@ TEST(GameState, NewcomerIsToldAboutExistingShips)
     ecs::World world;
     (void)addPlayer(world, 0);
     PlayerShipSystem ships;
-    ReplicationSystem replication;
+    ReplicationSystem replication(world);
     ships.update(world, ecs::Time{});
     replication.update(world, ecs::Time{});
 
@@ -339,7 +339,7 @@ TEST(GameState, ShipOfALeavingPlayerIsDestroyedForTheOthers)
     const ecs::Entity staying = addPlayer(world, 0);
     const ecs::Entity leaving = addPlayer(world, 1);
     PlayerShipSystem ships;
-    ReplicationSystem replication;
+    ReplicationSystem replication(world);
     ships.update(world, ecs::Time{});
     replication.update(world, ecs::Time{});
     const auto spawns = only<EntitySpawn>(queued(world, staying));
