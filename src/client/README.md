@@ -9,8 +9,13 @@ server (`docs/protocol.md`).
 ```
 
 The options fill the connection form; Enter connects. Graphics, input and
-sound use **SFML 3.1** (fetched by CPM). Sprites, fonts and sounds are in
+audio use **SFML 3.1** (fetched by CPM). Sprites, fonts and sounds are in
 `assets/`, copied next to the executable at build time.
+
+Sound effects only play on server events: a missile spawn (shot), a kill
+(explosion), PLAYER_DIED and another player joining. The current server sends
+only the last one, so in game only "player joined" is heard for now. Bydos and
+missiles are drawn as soon as the server sends them.
 
 | File                               | Content                                                    |
 |------------------------------------|------------------------------------------------------------|
