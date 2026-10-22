@@ -2,13 +2,9 @@
 
 #include "ecs/World/World.hpp"
 #include "game/Arena.hpp"
-#include "game/Bydo.hpp"
 #include "game/Components/ArenaExit.hpp"
-#include "game/Components/Collision.hpp"
+#include "game/Components/Confinement.hpp"
 #include "game/Components/Health.hpp"
-#include "game/Ship.hpp"
-#include "network/Protocol/Protocol.hpp"
-#include "server/Components/Combat.hpp"
 #include "server/Components/NetEntity.hpp"
 #include "server/Components/Player.hpp"
 #include "server/NetIds.hpp"
@@ -41,26 +37,15 @@ ecs::Entity spawnPlayerShip(ecs::World& world, std::uint8_t playerId)
             .halfWidth = game::ship::HalfWidth,
             .halfHeight = game::ship::HalfHeight,
             .layer = game::layer::PlayerShip,
-            .collidesWith = game::layer::Enemy | game::layer::EnemyMissile,
+            .collidesWith = game::layer::None, // Hurts nothing: what hits it says so
         });
     world.addComponent(ship, PlayerShip{.playerId = playerId});
     world.addComponent(ship, game::Health{.current = game::ship::MaxHealth});
-    world.addComponent(ship, FireCooldown{});
+    world.addComponent(ship,
+        game::ConfinedToArena{.halfWidth = game::ship::HalfWidth, .halfHeight = game::ship::HalfHeight});
+    world.addComponent(ship, weapons::ShipCannon);
+    world.addComponent(ship, Trigger{}); // Pulled by PlayerControlSystem
     return ship;
-}
-
-ecs::Entity spawnPlayerMissile(ecs::World& world, std::uint8_t playerId, game::Position muzzle)
-{
-    const ecs::Entity missile = spawnNetworked(world, EntityKind::PlayerMissile, playerId, muzzle,
-        {.dx = game::ship::MissileSpeed, .dy = 0.0F},
-        {
-            .halfWidth = game::ship::MissileHalfWidth,
-            .halfHeight = game::ship::MissileHalfHeight,
-            .layer = game::layer::PlayerMissile,
-            .collidesWith = game::layer::Enemy,
-        });
-    world.addComponent(missile, game::DespawnOutsideArena{});
-    return missile;
 }
 
 ecs::Entity spawnBydo(ecs::World& world, float baseY, float firstShotDelay)
@@ -72,26 +57,34 @@ ecs::Entity spawnBydo(ecs::World& world, float baseY, float firstShotDelay)
             .halfWidth = game::bydo::HalfWidth,
             .halfHeight = game::bydo::HalfHeight,
             .layer = game::layer::Enemy,
-            .collidesWith = game::layer::PlayerShip | game::layer::PlayerMissile,
+            .collidesWith = game::layer::PlayerShip, // Crashing into a ship
         });
-    world.addComponent(bydo, Bydo{.baseY = baseY, .age = 0.0F, .fireCooldown = firstShotDelay});
+    world.addComponent(bydo, Bydo{.baseY = baseY, .age = 0.0F});
     world.addComponent(bydo, game::Health{.current = game::bydo::MaxHealth});
+    world.addComponent(bydo, Damage{.amount = 1, .diesOnHit = true});
+    world.addComponent(bydo, ScoreValue{.points = game::bydo::Points});
     world.addComponent(bydo, game::DespawnOutsideArena{});
+    Weapon cannon = weapons::BydoCannon;
+    cannon.cooldown = firstShotDelay;
+    world.addComponent(bydo, cannon);
+    world.addComponent(bydo, Trigger{}); // Aimed by BydoAimSystem
     return bydo;
 }
 
-ecs::Entity spawnEnemyMissile(ecs::World& world, game::Position muzzle, game::Velocity velocity)
+ecs::Entity spawnProjectile(ecs::World& world, const Projectile& projectile, std::uint8_t owner,
+    game::Position from, game::Velocity direction)
 {
-    const ecs::Entity missile = spawnNetworked(world, EntityKind::EnemyMissile, NoPlayer, muzzle,
-        velocity,
+    const ecs::Entity entity = spawnNetworked(world, projectile.kind, owner, from,
+        {.dx = direction.dx * projectile.speed, .dy = direction.dy * projectile.speed},
         {
-            .halfWidth = game::bydo::MissileHalfSize,
-            .halfHeight = game::bydo::MissileHalfSize,
-            .layer = game::layer::EnemyMissile,
-            .collidesWith = game::layer::PlayerShip,
+            .halfWidth = projectile.halfWidth,
+            .halfHeight = projectile.halfHeight,
+            .layer = projectile.layer,
+            .collidesWith = projectile.hits,
         });
-    world.addComponent(missile, game::DespawnOutsideArena{});
-    return missile;
+    world.addComponent(entity, Damage{.amount = projectile.damage, .diesOnHit = true});
+    world.addComponent(entity, game::DespawnOutsideArena{});
+    return entity;
 }
 
 } // namespace server

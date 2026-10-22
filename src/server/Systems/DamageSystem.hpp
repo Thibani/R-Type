@@ -4,6 +4,7 @@
 #include "ecs/Event/Subscription.hpp"
 #include "ecs/System/System.hpp"
 
+#include <cstdint>
 #include <unordered_set>
 
 namespace ecs {
@@ -17,20 +18,21 @@ struct CollisionEvent;
 namespace server {
 
 /// Decides what a collision means (#58, #59). `game::CollisionEvent` only
-/// says that two hitboxes overlap; this system applies the rules:
+/// says that two hitboxes overlap; the rules come from the entities' data:
 ///
-/// | Collision                 | Result                                          |
-/// |---------------------------|-------------------------------------------------|
-/// | player missile × Bydo     | missile gone, Bydo −1 HP                        |
-/// | Bydo missile × ship       | missile gone, ship −1 HP                        |
-/// | Bydo × ship               | Bydo killed, ship −1 HP                         |
+///   an entity with `Damage` hurts what its `Hitbox::collidesWith` names:
+///   the other loses `Damage::amount` HP, and the attacker dies if
+///   `Damage::diesOnHit` (a missile is used up, a Bydo crashes).
+///
+/// Today: player missiles hurt Bydos, Bydo missiles and Bydos hurt ships.
+/// A new weapon or enemy needs new data (`Spawn.hpp`), not a new rule here.
 ///
 /// An entity at 0 HP is killed: a `DespawnRequest` (KILLED, with its killer),
 /// so `ReplicationSystem` sends ENTITY_DESTROY with the real reason, and
-/// PLAYER_DIED for a ship. A killed Bydo adds `bydo::Points` to the
-/// `TeamScore`; a killed ship's player gets a `RespawnTimer`.
+/// PLAYER_DIED for a ship. A killed entity with a `ScoreValue` adds its points
+/// to the `TeamScore`; a killed ship's player gets a `RespawnTimer`.
 ///
-/// A missile hits once: one that already hit something this step, or an
+/// An attacker hits once: one that already hit something this step, or an
 /// entity already killed, ignores the other overlaps of the same step.
 ///
 ///     world.systems().add<DamageSystem>(world); // after game::CollisionSystem
@@ -43,8 +45,10 @@ public:
 
 private:
     void onCollision(const game::CollisionEvent& collision);
-    /// Removes one hit point from `target`, killing it at 0.
-    void hit(ecs::Entity target, ecs::Entity by);
+    /// `attacker` hurts `target` if its `Damage` and `Hitbox` say so.
+    void attack(ecs::Entity attacker, ecs::Entity target);
+    /// Removes `amount` hit points from `target`, killing it at 0.
+    void hit(ecs::Entity target, ecs::Entity by, std::uint8_t amount);
     void kill(ecs::Entity target, ecs::Entity by);
 
     ecs::World& _world;

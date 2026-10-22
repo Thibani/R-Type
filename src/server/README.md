@@ -8,13 +8,13 @@ clients comply with.
 | `main.cpp`                          | Entry point: options, network thread, World, GameLoop, Ctrl+C |
 | `ServerOptions.hpp`                 | Command line parsing (`-p`, `-h`)                        |
 | `ServerSystems.hpp`                 | `installSystems()`: every system, in order; `installSimulation()` |
-| `Spawn.hpp`                         | Create ships, missiles and Bydos with all their components |
+| `Spawn.hpp`                         | The weapons as data (`weapons::`); create ships, Bydos, projectiles |
 | `Network.hpp`                       | Frame time → time point, send a packet, shutdown notice  |
 | `Components/ReceivedPacket.hpp`     | A valid packet received this frame; `IncompatibleClient` |
 | `Components/NetClient.hpp`          | A connected player's session; `Disconnecting`            |
 | `Components/ClientMessage.hpp`      | A game payload from a connected player                   |
 | `Components/Player.hpp`             | `PlayerInput`, `RespawnTimer` (on the player), `PlayerShip` (on the ship) |
-| `Components/Combat.hpp`             | `FireCooldown`, `Bydo`, `BydoSpawner`, `TeamScore`       |
+| `Components/Combat.hpp`             | Combat as data: `Weapon`, `Projectile`, `Trigger`, `Damage`, `ScoreValue`; `Bydo`, `BydoSpawner`, `TeamScore` |
 | `Components/NetEntity.hpp`          | `NetEntity` (network id), `NetIdCounter`, `SimulationTick`, `LastSnapshot` |
 | `Singleton.hpp`                     | `singleton<T>(world)`: state shared by several systems   |
 | `NetIds.hpp`                        | `allocateNetId()`: ids for networked entities (§5.1)     |
@@ -27,12 +27,11 @@ clients comply with.
 | `Systems/PlayerShipSystem.hpp`      | One ship per connected player, back 3 s after its death  |
 | `Systems/TickSystem.hpp`            | Counts simulation steps                                  |
 | `Systems/PlayerControlSystem.hpp`   | `PlayerInput` → ship `Velocity` (normalised diagonals)   |
-| `Systems/PlayerFireSystem.hpp`      | FIRE held → a player missile every 0.25 s                |
 | `Systems/BydoSpawnSystem.hpp`       | A Bydo from the right every 1.5 s, while ships exist     |
 | `Systems/BydoMovementSystem.hpp`    | Bydos fly left in a wave                                 |
-| `Systems/BydoFireSystem.hpp`        | Each Bydo fires at the nearest ship every 2.5 s          |
-| `Systems/PlayerBoundsSystem.hpp`    | Ships kept inside the arena                              |
-| `Systems/DamageSystem.hpp`          | Collisions → hits, kills, team score, respawn timer      |
+| `Systems/BydoAimSystem.hpp`         | Bydos pull their trigger, aimed at the nearest ship      |
+| `Systems/WeaponSystem.hpp`          | Any pulled `Trigger` + ready `Weapon` → a projectile     |
+| `Systems/DamageSystem.hpp`          | Collisions + `Damage` → hits, kills, team score, respawn timer |
 | `Systems/ReplicationSystem.hpp`     | ENTITY_SPAWN / ENTITY_DESTROY (real reason), PLAYER_DIED, GAME_STATE |
 | `Systems/NetSendSystem.hpp`         | Reliable messages, resends, heartbeats                   |
 | `Systems/SnapshotSystem.hpp`        | SNAPSHOT of every networked entity, 30 Hz                |
@@ -74,16 +73,16 @@ frameStart()  NetReceiveSystem        network thread inbox → ReceivedPacket / 
               InputSystem             ClientMessage (INPUT) → the player's PlayerInput
               PlayerShipSystem        one ship per connected player, after its respawn delay
 simulation    TickSystem              SimulationTick + 1, first of every step
-              PlayerControlSystem     PlayerInput → ship Velocity
-              PlayerFireSystem        FIRE → player missile (cooldown 0.25 s)
+              PlayerControlSystem     PlayerInput → ship Velocity, FIRE → ship Trigger
               BydoSpawnSystem         a Bydo enters from the right every 1.5 s
               BydoMovementSystem      Bydo Velocity: left, in a wave
-              BydoFireSystem          Bydo missile at the nearest ship every 2.5 s
+              BydoAimSystem           Bydo Trigger: pulled, aimed at the nearest ship
+              WeaponSystem            pulled Trigger + Weapon ready → projectile (any shooter)
               game::MovementSystem    Position += Velocity × step (shared with the client)
-              PlayerBoundsSystem      ships kept inside the arena, velocity into an edge → 0
+              game::ConfinementSystem ships kept inside the arena, velocity into an edge → 0
               game::ArenaExitSystem   missiles and Bydos that left → DespawnRequest (OUT_OF_BOUNDS)
               game::CollisionSystem   overlapping hitboxes → CollisionEvent
-              DamageSystem            CollisionEvent → −1 HP, kill → DespawnRequest (KILLED), score
+              DamageSystem            CollisionEvent + Damage → −HP, kill → DespawnRequest (KILLED), score
               game::DespawnSystem     DespawnRequest → DespawnEvent, entity destroyed
 frameEnd()    SessionCleanupSystem    Disconnecting → PLAYER_LEFT, entity destroyed
               ReplicationSystem       new NetEntity → ENTITY_SPAWN, gone → ENTITY_DESTROY,
@@ -134,8 +133,8 @@ ship entity     PlayerShip, Position, Velocity,   what is in the game: can die (
 | Data                | Where                                   | Written by                 |
 |---------------------|-----------------------------------------|----------------------------|
 | Latest input        | `PlayerInput` on the player             | `InputSystem`              |
-| Ship velocity       | `game::Velocity` on the ship            | `PlayerControlSystem`, `PlayerBoundsSystem` |
-| Ship position       | `game::Position` on the ship            | `game::MovementSystem`, `PlayerBoundsSystem` |
+| Ship velocity       | `game::Velocity` on the ship            | `PlayerControlSystem`, `game::ConfinementSystem` |
+| Ship position       | `game::Position` on the ship            | `game::MovementSystem`, `game::ConfinementSystem` |
 | Network identity    | `NetEntity {netId, kind, owner}` on the ship | `PlayerShipSystem`    |
 | Simulation tick     | `SimulationTick` singleton              | `TickSystem`               |
 
@@ -176,13 +175,29 @@ Everything that moves is a networked entity made by `Spawn.hpp`, so
 
 | Entity          | Kind             | Hitbox hits         | Health | Leaves when                         |
 |-----------------|------------------|---------------------|--------|-------------------------------------|
-| Player ship     | `PLAYER_SHIP`    | Bydos, Bydo missiles | 3     | killed (back 3 s later, full health) |
-| Player missile  | `PLAYER_MISSILE` | Bydos               | –      | it hits, or leaves the arena        |
-| Bydo            | `BYDO`           | ships, player missiles | 1   | killed (+100 team score), or leaves on the left |
-| Bydo missile    | `ENEMY_MISSILE`  | ships               | –      | it hits, or leaves the arena        |
+| Player ship     | `PLAYER_SHIP`    | –                   | 3     | killed (back 3 s later, full health) |
+| Player missile  | `PLAYER_MISSILE` | Bydos (1 damage)    | –      | it hits, or leaves the arena        |
+| Bydo            | `BYDO`           | ships (1 damage, crashes) | 1 | killed (+100 team score), or leaves on the left |
+| Bydo missile    | `ENEMY_MISSILE`  | ships (1 damage)    | –      | it hits, or leaves the arena        |
 
 The rules (speeds, sizes, rates, points) are constants in `src/game/Ship.hpp`
 and `src/game/Bydo.hpp`, shared with the client.
+
+**Combat is data, not code.** Systems work on components, never on entity
+types, so new content needs no new system:
+
+| Component (`Components/Combat.hpp`) | Read by        | Means                                         |
+|-------------------------------------|----------------|-----------------------------------------------|
+| `Weapon` (+ its `Projectile`)       | `WeaponSystem` | What it fires, how often, from where          |
+| `Trigger`                           | `WeaponSystem` | Fire now, in this direction. Set by a "brain": `PlayerControlSystem` (keys), `BydoAimSystem` (aim) |
+| `Damage`                            | `DamageSystem` | Hurts what its `Hitbox::collidesWith` names; dies on hit or not |
+| `ScoreValue`                        | `DamageSystem` | Team points when it is killed                 |
+| `ConfinedToArena` (game)            | `game::ConfinementSystem` | Cannot leave the arena             |
+
+The weapons themselves are constants in `Spawn.hpp` (`weapons::ShipCannon`,
+`weapons::BydoCannon`). A new weapon, a Force, a turret or a new enemy is a
+new constant or `spawn…()` function; a new behaviour is one small "brain"
+system that sets a `Trigger` or a `Velocity`.
 
 **Systems talk through events, never through calls.** `game::CollisionSystem`
 only detects overlaps (`CollisionEvent`); `DamageSystem` decides what they

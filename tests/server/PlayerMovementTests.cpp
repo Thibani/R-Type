@@ -1,5 +1,5 @@
 // Ship movement, through the same simulation systems the server runs, in the
-// same order: PlayerControl → Movement → PlayerBounds, at the 60 Hz step.
+// same order: PlayerControl → Movement → Confinement, at the 60 Hz step.
 
 #include "TestPlayers.hpp"
 #include "ecs/Time/Time.hpp"
@@ -7,10 +7,11 @@
 #include "game/Arena.hpp"
 #include "game/Components/Motion.hpp"
 #include "game/Ship.hpp"
+#include "game/Components/Confinement.hpp"
+#include "game/Systems/ConfinementSystem.hpp"
 #include "game/Systems/MovementSystem.hpp"
 #include "network/Protocol/Protocol.hpp"
 #include "server/Components/Player.hpp"
-#include "server/Systems/PlayerBoundsSystem.hpp"
 #include "server/Systems/PlayerControlSystem.hpp"
 
 #include <gtest/gtest.h>
@@ -48,7 +49,7 @@ protected:
         _ship = addShip(0, game::arena::Width / 2.0F, game::arena::Height / 2.0F);
         _world.systems().add<server::PlayerControlSystem>();
         _world.systems().add<game::MovementSystem>();
-        _world.systems().add<server::PlayerBoundsSystem>();
+        _world.systems().add<game::ConfinementSystem>();
     }
 
     ecs::Entity addShip(std::uint8_t playerId, float x, float y)
@@ -57,6 +58,9 @@ protected:
         _world.addComponent(entity, server::PlayerShip{.playerId = playerId});
         _world.addComponent(entity, Position{.x = x, .y = y});
         _world.addComponent(entity, Velocity{});
+        _world.addComponent(entity,
+            game::ConfinedToArena{
+                .halfWidth = game::ship::HalfWidth, .halfHeight = game::ship::HalfHeight});
         return entity;
     }
 
