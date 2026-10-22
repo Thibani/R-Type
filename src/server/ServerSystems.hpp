@@ -30,16 +30,16 @@ void installSystems(ecs::World& world, ecs::GameLoop& loop, network::NetworkThre
 /// The simulation alone (the World's own systems, at the fixed step), in order:
 ///
 ///     TickSystem            SimulationTick + 1, first of every step
-///     PlayerControlSystem   PlayerInput → ship Velocity
-///     PlayerFireSystem      FIRE held → player missile, every 0.25 s
+///     PlayerControlSystem   PlayerInput → ship Velocity, FIRE → ship Trigger
 ///     BydoSpawnSystem       a Bydo from the right every 1.5 s, while ships exist
 ///     BydoMovementSystem    Bydo Velocity: left, in a wave
-///     BydoFireSystem        each Bydo fires at the nearest ship every 2.5 s
+///     BydoAimSystem         Bydo Trigger: pulled, aimed at the nearest ship
+///     WeaponSystem          pulled Trigger + Weapon ready → projectile
 ///     game::MovementSystem  Position += Velocity × step
-///     PlayerBoundsSystem    ships kept inside the arena
+///     game::ConfinementSystem ships (ConfinedToArena) kept inside the arena
 ///     game::ArenaExitSystem missiles and Bydos that left → despawn (OUT_OF_BOUNDS)
 ///     game::CollisionSystem overlapping hitboxes → CollisionEvent
-///     DamageSystem          CollisionEvent → hits, kills, score, respawn timer
+///     DamageSystem          CollisionEvent + Damage → hits, kills, score, respawn timer
 ///     game::DespawnSystem   DespawnRequest → DespawnEvent, entity destroyed
 ///
 /// Separate so the gameplay tests run exactly the server's simulation.

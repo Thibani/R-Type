@@ -4,6 +4,7 @@
 #include "game/Components/Motion.hpp"
 #include "game/Ship.hpp"
 #include "network/Protocol/Protocol.hpp"
+#include "server/Components/Combat.hpp"
 #include "server/Components/NetClient.hpp"
 #include "server/Components/Player.hpp"
 
@@ -51,6 +52,11 @@ void PlayerControlSystem::update(ecs::World& world, const ecs::Time& /*time*/)
         [&](ecs::Entity /*entity*/, PlayerShip& ship, game::Velocity& velocity) {
             velocity = velocityFor(masks.at(ship.playerId));
         });
+
+    // FIRE held pulls the ship's trigger; WeaponSystem shoots at its rate
+    world.query<PlayerShip, Trigger>([&](ecs::Entity /*entity*/, PlayerShip& ship, Trigger& trigger) {
+        trigger.pulled = (masks.at(ship.playerId) & input::Fire) != 0;
+    });
 }
 
 } // namespace server

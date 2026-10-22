@@ -9,8 +9,9 @@ namespace server {
 /// `frameStart()`, after the sessions were updated.
 ///
 /// A ship is its own entity (see `spawnPlayerShip`): `PlayerShip`,
-/// `Position`, `Velocity`, `Hitbox`, `Health` (3), `FireCooldown`, `NetEntity`. It is not the player's entity, because a ship can die while
-/// its player stays connected (#59).
+/// `Position`, `Velocity`, `Hitbox`, `Health` (3), `ConfinedToArena`,
+/// `Weapon`, `Trigger`, `NetEntity`. It is not the player's entity, because a
+/// ship can die while its player stays connected (#59).
 ///
 /// A ship killed in combat (#59) comes back after `ship::RespawnDelay`
 /// seconds: `DamageSystem` gives the player a `RespawnTimer`, counted down here.
