@@ -49,6 +49,23 @@ the simulation, so it runs at a fixed rate whatever the frame rate.
 4. Test it in `tests/server/GameplayTests.cpp`: `Game` runs the real
    simulation step by step on a plain World.
 
+### Add a weapon or an enemy (no new system needed)
+
+Combat is data (`src/server/Components/Combat.hpp`):
+
+1. A **weapon** is a `Weapon` constant in `src/server/Spawn.hpp`
+   (`weapons::`): its `Projectile` (kind, speed, size, layers, damage), its
+   rate and its muzzle. Give it to any entity with a `Trigger`.
+2. An **enemy** is a `spawn…()` function that combines components: `Hitbox`,
+   `Health`, `Damage` (if it hurts on contact), `ScoreValue`, a `Weapon` and
+   a `Trigger`.
+3. Only a new **behaviour** needs code: a small "brain" system that sets the
+   `Trigger` (when and where to shoot) or the `Velocity` (how to move), like
+   `BydoAimSystem` and `BydoMovementSystem`.
+
+`WeaponSystem` fires every pulled trigger and `DamageSystem` applies every
+`Damage`, whatever the entity is.
+
 ### Add a new kind of networked entity
 
 1. Give it a kind in `network::protocol::EntityKind` (values 4–255 are free)
