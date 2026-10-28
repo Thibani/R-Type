@@ -46,16 +46,14 @@ add_library(rtype_server
     Systems/TickSystem.cpp
     Systems/PlayerControlSystem.hpp
     Systems/PlayerControlSystem.cpp
-    Systems/PlayerBoundsSystem.hpp
-    Systems/PlayerBoundsSystem.cpp
-    Systems/PlayerFireSystem.hpp
-    Systems/PlayerFireSystem.cpp
     Systems/BydoSpawnSystem.hpp
     Systems/BydoSpawnSystem.cpp
     Systems/BydoMovementSystem.hpp
     Systems/BydoMovementSystem.cpp
-    Systems/BydoFireSystem.hpp
-    Systems/BydoFireSystem.cpp
+    Systems/BydoAimSystem.hpp
+    Systems/BydoAimSystem.cpp
+    Systems/WeaponSystem.hpp
+    Systems/WeaponSystem.cpp
     Systems/DamageSystem.hpp
     Systems/DamageSystem.cpp
     Systems/ReplicationSystem.hpp

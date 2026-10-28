@@ -4,8 +4,9 @@
 
 namespace server {
 
-/// Turns each player's `PlayerInput` into their ship's `Velocity`. Runs in the
-/// simulation, after `TickSystem` and before `game::MovementSystem`.
+/// The players' "brain": turns each player's `PlayerInput` into their ship's
+/// `Velocity`, and FIRE into its `Trigger` (`WeaponSystem` shoots). Runs in
+/// the simulation, after `TickSystem` and before `WeaponSystem`.
 ///
 /// The arrow keys give a direction; its length is normalised, so a diagonal
 /// is not faster than a straight line. Opposite keys cancel out, and no key

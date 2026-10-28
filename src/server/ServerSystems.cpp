@@ -2,21 +2,20 @@
 
 #include "game/Systems/ArenaExitSystem.hpp"
 #include "game/Systems/CollisionSystem.hpp"
+#include "game/Systems/ConfinementSystem.hpp"
 #include "game/Systems/DespawnSystem.hpp"
 #include "game/Systems/MovementSystem.hpp"
 #include "server/Components/Combat.hpp"
 #include "server/Singleton.hpp"
-#include "server/Systems/BydoFireSystem.hpp"
+#include "server/Systems/BydoAimSystem.hpp"
 #include "server/Systems/BydoMovementSystem.hpp"
 #include "server/Systems/BydoSpawnSystem.hpp"
 #include "server/Systems/DamageSystem.hpp"
-#include "server/Systems/PlayerFireSystem.hpp"
 #include "server/Systems/ConnectionSystem.hpp"
 #include "server/Systems/DiscardPacketsSystem.hpp"
 #include "server/Systems/InputSystem.hpp"
 #include "server/Systems/NetReceiveSystem.hpp"
 #include "server/Systems/NetSendSystem.hpp"
-#include "server/Systems/PlayerBoundsSystem.hpp"
 #include "server/Systems/PlayerControlSystem.hpp"
 #include "server/Systems/PlayerShipSystem.hpp"
 #include "server/Systems/ReplicationSystem.hpp"
@@ -25,6 +24,7 @@
 #include "server/Systems/SnapshotSystem.hpp"
 #include "server/Systems/TickSystem.hpp"
 #include "server/Systems/TimeoutSystem.hpp"
+#include "server/Systems/WeaponSystem.hpp"
 
 namespace server {
 
@@ -34,12 +34,12 @@ void installSimulation(ecs::World& world)
 
     world.systems().add<TickSystem>();
     world.systems().add<PlayerControlSystem>();
-    world.systems().add<PlayerFireSystem>();
     world.systems().add<BydoSpawnSystem>();
     world.systems().add<BydoMovementSystem>();
-    world.systems().add<BydoFireSystem>();
+    world.systems().add<BydoAimSystem>();
+    world.systems().add<WeaponSystem>();
     world.systems().add<game::MovementSystem>();
-    world.systems().add<PlayerBoundsSystem>();
+    world.systems().add<game::ConfinementSystem>();
     world.systems().add<game::ArenaExitSystem>();
     world.systems().add<game::CollisionSystem>();
     world.systems().add<DamageSystem>(world);

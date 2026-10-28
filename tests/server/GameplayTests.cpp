@@ -107,6 +107,19 @@ public:
     server::PlayerShipSystem ships;
 };
 
+/// Projectiles as the server's weapons fire them.
+ecs::Entity playerMissile(ecs::World& world, game::Position from)
+{
+    return server::spawnProjectile(
+        world, server::weapons::ShipCannon.projectile, 0, from, {.dx = 1.0F, .dy = 0.0F});
+}
+
+ecs::Entity enemyMissile(ecs::World& world, game::Position from)
+{
+    return server::spawnProjectile(
+        world, server::weapons::BydoCannon.projectile, NoPlayer, from, {.dx = -1.0F, .dy = 0.0F});
+}
+
 /// The reliable messages queued for `player` since the last call.
 std::vector<Payload> queued(ecs::World& world, ecs::Entity player)
 {
@@ -241,7 +254,7 @@ TEST(Gameplay, BydoFiresAtTheNearestShip)
     const auto& velocity = game.world.getComponent<game::Velocity>(missiles[0]);
     EXPECT_LT(velocity.dx, 0.0F); // Towards the ship, on the left
     EXPECT_NEAR(std::hypot(velocity.dx, velocity.dy), game::bydo::MissileSpeed, 1.0F);
-    EXPECT_GT(game.world.getComponent<Bydo>(bydo).fireCooldown, 0.0F); // Reloading
+    EXPECT_GT(game.world.getComponent<server::Weapon>(bydo).cooldown, 0.0F); // Reloading
 }
 
 // --- Collisions, damage and death (#58, #59) ---------------------------------------
@@ -252,7 +265,7 @@ TEST(Gameplay, PlayerMissileKillsABydoAndScores)
     (void)game.join(0);
     const ecs::Entity bydo = server::spawnBydo(game.world, 300.0F, 100.0F);
     game.world.getComponent<game::Position>(bydo) = {.x = 600.0F, .y = 300.0F};
-    const ecs::Entity missile = server::spawnPlayerMissile(game.world, 0, {.x = 590.0F, .y = 300.0F});
+    const ecs::Entity missile = playerMissile(game.world, {.x = 590.0F, .y = 300.0F});
 
     game.steps(1);
 
@@ -269,7 +282,7 @@ TEST(Gameplay, OneMissileKillsOneBydoOnly)
     const ecs::Entity second = server::spawnBydo(game.world, 300.0F, 100.0F);
     game.world.getComponent<game::Position>(first) = {.x = 600.0F, .y = 300.0F};
     game.world.getComponent<game::Position>(second) = {.x = 600.0F, .y = 300.0F};
-    (void)server::spawnPlayerMissile(game.world, 0, {.x = 600.0F, .y = 300.0F});
+    (void)playerMissile(game.world, {.x = 600.0F, .y = 300.0F});
 
     game.steps(1);
 
@@ -284,7 +297,7 @@ TEST(Gameplay, EnemyMissileCostsTheShipOneHeart)
     const ecs::Entity ship = game.shipOf(0);
     const auto position = game.world.getComponent<game::Position>(ship);
 
-    (void)server::spawnEnemyMissile(game.world, position, {});
+    (void)enemyMissile(game.world, position);
     game.steps(1);
 
     EXPECT_EQ(game.world.getComponent<game::Health>(ship).current, game::ship::MaxHealth - 1);
@@ -299,7 +312,7 @@ TEST(Gameplay, ThreeHitsKillTheShipWhichComesBackLater)
 
     for (int hit = 0; hit < game::ship::MaxHealth; ++hit) {
         const auto position = game.world.getComponent<game::Position>(ship);
-        (void)server::spawnEnemyMissile(game.world, position, {});
+        (void)enemyMissile(game.world, position);
         game.steps(1);
     }
 
@@ -329,6 +342,43 @@ TEST(Gameplay, RammingABydoKillsItAndCostsAHeart)
     EXPECT_EQ(game.world.getComponent<game::Health>(ship).current, game::ship::MaxHealth - 1);
 }
 
+// --- Combat is data: any entity, any weapon ---------------------------------------
+
+TEST(Gameplay, AnyEntityWithAWeaponAndATriggerFires)
+{
+    // No system knows about this "turret": the components are enough
+    Game game;
+    const ecs::Entity turret = game.world.createEntity();
+    game.world.addComponent(turret, game::Position{.x = 960.0F, .y = 540.0F});
+    game.world.addComponent(turret, NetEntity{.netId = 900, .kind = EntityKind::Bydo, .owner = NoPlayer});
+    game.world.addComponent(turret, server::weapons::BydoCannon);
+    game.world.addComponent(turret,
+        server::Trigger{.pulled = true, .direction = {.dx = 0.0F, .dy = 1.0F}});
+
+    game.steps(1);
+
+    const auto missiles = game.ofKind(EntityKind::EnemyMissile);
+    ASSERT_EQ(missiles.size(), 1U);
+    const auto& velocity = game.world.getComponent<game::Velocity>(missiles[0]);
+    EXPECT_FLOAT_EQ(velocity.dx, 0.0F);
+    EXPECT_FLOAT_EQ(velocity.dy, game::bydo::MissileSpeed); // Along its trigger
+}
+
+TEST(Gameplay, DamageAmountComesFromTheProjectile)
+{
+    Game game;
+    (void)game.join(0);
+    const ecs::Entity ship = game.shipOf(0);
+    server::Projectile heavy = server::weapons::BydoCannon.projectile;
+    heavy.damage = game::ship::MaxHealth; // A one-shot weapon, as data only
+
+    (void)server::spawnProjectile(
+        game.world, heavy, NoPlayer, game.world.getComponent<game::Position>(ship), {});
+    game.steps(1);
+
+    EXPECT_FALSE(game.world.isAlive(ship));
+}
+
 // --- What the clients are told (#60) ------------------------------------------------
 
 TEST(Gameplay, KillIsSentWithItsReasonKillerAndScore)
@@ -342,7 +392,7 @@ TEST(Gameplay, KillIsSentWithItsReasonKillerAndScore)
     const auto bydoNetId = game.world.getComponent<NetEntity>(bydo).netId;
 
     game.world.getComponent<game::Position>(bydo) = {.x = 600.0F, .y = 300.0F};
-    const ecs::Entity missile = server::spawnPlayerMissile(game.world, 0, {.x = 590.0F, .y = 300.0F});
+    const ecs::Entity missile = playerMissile(game.world, {.x = 590.0F, .y = 300.0F});
     const auto missileNetId = game.world.getComponent<NetEntity>(missile).netId;
     replication.update(game.world, ecs::Time{}); // The missile's spawn
     game.steps(1);
@@ -370,7 +420,7 @@ TEST(Gameplay, ShipDeathIsSentAsPlayerDied)
 
     for (int hit = 0; hit < game::ship::MaxHealth; ++hit) {
         const auto position = game.world.getComponent<game::Position>(ship);
-        (void)server::spawnEnemyMissile(game.world, position, {});
+        (void)enemyMissile(game.world, position);
         game.steps(1);
     }
     replication.update(game.world, ecs::Time{});
@@ -385,7 +435,7 @@ TEST(Gameplay, OutOfBoundsIsSentAsSuch)
     Game game;
     const ecs::Entity player = game.join(0);
     server::ReplicationSystem replication(game.world);
-    const ecs::Entity missile = server::spawnPlayerMissile(game.world, 0, {.x = 1900.0F, .y = 50.0F});
+    const ecs::Entity missile = playerMissile(game.world, {.x = 1900.0F, .y = 50.0F});
     const auto netId = game.world.getComponent<NetEntity>(missile).netId;
     replication.update(game.world, ecs::Time{});
     (void)queued(game.world, player);
