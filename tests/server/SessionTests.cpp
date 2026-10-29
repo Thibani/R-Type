@@ -646,7 +646,8 @@ TEST(Session, FiringAndBydosReachTheClients)
     for (int frame = 0; frame < 200 && !(missile && bydo && state); ++frame) {
         client.send(Input{.firstTick = static_cast<std::uint32_t>(frame + 1),
             .count = 1,
-            .masks = {input::Fire}});
+            .masks = {input::Fire},
+        });
         std::this_thread::sleep_for(1ms);
         server.frame(1.0F / 60.0F);
         client.poll();
@@ -657,7 +658,7 @@ TEST(Session, FiringAndBydosReachTheClients)
                 bydo = spawn;
             }
         }
-        if (auto received = client.take<GameState>()) {
+        if (const auto received = client.take<GameState>()) {
             state = received;
         }
     }

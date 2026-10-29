@@ -17,7 +17,8 @@ void BydoMovementSystem::update(ecs::World& world, const ecs::Time& time)
             bydo.age += time.deltaSeconds();
             // d/dt (A sin(ωt)) = Aω cos(ωt)
             velocity = {.dx = -Speed,
-                .dy = WaveAmplitude * WaveFrequency * std::cos(WaveFrequency * bydo.age)};
+                .dy = WaveAmplitude * WaveFrequency * std::cos(WaveFrequency * bydo.age),
+            };
         });
 }
 

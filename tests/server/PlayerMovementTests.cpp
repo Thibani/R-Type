@@ -60,7 +60,9 @@ protected:
         _world.addComponent(entity, Velocity{});
         _world.addComponent(entity,
             game::ConfinedToArena{
-                .halfWidth = game::ship::HalfWidth, .halfHeight = game::ship::HalfHeight});
+                .halfWidth = game::ship::HalfWidth,
+                .halfHeight = game::ship::HalfHeight,
+            });
         return entity;
     }
 
