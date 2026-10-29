@@ -3,6 +3,8 @@
 #include "client/Assets.hpp"
 #include "client/Components/NetEntity.hpp"
 #include "client/Components/Session.hpp"
+#include "client/Components/Settings.hpp"
+#include "client/Settings.hpp"
 #include "client/Singleton.hpp"
 #include "client/Ui/Layout.hpp"
 #include "client/Ui/Theme.hpp"
@@ -17,6 +19,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string>
 
 namespace client {
@@ -117,6 +120,8 @@ void drawConnect(sf::RenderTarget& target, const Assets& assets, const Session& 
         session.focus == layout::PortField);
     widgets::button(
         target, assets, layout::Connect, "Connect", true, session.focus == layout::ConnectButton);
+    widgets::button(target, assets, layout::OpenSettings, "Settings", false,
+        session.focus == layout::SettingsButton);
     widgets::button(
         target, assets, layout::Quit, "Quit", false, session.focus == layout::QuitButton);
 
@@ -145,7 +150,7 @@ void drawWaitingRoom(sf::RenderTarget& target, const Assets& assets, const Sessi
     for (std::size_t i = 0; i < session.players.size(); ++i) {
         const PlayerSlot& slot = session.players.at(i);
         const sf::FloatRect card{
-            {80.0F + static_cast<float>(i) * (Width + Gap), 178.0F}, {Width, 400.0F}};
+            {80.0F + (static_cast<float>(i) * (Width + Gap)), 178.0F}, {Width, 400.0F}};
         box(target, card, theme::Surface, theme::Hull, slot.present ? 4.0F : 3.0F, slot.present);
         cardHead(target, assets, {card.position, {Width, 88.0F}}, i, slot.present,
             session.playerId == i);
@@ -175,6 +180,22 @@ std::array<std::uint8_t, 4> shipHealth(ecs::World& world)
         }
     });
     return health;
+}
+
+/// "Arrows: move  ·  Space: fire  ·  Esc: menu", with the player's own keys.
+std::string controlsReminder(const Settings& settings)
+{
+    const auto name = [&](Action action) {
+        return std::string(keyName(settings.keys.at(static_cast<std::size_t>(action))).value_or("?"));
+    };
+    constexpr std::size_t moves = 4; // Up, Down, Left, Right come first in Action
+    const bool arrows = std::ranges::equal(
+        std::span(settings.keys).first<moves>(), std::span(Settings::DefaultKeys).first<moves>());
+    const std::string move = arrows
+        ? "Arrows: move"
+        : "Move: " + name(Action::Up) + " " + name(Action::Left) + " " + name(Action::Down) + " "
+            + name(Action::Right);
+    return move + "  ·  " + name(Action::Fire) + ": fire  ·  Esc: menu";
 }
 
 void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
@@ -221,7 +242,7 @@ void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
                     : points == 1                    ? theme::Red
                                                      : theme::Green;
                 box(target,
-                    {column + sf::Vector2f{2.0F + static_cast<float>(pip) * 28.0F, 30.0F},
+                    {column + sf::Vector2f{2.0F + (static_cast<float>(pip) * 28.0F), 30.0F},
                         {22.0F, 12.0F}},
                     fill, theme::Hull, 2.0F);
             }
@@ -236,7 +257,7 @@ void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
             toast.position + sf::Vector2f{14.0F, 12.0F});
     }
 
-    const std::string reminder = "Arrows: move  ·  Space: fire  ·  Esc: menu";
+    const std::string reminder = controlsReminder(singleton<Settings>(world));
     const float reminderWidth = textWidth(assets.body, reminder, 15) + 24.0F;
     box(target, {{20.0F, 668.0F}, {reminderWidth, 32.0F}}, theme::Surface, theme::Hull, 3.0F);
     text(target, assets.body, reminder, 15, theme::Text, {32.0F, 677.0F});
@@ -250,8 +271,60 @@ void drawMenu(sf::RenderTarget& target, const Assets& assets, const Session& ses
     text(target, assets.display, "Menu", 32, theme::Text, {462.0F, 246.0F});
     text(target, assets.body, "The game keeps running for the other players.", 15, theme::Muted,
         {462.0F, 300.0F});
-    widgets::button(target, assets, layout::Resume, "Resume", true, session.focus == 0);
-    widgets::button(target, assets, layout::LeaveGame, "Leave game", false, session.focus == 1);
+    widgets::button(target, assets, layout::Resume, "Resume", true,
+        session.focus == layout::ResumeButton);
+    widgets::button(target, assets, layout::MenuSettings, "Settings", false,
+        session.focus == layout::MenuSettingsButton);
+    widgets::button(target, assets, layout::LeaveGame, "Leave game", false,
+        session.focus == layout::LeaveButton);
+}
+
+/// One settings row: label on the left, value on the right, focus ring.
+void settingsRow(sf::RenderTarget& target, const Assets& assets, int row, std::string_view label,
+    const std::string& value, bool focused, bool waiting)
+{
+    const sf::FloatRect rect = layout::settingsRow(row);
+    box(target, rect, theme::Surface, focused ? theme::Blue : theme::HullLight, focused ? 4.0F : 2.0F);
+    text(target, assets.bodyBold, label, 17, theme::Text,
+        {rect.position.x + 16.0F, rect.position.y + 14.0F});
+    const unsigned size = 17;
+    const float width = textWidth(assets.bodyBold, value, size);
+    text(target, assets.bodyBold, value, size, waiting ? theme::Blue : theme::Text,
+        {rect.position.x + rect.size.x - 16.0F - width, rect.position.y + 14.0F});
+}
+
+void drawSettings(sf::RenderTarget& target, const Assets& assets, const Session& session,
+    const Settings& settings)
+{
+    box(target, {{0.0F, 0.0F}, {theme::UiWidth, theme::UiHeight}}, theme::Overlay, theme::Overlay,
+        0.0F);
+    box(target, layout::SettingsPanel, theme::Surface, theme::Hull, 4.0F, true);
+    text(target, assets.display, "Settings", 32, theme::Text, {372.0F, 70.0F});
+
+    settingsRow(target, assets, layout::VolumeRow, "Sound effects",
+        settings.volume == 0 ? "< Muted >" : "< " + std::to_string(settings.volume) + " % >",
+        session.focus == layout::VolumeRow, false);
+
+    constexpr std::array<std::string_view, ActionCount> actions{
+        "Move up", "Move down", "Move left", "Move right", "Fire",
+    };
+    for (std::size_t action = 0; action < ActionCount; ++action) {
+        const int row = layout::FirstKeyRow + static_cast<int>(action);
+        const bool waiting = session.capturing == static_cast<Action>(action);
+        const std::string key = waiting ? "Press a key (Esc: cancel)"
+                                        : "[ " + std::string(keyName(settings.keys.at(action)).value_or("?")) + " ]";
+        settingsRow(target, assets, row, actions.at(action), key, session.focus == row, waiting);
+    }
+    widgets::button(target, assets, layout::settingsRow(layout::ResetRow), "Reset controls", false,
+        session.focus == layout::ResetRow);
+    widgets::button(target, assets, layout::settingsRow(layout::BackRow), "Back", true,
+        session.focus == layout::BackRow);
+
+    if (!settings.saveError.empty()) {
+        errorBox(target, assets, {{372.0F, 590.0F}, {536.0F, 40.0F}}, settings.saveError);
+    }
+    text(target, assets.body, "Up/Down: choose  ·  Left/Right: volume  ·  Enter: change  ·  Esc: back",
+        15, theme::Muted, {372.0F, 642.0F});
 }
 
 void drawGameOver(sf::RenderTarget& target, const Assets& assets, const Session& session)
@@ -279,11 +352,11 @@ void drawGameOver(sf::RenderTarget& target, const Assets& assets, const Session&
     constexpr float Gap = 24.0F;
     constexpr float GridWidth = 740.0F;
     const float count = static_cast<float>(std::max<std::size_t>(crew.size(), 1));
-    const float width = (GridWidth - Gap * (count - 1.0F)) / count;
+    const float width = (GridWidth - (Gap * (count - 1.0F))) / count;
     for (std::size_t n = 0; n < crew.size(); ++n) {
         const std::size_t i = crew.at(n);
         const sf::FloatRect card{
-            {270.0F + static_cast<float>(n) * (width + Gap), 412.0F}, {width, 160.0F}};
+            {270.0F + (static_cast<float>(n) * (width + Gap)), 412.0F}, {width, 160.0F}};
         box(target, card, theme::Surface, theme::Hull, 4.0F, true);
         cardHead(target, assets, {card.position, {width, 52.0F}}, i, true, false);
         widgets::ship(target, assets,
@@ -323,6 +396,9 @@ void InterfaceSystem::update(ecs::World& world, const ecs::Time& time)
     case Screen::GameOver:
         drawGameOver(_window, _assets, session);
         break;
+    }
+    if (session.settingsOpen) {
+        drawSettings(_window, _assets, session, singleton<Settings>(world));
     }
     _window.display();
 }
