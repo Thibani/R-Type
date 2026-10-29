@@ -15,10 +15,14 @@ Checks: >
   performance-*,
   readability-*,
   -readability-magic-numbers,
-  -readability-identifier-length
+  -readability-identifier-length,
+  -readability-trailing-comma
 
 WarningsAsErrors: ''
 HeaderFilterRegex: '(src|app|tests)/.*'
+# Third-party headers fetched by CPM (SFML, Asio, GoogleTest) live in
+# build/*/_deps/<name>-src/: their paths match "src/" above. Needs clang-tidy 19+.
+ExcludeHeaderFilterRegex: '.*/_deps/.*'
 FormatStyle: file
 
 CheckOptions:
@@ -39,3 +43,5 @@ CheckOptions:
   - { key: readability-identifier-naming.StaticConstantCase,     value: CamelCase  }
   - { key: readability-identifier-naming.GlobalConstantCase,     value: CamelCase  }
   - { key: readability-identifier-naming.LocalConstantCase,      value: camelBack  }
+  # GoogleTest's EXPECT_*/ASSERT_* expand to branches: count only real ones
+  - { key: readability-function-cognitive-complexity.IgnoreMacros, value: true    }

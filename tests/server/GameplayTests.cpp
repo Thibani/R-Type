@@ -205,7 +205,7 @@ TEST(Gameplay, BydosEnterFromTheRightAtTheSpawnRate)
     Game game;
     (void)game.join(0);
 
-    game.seconds(game::bydo::SpawnInterval * 3.0F + Step);
+    game.seconds((game::bydo::SpawnInterval * 3.0F) + Step);
 
     const auto bydos = game.all<Bydo>();
     EXPECT_EQ(bydos.size(), 3U);
@@ -234,7 +234,7 @@ TEST(Gameplay, BydoFliesLeftInAWave)
     }
 
     const auto& position = game.world.getComponent<game::Position>(bydo);
-    EXPECT_NEAR(position.x, game::arena::Width + game::bydo::HalfWidth - 3.0F * game::bydo::Speed,
+    EXPECT_NEAR(position.x, game::arena::Width + game::bydo::HalfWidth - (3.0F * game::bydo::Speed),
         2.0F);
     EXPECT_NEAR(maxY - 540.0F, game::bydo::WaveAmplitude, 5.0F);
     EXPECT_NEAR(540.0F - minY, game::bydo::WaveAmplitude, 5.0F);
@@ -310,7 +310,7 @@ TEST(Gameplay, ThreeHitsKillTheShipWhichComesBackLater)
     const ecs::Entity player = game.join(0);
     const ecs::Entity ship = game.shipOf(0);
 
-    for (int hit = 0; hit < game::ship::MaxHealth; ++hit) {
+    for (std::uint8_t hit = 0; hit < game::ship::MaxHealth; ++hit) {
         const auto position = game.world.getComponent<game::Position>(ship);
         (void)enemyMissile(game.world, position);
         game.steps(1);
@@ -418,7 +418,7 @@ TEST(Gameplay, ShipDeathIsSentAsPlayerDied)
     (void)queued(game.world, player);
     const ecs::Entity ship = game.shipOf(0);
 
-    for (int hit = 0; hit < game::ship::MaxHealth; ++hit) {
+    for (std::uint8_t hit = 0; hit < game::ship::MaxHealth; ++hit) {
         const auto position = game.world.getComponent<game::Position>(ship);
         (void)enemyMissile(game.world, position);
         game.steps(1);

@@ -20,7 +20,7 @@ void BydoSpawnSystem::update(ecs::World& world, const ecs::Time& time)
         return; // Nobody to fight: the arena stays empty
     }
 
-    BydoSpawner& spawner = singleton<BydoSpawner>(world);
+    auto& spawner = singleton<BydoSpawner>(world);
     spawner.untilNext -= time.deltaSeconds();
     if (spawner.untilNext > 0.0F) {
         return;

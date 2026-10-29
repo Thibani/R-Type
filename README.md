@@ -20,7 +20,7 @@ reusable Entity-Component-System (ECS) game engine.
 | Ninja        | any             | Required by the CMake presets (bundled with VS)    |
 | Git          | any             | Also used by CMake to fetch dependencies           |
 
-Optional, for code quality: `clang-format` and `clang-tidy`.
+Optional, for code quality: `clang-format` and `clang-tidy` (19 or newer: older versions cannot parse `std::expected`, and the config uses `ExcludeHeaderFilterRegex`).
 
 On Linux, the client (SFML) also needs the X11, OpenGL and udev headers:
 `sudo apt install libx11-dev libxrandr-dev libxcursor-dev libxi-dev libudev-dev libgl-dev`.

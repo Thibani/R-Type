@@ -21,6 +21,8 @@ CPMAddPackage(
 add_library(rtype_client
     ClientOptions.hpp
     ClientOptions.cpp
+    Settings.hpp
+    Settings.cpp
     Singleton.hpp
     Replication.hpp
     Replication.cpp
@@ -37,6 +39,7 @@ add_library(rtype_client
     Components/Session.hpp
     Components/Controls.hpp
     Components/SoundEvent.hpp
+    Components/Settings.hpp
 
     Systems/InputSystem.hpp
     Systems/InputSystem.cpp
@@ -50,6 +53,8 @@ add_library(rtype_client
     Systems/InputTickSystem.cpp
     Systems/NetSendSystem.hpp
     Systems/NetSendSystem.cpp
+    Systems/SettingsSystem.hpp
+    Systems/SettingsSystem.cpp
     Systems/AudioSystem.hpp
     Systems/AudioSystem.cpp
     Systems/RenderSystem.hpp

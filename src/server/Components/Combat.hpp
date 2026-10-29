@@ -62,7 +62,8 @@ struct Bydo {
 /// singleton entity. Seeded once: the same seed gives the same waves.
 struct BydoSpawner {
     float untilNext{game::bydo::SpawnInterval}; // The players get a moment first
-    std::minstd_rand random{0x52545950}; // "RTYP"
+    // Fixed on purpose: the same seed gives the same waves (tests, replays)
+    std::minstd_rand random{0x52545950}; // NOLINT(bugprone-random-generator-seed) "RTYP"
 };
 
 /// The shared team score, on a singleton entity. Sent in GAME_STATE.
