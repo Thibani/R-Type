@@ -22,6 +22,7 @@ Technology choices: [`docs/technical-study/client.md`](../../docs/technical-stud
 |------------------------------------|------------------------------------------------------------|
 | `main.cpp`                         | Entry point: options, assets, socket, window, World, loop  |
 | `ClientOptions.hpp`                | Command line parsing (`-s`, `-p`, `-n`, `-h`)               |
+| `Settings.hpp`                     | Settings file (read, write, where it lives), key names, `bindKey()` |
 | `ClientSystems.hpp`                | `installSystems()`: every system, in order                 |
 | `Network/ServerConnection.hpp`     | Session with the server: connect, retries, heartbeat, timeout |
 | `Replication.hpp`                  | Server payloads → entities and `Session` (no window, testable) |
@@ -32,6 +33,7 @@ Technology choices: [`docs/technical-study/client.md`](../../docs/technical-stud
 | `Components/Session.hpp`           | Current screen, form, players, score, notices              |
 | `Components/Controls.hpp`          | `PlayerControls` (keys held), `InputHistory` (last 8 ticks)|
 | `Components/SoundEvent.hpp`        | A sound to play this frame                                 |
+| `Components/Settings.hpp`          | `Settings` (volume, key bindings), `Action`                |
 | `Ui/`                              | Hangar theme, screen layout, drawing helpers, letterboxing |
 
 Everything except `main.cpp` is the `rtype_client` library, so the tests can
@@ -48,7 +50,8 @@ simulation    MotionSystem        Position += Velocity × step  (between snapsho
 (60 Hz)       StarfieldSystem     stars leaving on the left come back on the right
               InputTickSystem     keys of this tick → InputHistory
 frameEnd()    NetSendSystem       connect / leave requests, INPUT, retries, heartbeat
-              AudioSystem         SoundEvent → sound
+              SettingsSystem      Settings changed → saved to the settings file
+              AudioSystem         SoundEvent → sound, at the settings' volume
               RenderSystem        arena: starfield, then Position + Appearance
               InterfaceSystem     current screen / HUD, then display
 ```
@@ -70,6 +73,42 @@ other, they share components. `RenderSystem` only reads `Position` and
 
 Esc opens the in-game menu (the game keeps running) or leaves the other
 screens. Players are told apart by colour, pattern and P1-P4 tag.
+
+**Settings** open over the connection form (Settings button) or over the game
+(Esc menu → Settings; the game keeps running). Up/Down choose a row,
+Left/Right change the volume, Enter changes a key: press the new key, or Esc
+to cancel. A key already used by another action is swapped with it. Changes
+apply at once and are saved.
+
+---
+
+## Settings file
+
+Plain `key = value` text, saved whenever a setting changes:
+
+```ini
+# R-Type client settings
+volume = 80
+key.up = Up
+key.down = Down
+key.left = Left
+key.right = Right
+key.fire = Space
+```
+
+| System  | Location                                                        |
+|---------|-----------------------------------------------------------------|
+| Linux   | `$XDG_CONFIG_HOME/r-type/settings.cfg`, else `~/.config/r-type/settings.cfg` |
+| Windows | `%APPDATA%\R-Type\settings.cfg`                                 |
+
+- Reading never fails: a missing file gives the defaults, unknown keys are
+  ignored, a bad value keeps its default, two actions on one key reset the
+  controls.
+- Writing goes to `settings.cfg.tmp`, then a rename: a crash never leaves a
+  half-written file. If it fails, the settings screen says why.
+- Key names are the ones of `keyName()` (`A`–`Z`, `Num0`–`Num9`,
+  `Numpad0`–`Numpad9`, arrows, `Space`, `Enter`, `LShift`, ...). Escape
+  cannot be bound: it is the menu key.
 
 ---
 
@@ -111,6 +150,18 @@ screens. Players are told apart by colour, pattern and P1-P4 tag.
    `session.screen` where it starts (usually in `Replication.cpp`).
 2. Draw it: a `draw…()` function and a `case` in `InterfaceSystem.cpp`.
 3. Handle its keys and clicks: a `case` in `InputSystem.cpp`.
+
+### Add a setting
+
+1. Add the field, with its default, to `Settings` (`Components/Settings.hpp`).
+2. Read and write it in `parseSettings()` / `formatSettings()`
+   (`Settings.cpp`), as a new `key = value` line; a bad value keeps the
+   default.
+3. Add a row: a constant in `Ui/Layout.hpp` (before `ResetRow`), its drawing
+   in `drawSettings()` and its keys in `activateSettings()` / `onKey()`.
+4. Set `settings.dirty = true` when it changes: `SettingsSystem` saves it.
+5. Use it where it matters (like `AudioSystem` reads `volume`), and test the
+   file round trip in `tests/client/SettingsTests.cpp`.
 
 ### Add a system
 

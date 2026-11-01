@@ -8,6 +8,8 @@ rtype_add_test(server_tests
         GameStateTests.cpp
         PlayerMovementTests.cpp
         GameplayTests.cpp
+        EnemyTests.cpp
+        WaveTests.cpp
     LIBRARIES
         rtype::server
 )

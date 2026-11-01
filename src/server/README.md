@@ -14,7 +14,8 @@ clients comply with.
 | `Components/NetClient.hpp`          | A connected player's session; `Disconnecting`            |
 | `Components/ClientMessage.hpp`      | A game payload from a connected player                   |
 | `Components/Player.hpp`             | `PlayerInput`, `RespawnTimer` (on the player), `PlayerShip` (on the ship) |
-| `Components/Combat.hpp`             | Combat as data: `Weapon`, `Projectile`, `Trigger`, `Damage`, `ScoreValue`; `EnemySpawner`, `TeamScore` |
+| `Components/Combat.hpp`             | Combat as data: `Weapon`, `Projectile`, `Trigger`, `Damage`, `ScoreValue`; `TeamScore` |
+| `Components/Waves.hpp`              | The endless mode's state: `RunProgress` (time, level), `WaveDirector` (next arrival, pending members) |
 | `Components/Behaviour.hpp`          | Enemy behaviours as data: `Enemy`, `WaveFlight`, `Seeker`, `AimsAtShips` |
 | `Components/NetEntity.hpp`          | `NetEntity` (network id), `NetIdCounter`, `SimulationTick`, `LastSnapshot` |
 | `Singleton.hpp`                     | `singleton<T>(world)`: state shared by several systems   |
@@ -28,7 +29,8 @@ clients comply with.
 | `Systems/PlayerShipSystem.hpp`      | One ship per connected player, back 3 s after its death  |
 | `Systems/TickSystem.hpp`            | Counts simulation steps                                  |
 | `Systems/PlayerControlSystem.hpp`   | `PlayerInput` → ship `Velocity` (normalised diagonals)   |
-| `Systems/EnemySpawnSystem.hpp`      | A random enemy from the right every 1.5 s, while ships exist |
+| `Systems/ProgressSystem.hpp`        | Seconds played (while ships exist) → level of the run    |
+| `Systems/WaveSystem.hpp`            | Endless enemies and formations from the right, faster each level |
 | `Systems/WaveFlightSystem.hpp`      | `WaveFlight` enemies fly left in a wave                  |
 | `Systems/SeekerSystem.hpp`          | `Seeker` enemies fly left, steering towards a ship       |
 | `Systems/AimSystem.hpp`             | `AimsAtShips` enemies pull their trigger, aimed at the nearest ship |
@@ -76,7 +78,8 @@ frameStart()  NetReceiveSystem        network thread inbox → ReceivedPacket / 
               PlayerShipSystem        one ship per connected player, after its respawn delay
 simulation    TickSystem              SimulationTick + 1, first of every step
               PlayerControlSystem     PlayerInput → ship Velocity, FIRE → ship Trigger
-              EnemySpawnSystem        a random enemy enters from the right every 1.5 s
+              ProgressSystem          seconds played (while ships exist) → level
+              WaveSystem              an enemy or a formation from the right, faster each level
               WaveFlightSystem        WaveFlight Velocity: left, in a wave
               SeekerSystem            Seeker Velocity: left, steering towards a ship
               AimSystem               AimsAtShips Trigger: pulled on screen, aimed at the nearest ship
@@ -186,20 +189,40 @@ Everything that moves is a networked entity made by `Spawn.hpp`, so
 The rules (speeds, sizes, rates, points) are constants in `src/game/Ship.hpp`,
 `src/game/Bydo.hpp` and `src/game/Enemies.hpp`, shared with the client.
 
-**The enemies.** `EnemySpawnSystem` draws one every 1.5 s, weighted so that
-small enemies are common and heavy ones rare:
+**The enemies.**
 
-| Enemy     | Kind        | Behaviours (`Behaviour.hpp`)   | Weapon                    | HP | Points | Ram    | Drawn |
-|-----------|-------------|--------------------------------|---------------------------|---:|-------:|--------|------:|
-| Bydo      | `BYDO`      | `WaveFlight`, `AimsAtShips`    | `BydoCannon`: 1 missile   |  1 |    100 | 1, dies | 40 % |
-| Pata-Pata | `PATA_PATA` | `WaveFlight` (fast, wide)      | –                         |  1 |     50 | 1, dies | 25 % |
-| Bug       | `BUG`       | `Seeker`                       | –                         |  1 |    150 | 1, dies | 20 % |
-| Cancer    | `CANCER`    | `WaveFlight` (slow), `AimsAtShips` | `CancerFan`: 3 missiles |  3 |    300 | 1, dies | 10 % |
-| Cruiser   | `CRUISER`   | none: straight, very slow      | `CruiserBattery`: 5 missiles | 15 | 1000 | 3, survives | 5 % |
+| Enemy     | Kind        | Behaviours (`Behaviour.hpp`)   | Weapon                    | HP | Points | Ram    | From level |
+|-----------|-------------|--------------------------------|---------------------------|---:|-------:|--------|-----------:|
+| Bydo      | `BYDO`      | `WaveFlight`, `AimsAtShips`    | `BydoCannon`: 1 missile   |  1 |    100 | 1, dies | 1 |
+| Pata-Pata | `PATA_PATA` | `WaveFlight` (fast, wide)      | –                         |  1 |     50 | 1, dies | 1 |
+| Bug       | `BUG`       | `Seeker`                       | –                         |  1 |    150 | 1, dies | 2 |
+| Cancer    | `CANCER`    | `WaveFlight` (slow), `AimsAtShips` | `CancerFan`: 3 missiles |  3 |    300 | 1, dies | 3 |
+| Cruiser   | `CRUISER`   | none: straight, very slow      | `CruiserBattery`: 5 missiles | 15 | 1000 | 3, survives | 4 |
 
 Each one is a `spawn…()` function in `Spawn.cpp` that combines the same
 components; no system knows the kinds. Enemies only fire once inside the
 arena (`AimSystem`).
+
+**Endless waves.** The run is split into levels of 30 s of play
+(`game/Waves.hpp`; the clock stops while no ship is in the game).
+`WaveSystem` brings an *arrival* every `spawnInterval(level)` seconds (1.6 s
+at level 1, × 0.88 per level, 0.5 s at least). An arrival is one enemy, or a
+**formation** with probability `formationChance(level)` (10 % per level, 50 %
+at most):
+
+| Formation      | Members                                   | From level |
+|----------------|-------------------------------------------|-----------:|
+| Pata-Pata line | 5 Pata-Patas in single file               | 1 |
+| Bydo V         | 5 Bydos in a V                            | 2 |
+| Bug rush       | 4 Bugs from different heights             | 3 |
+| Cancer pair    | 2 Cancers side by side                    | 4 |
+| Escort         | a Cruiser and 2 Cancers                   | 5 |
+
+A single enemy is drawn among the unlocked ones with weight
+`weight + growth × (level − unlock)`: Bugs, Cancers and Cruisers grow more
+common as the levels go by. Both tables are in `WaveSystem.cpp`; the next
+members of a formation wait in `WaveDirector::pending`. The random source is
+seeded once, so the same seed gives the same waves.
 
 **Combat is data, not code.** Systems work on components, never on entity
 types, so new content needs no new system:

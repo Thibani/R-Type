@@ -2,11 +2,9 @@
 
 #include "game/Components/Collision.hpp"
 #include "game/Components/Motion.hpp"
-#include "game/Enemies.hpp"
 #include "network/Protocol/Protocol.hpp"
 
 #include <cstdint>
-#include <random>
 
 /// Combat as data: what shoots, what it fires, what hurts and what it is
 /// worth. Systems read these components whatever the entity is (ship, enemy,
@@ -56,14 +54,6 @@ struct Damage {
 /// Team score earned when this entity is killed.
 struct ScoreValue {
     std::uint32_t points{};
-};
-
-/// When the next enemy appears, and the random source for which one and
-/// where, on a singleton entity. Seeded once: the same seed gives the same
-/// waves.
-struct EnemySpawner {
-    float untilNext{game::enemies::SpawnInterval}; // The players get a moment first
-    std::minstd_rand random{0x52545950}; // "RTYP"
 };
 
 /// The shared team score, on a singleton entity. Sent in GAME_STATE.

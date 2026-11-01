@@ -63,7 +63,8 @@ Combat is data (`src/server/Components/Combat.hpp`):
    `Trigger` (when and where to shoot) or the `Velocity` (how to move), like
    `AimSystem`, `WaveFlightSystem` and `SeekerSystem`, driven by a component
    of `src/server/Components/Behaviour.hpp`. Then add the enemy to the spawn
-   table of `EnemySpawnSystem.cpp`, and its sprite to the client.
+   table of `WaveSystem.cpp` (from which level, how often), and its sprite
+   to the client.
 
 `WeaponSystem` fires every pulled trigger and `DamageSystem` applies every
 `Damage`, whatever the entity is.

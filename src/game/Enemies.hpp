@@ -15,14 +15,6 @@
 /// | Cruiser  | very slowly left             | 5 missiles, aimed fan      | 15 |   1000 |
 namespace game {
 
-/// Spawning, for every kind of enemy.
-namespace enemies {
-
-/// A new enemy enters from the right every `SpawnInterval` seconds.
-inline constexpr float SpawnInterval = 1.5F;
-
-} // namespace enemies
-
 /// Small spinning drone: fast, erratic, harmless unless it rams a ship.
 namespace patapata {
 

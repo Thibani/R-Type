@@ -101,6 +101,20 @@ const sf::SoundBuffer& Assets::sound(Sound sound) const
     return sounds.at(static_cast<std::size_t>(sound));
 }
 
+namespace {
+
+/// The `size` rectangle at `corner` in `texture`, enlarged `scale` times.
+SpriteFrame frame(const sf::Texture& texture, sf::Vector2i corner, sf::Vector2i size, float scale,
+    bool mirrored = false)
+{
+    return SpriteFrame{.texture = &texture,
+        .rect = sf::IntRect(corner, size),
+        .scale = scale,
+        .mirrored = mirrored};
+}
+
+} // namespace
+
 std::optional<SpriteFrame> spriteFrame(const Assets& assets, Look look, std::uint8_t player)
 {
     switch (look) {
@@ -108,23 +122,23 @@ std::optional<SpriteFrame> spriteFrame(const Assets& assets, Look look, std::uin
         // Rows of r-typesheet42: light blue, pink, green, red (then blue, unused).
         // Column 2 is the ship flying level. 33 × 17 × 2 ≈ the server's 64 × 32 hitbox.
         const int row = player < theme::Players.size() ? player : 0;
-        return SpriteFrame{&assets.ships, sf::IntRect({66, row * 17}, {33, 17}), 2.0F};
+        return frame(assets.ships, {66, row * 17}, {33, 17}, 2.0F);
     }
     case Look::Bydo:
-        return SpriteFrame{&assets.bydos, sf::IntRect({5, 6}, {21, 24}), 2.5F};
+        return frame(assets.bydos, {5, 6}, {21, 24}, 2.5F);
     case Look::PlayerMissile:
-        return SpriteFrame{&assets.missiles, sf::IntRect({249, 105}, {16, 8}), 2.0F};
+        return frame(assets.missiles, {249, 105}, {16, 8}, 2.0F);
     case Look::EnemyMissile:
-        return SpriteFrame{&assets.missiles, sf::IntRect({243, 277}, {12, 10}), 2.0F};
+        return frame(assets.missiles, {243, 277}, {12, 10}, 2.0F);
     // Enemies: the sprite is about the size of the server's hitbox (game/Enemies.hpp)
     case Look::PataPata: // 22 × 22 × 2 = 44: hitbox 40 × 40
-        return SpriteFrame{&assets.pataPatas, sf::IntRect({7, 7}, {22, 22}), 2.0F};
+        return frame(assets.pataPatas, {7, 7}, {22, 22}, 2.0F);
     case Look::Bug: // Head first, flying left. 16 × 9 × 3: hitbox 44 × 24
-        return SpriteFrame{&assets.bugs, sf::IntRect({324, 12}, {16, 9}), 3.0F};
+        return frame(assets.bugs, {324, 12}, {16, 9}, 3.0F);
     case Look::Cancer: // Facing the player. 24 × 21 × 2.5: hitbox 56 × 48
-        return SpriteFrame{&assets.cancers, sf::IntRect({103, 6}, {24, 21}), 2.5F};
+        return frame(assets.cancers, {103, 6}, {24, 21}, 2.5F);
     case Look::Cruiser: // Drawn facing right in the sheet. 48 × 48 × 2.5: hitbox 108 × 108
-        return SpriteFrame{&assets.cruisers, sf::IntRect({9, 9}, {48, 48}), 2.5F, true};
+        return frame(assets.cruisers, {9, 9}, {48, 48}, 2.5F, true);
     case Look::Unknown:
         break;
     }

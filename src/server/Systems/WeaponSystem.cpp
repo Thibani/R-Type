@@ -19,8 +19,10 @@ game::Velocity rotated(const game::Velocity& direction, float radians) noexcept
 {
     const float cos = std::cos(radians);
     const float sin = std::sin(radians);
-    return {.dx = direction.dx * cos - direction.dy * sin,
-        .dy = direction.dx * sin + direction.dy * cos};
+    return {
+        .dx = (direction.dx * cos) - (direction.dy * sin),
+        .dy = (direction.dx * sin) + (direction.dy * cos),
+    };
 }
 
 } // namespace

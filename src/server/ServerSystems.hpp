@@ -31,7 +31,8 @@ void installSystems(ecs::World& world, ecs::GameLoop& loop, network::NetworkThre
 ///
 ///     TickSystem            SimulationTick + 1, first of every step
 ///     PlayerControlSystem   PlayerInput → ship Velocity, FIRE → ship Trigger
-///     EnemySpawnSystem      a random enemy from the right every 1.5 s, while ships exist
+///     ProgressSystem        seconds played (while ships exist) → level of the run
+///     WaveSystem            enemies and formations from the right, faster each level
 ///     WaveFlightSystem      WaveFlight Velocity: left, in a wave (Bydo, PataPata, Cancer)
 ///     SeekerSystem          Seeker Velocity: left, steering towards a ship (Bug)
 ///     AimSystem             AimsAtShips Trigger: pulled on screen, aimed at the nearest ship

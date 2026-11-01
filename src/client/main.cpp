@@ -4,7 +4,9 @@
 #include "client/ClientOptions.hpp"
 #include "client/ClientSystems.hpp"
 #include "client/Components/Session.hpp"
+#include "client/Components/Settings.hpp"
 #include "client/Network/ServerConnection.hpp"
+#include "client/Settings.hpp"
 #include "client/Singleton.hpp"
 #include "client/Systems/StarfieldSystem.hpp"
 #include "ecs/Loop/GameLoop.hpp"
@@ -53,12 +55,16 @@ int run(const char* programPath, std::span<const std::string_view> arguments)
 
     ecs::World world;
     ecs::GameLoop loop(world); // Client settings: 60 Hz steps, no sleeping
-    client::Session& session = client::singleton<client::Session>(world);
+    auto& session = client::singleton<client::Session>(world);
     session.name = options->name;
     session.address = options->host;
     session.port = std::to_string(options->port);
+    // The player's settings (volume, key bindings), or the defaults on first start
+    const auto settingsFile = client::settingsPath();
+    client::singleton<client::Settings>(world)
+        = settingsFile ? client::loadSettings(*settingsFile) : client::Settings{};
     client::spawnStarfield(world);
-    client::installSystems(world, loop, window, *connection, assets);
+    client::installSystems(world, loop, window, *connection, assets, settingsFile);
 
     loop.run(); // Until the window is closed or Quit is chosen
 

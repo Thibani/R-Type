@@ -9,16 +9,21 @@ disabilities.
 
 | Action            | Key                         |
 |-------------------|-----------------------------|
-| Move              | Arrow keys (diagonals allowed) |
-| Fire              | Space, **held** (auto-fire)  |
-| Menu / back       | Esc                          |
+| Move              | Arrow keys by default (diagonals allowed) |
+| Fire              | Space by default, **held** (auto-fire) |
+| Menu / back       | Esc (fixed)                  |
 | Connect           | Enter, on the connection form |
+
+Moving and firing can be bound to any key in the settings (connection
+screen → Settings, or Esc → Settings in game). Menus always use the arrows,
+Tab, Enter and Esc, so a player can never lock themselves out.
 
 ## Physical and motor
 
 | What we do | Why it helps |
 |------------|--------------|
 | **Hold to fire.** Holding Space fires one missile every 0.25 s; the server sets the rate, so tapping fast gives no advantage | No rapid repeated presses, which are tiring or impossible for many players |
+| **Customizable controls.** Select an action in the settings and press the new key; a key already used is swapped, and "Reset controls" restores the defaults. Saved for the next start | Players choose the keys they can reach: one hand, left-handed layouts, adapted keyboards |
 | **Keys are states, not events.** The client sends which keys are held 60 times per second, and every packet repeats the last 8 ticks | A key held a bit too long or too short does not matter, and a lost packet never drops an action |
 | **Few keys, all on the keyboard.** Arrows, Space, Esc, Enter; no mouse needed in game | Playable with one hand, or with keyboard-emulating devices |
 | **Generous rules.** 3 hit points, and a destroyed ship comes back after 3 s, again and again | A mistake does not end the game |
@@ -28,6 +33,7 @@ disabilities.
 
 | What we do | Why it helps |
 |------------|--------------|
+| **Volume control.** Sound effects from 0 (muted) to 100 %, in the settings, saved for the next start | Comfort for sound-sensitive players; muting never hides information (see below) |
 | **No information is only audible.** Every sound (shot, explosion, death) comes from a server event that is also shown on screen (a missile appears, the Bydo or ship disappears, "P1 is down") | Deaf and hard-of-hearing players miss nothing |
 | **Players told apart by colour, pattern and a P1–P4 tag**, never by colour alone | Colour-blind players can tell the four ships apart |
 | **The window scales** to any size, with letterboxing that keeps the proportions | Large screens and zoomed displays work |
@@ -55,8 +61,7 @@ disabilities.
 
 | Need | Plan |
 |------|------|
-| Remapping keys, gamepad support | Key bindings stored in a settings file, editable in the menu |
-| Volume and mute settings | Separate music / effects sliders in the menu |
+| Gamepad support | Remappable gamepad buttons (#125) |
 | Adjustable game speed or difficulty | Server-side rules (#87, game modes) |
 | Larger text, high-contrast theme | Interface scale and theme options |
 | Visual cue for incoming fire | Highlight Bydos about to shoot |

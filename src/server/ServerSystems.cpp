@@ -11,12 +11,12 @@
 #include "server/Systems/ConnectionSystem.hpp"
 #include "server/Systems/DamageSystem.hpp"
 #include "server/Systems/DiscardPacketsSystem.hpp"
-#include "server/Systems/EnemySpawnSystem.hpp"
 #include "server/Systems/InputSystem.hpp"
 #include "server/Systems/NetReceiveSystem.hpp"
 #include "server/Systems/NetSendSystem.hpp"
 #include "server/Systems/PlayerControlSystem.hpp"
 #include "server/Systems/PlayerShipSystem.hpp"
+#include "server/Systems/ProgressSystem.hpp"
 #include "server/Systems/ReplicationSystem.hpp"
 #include "server/Systems/SeekerSystem.hpp"
 #include "server/Systems/SessionCleanupSystem.hpp"
@@ -25,6 +25,7 @@
 #include "server/Systems/TickSystem.hpp"
 #include "server/Systems/TimeoutSystem.hpp"
 #include "server/Systems/WaveFlightSystem.hpp"
+#include "server/Systems/WaveSystem.hpp"
 #include "server/Systems/WeaponSystem.hpp"
 
 namespace server {
@@ -35,7 +36,8 @@ void installSimulation(ecs::World& world)
 
     world.systems().add<TickSystem>();
     world.systems().add<PlayerControlSystem>();
-    world.systems().add<EnemySpawnSystem>();
+    world.systems().add<ProgressSystem>();
+    world.systems().add<WaveSystem>();
     world.systems().add<WaveFlightSystem>();
     world.systems().add<SeekerSystem>();
     world.systems().add<AimSystem>();

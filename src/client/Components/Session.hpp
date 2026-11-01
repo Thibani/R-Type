@@ -1,5 +1,6 @@
 #pragma once
 
+#include "client/Components/Settings.hpp"
 #include "network/Protocol/Protocol.hpp"
 
 #include <array>
@@ -38,6 +39,8 @@ struct Session {
     Request request{Request::None};
     int focus{0}; // Focused field or button of the current screen
     bool menuOpen{false}; // Esc menu over the game
+    bool settingsOpen{false}; // Settings over the current screen (connection form or game)
+    std::optional<Action> capturing; // Settings: waiting for the key to bind to this action
 
     // Connection form
     std::string name;

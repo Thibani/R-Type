@@ -8,6 +8,7 @@
 
 #include <asio/ip/address_v4.hpp>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstddef>
@@ -85,7 +86,7 @@ std::vector<std::vector<std::byte>> receiveOnSocket(UdpSocket& socket, std::size
     return received;
 }
 
-const std::vector<std::byte> Hello{std::byte{'h'}, std::byte{'i'}};
+constexpr std::array Hello{std::byte{'h'}, std::byte{'i'}};
 
 } // namespace
 
@@ -119,7 +120,7 @@ TEST(NetworkThread, ReceivedDatagramsWaitForTheGameThread)
     }));
 
     ASSERT_EQ(received.size(), 1U);
-    EXPECT_EQ(received[0].bytes, Hello);
+    EXPECT_TRUE(std::ranges::equal(received[0].bytes, Hello));
     EXPECT_EQ(received[0].from.port(), client.localEndpoint()->port());
     EXPECT_TRUE(network->takeReceived().empty()); // Taken once only
 }
@@ -133,7 +134,7 @@ TEST(NetworkThread, SendReachesThePeer)
 
     const auto received = receiveOnSocket(client, 1);
     ASSERT_EQ(received.size(), 1U);
-    EXPECT_EQ(received[0], Hello);
+    EXPECT_TRUE(std::ranges::equal(received[0], Hello));
 }
 
 TEST(NetworkThread, QueuedSendsLeaveBeforeTheThreadStops)

@@ -24,6 +24,7 @@ add_library(rtype_server
     Components/NetEntity.hpp
     Components/Combat.hpp
     Components/Behaviour.hpp
+    Components/Waves.hpp
     Spawn.hpp
     Spawn.cpp
 
@@ -47,8 +48,10 @@ add_library(rtype_server
     Systems/TickSystem.cpp
     Systems/PlayerControlSystem.hpp
     Systems/PlayerControlSystem.cpp
-    Systems/EnemySpawnSystem.hpp
-    Systems/EnemySpawnSystem.cpp
+    Systems/ProgressSystem.hpp
+    Systems/ProgressSystem.cpp
+    Systems/WaveSystem.hpp
+    Systems/WaveSystem.cpp
     Systems/WaveFlightSystem.hpp
     Systems/WaveFlightSystem.cpp
     Systems/SeekerSystem.hpp

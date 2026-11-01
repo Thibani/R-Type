@@ -378,7 +378,7 @@ TEST(GameState, EmptySnapshotStillHasOnePart)
 
 TEST(GameState, LargeSnapshotIsSplit)
 {
-    std::vector<EntityState> entities(MaxSnapshotEntities * 2 + 1);
+    std::vector<EntityState> entities((MaxSnapshotEntities * 2) + 1);
     for (std::size_t i = 0; i < entities.size(); ++i) {
         entities[i].netId = static_cast<std::uint16_t>(i);
     }
