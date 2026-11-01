@@ -98,13 +98,17 @@ enum class GamePhase : std::uint8_t {
     GameOver = 2,
 };
 
-/// Kind of a networked entity. Values 4-255 are reserved for new content:
+/// Kind of a networked entity. Values 8-255 are reserved for new content:
 /// receivers keep unknown kinds as-is instead of rejecting the packet.
 enum class EntityKind : std::uint8_t {
     PlayerShip = 0,
     Bydo = 1,
     PlayerMissile = 2,
     EnemyMissile = 3,
+    PataPata = 4,
+    Bug = 5,
+    Cancer = 6,
+    Cruiser = 7,
 };
 
 /// Bits of an input mask (§4.2).

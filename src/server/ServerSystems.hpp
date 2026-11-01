@@ -31,13 +31,14 @@ void installSystems(ecs::World& world, ecs::GameLoop& loop, network::NetworkThre
 ///
 ///     TickSystem            SimulationTick + 1, first of every step
 ///     PlayerControlSystem   PlayerInput → ship Velocity, FIRE → ship Trigger
-///     BydoSpawnSystem       a Bydo from the right every 1.5 s, while ships exist
-///     BydoMovementSystem    Bydo Velocity: left, in a wave
-///     BydoAimSystem         Bydo Trigger: pulled, aimed at the nearest ship
+///     EnemySpawnSystem      a random enemy from the right every 1.5 s, while ships exist
+///     WaveFlightSystem      WaveFlight Velocity: left, in a wave (Bydo, PataPata, Cancer)
+///     SeekerSystem          Seeker Velocity: left, steering towards a ship (Bug)
+///     AimSystem             AimsAtShips Trigger: pulled on screen, aimed at the nearest ship
 ///     WeaponSystem          pulled Trigger + Weapon ready → projectile
 ///     game::MovementSystem  Position += Velocity × step
 ///     game::ConfinementSystem ships (ConfinedToArena) kept inside the arena
-///     game::ArenaExitSystem missiles and Bydos that left → despawn (OUT_OF_BOUNDS)
+///     game::ArenaExitSystem missiles and enemies that left → despawn (OUT_OF_BOUNDS)
 ///     game::CollisionSystem overlapping hitboxes → CollisionEvent
 ///     DamageSystem          CollisionEvent + Damage → hits, kills, score, respawn timer
 ///     game::DespawnSystem   DespawnRequest → DespawnEvent, entity destroyed

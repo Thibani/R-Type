@@ -60,7 +60,11 @@ std::expected<void, std::string> Assets::load(Assets& assets, const std::filesys
     const std::filesystem::path sprites = folder / "sprites";
     for (const auto& [texture, file] : {std::pair{&assets.ships, "r-typesheet42.gif"},
              std::pair{&assets.bydos, "r-typesheet5.gif"},
-             std::pair{&assets.missiles, "r-typesheet1.gif"}}) {
+             std::pair{&assets.missiles, "r-typesheet1.gif"},
+             std::pair{&assets.pataPatas, "r-typesheet8.gif"},
+             std::pair{&assets.bugs, "r-typesheet16.gif"},
+             std::pair{&assets.cancers, "r-typesheet19.gif"},
+             std::pair{&assets.cruisers, "r-typesheet24.gif"}}) {
         if (!loadTexture(*texture, sprites / file)) {
             return fail(sprites / file);
         }
@@ -112,6 +116,15 @@ std::optional<SpriteFrame> spriteFrame(const Assets& assets, Look look, std::uin
         return SpriteFrame{&assets.missiles, sf::IntRect({249, 105}, {16, 8}), 2.0F};
     case Look::EnemyMissile:
         return SpriteFrame{&assets.missiles, sf::IntRect({243, 277}, {12, 10}), 2.0F};
+    // Enemies: the sprite is about the size of the server's hitbox (game/Enemies.hpp)
+    case Look::PataPata: // 22 × 22 × 2 = 44: hitbox 40 × 40
+        return SpriteFrame{&assets.pataPatas, sf::IntRect({7, 7}, {22, 22}), 2.0F};
+    case Look::Bug: // Head first, flying left. 16 × 9 × 3: hitbox 44 × 24
+        return SpriteFrame{&assets.bugs, sf::IntRect({324, 12}, {16, 9}), 3.0F};
+    case Look::Cancer: // Facing the player. 24 × 21 × 2.5: hitbox 56 × 48
+        return SpriteFrame{&assets.cancers, sf::IntRect({103, 6}, {24, 21}), 2.5F};
+    case Look::Cruiser: // Drawn facing right in the sheet. 48 × 48 × 2.5: hitbox 108 × 108
+        return SpriteFrame{&assets.cruisers, sf::IntRect({9, 9}, {48, 48}), 2.5F, true};
     case Look::Unknown:
         break;
     }

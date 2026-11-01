@@ -38,7 +38,7 @@ void drawEntity(sf::RenderTarget& target, const Assets& assets, const game::Posi
     }
     sf::Sprite sprite(*frame->texture, frame->rect);
     sprite.setOrigin(sf::Vector2f(frame->rect.size) / 2.0F);
-    sprite.setScale({frame->scale, frame->scale});
+    sprite.setScale({frame->mirrored ? -frame->scale : frame->scale, frame->scale});
     sprite.setPosition(centre);
     target.draw(sprite);
 

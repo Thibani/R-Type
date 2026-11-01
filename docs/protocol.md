@@ -348,7 +348,11 @@ enough on the wire. The server keeps the `Entity ↔ netId` mapping.
 | `1`   | BYDO             |
 | `2`   | PLAYER_MISSILE   |
 | `3`   | ENEMY_MISSILE    |
-| `4`–`255` | reserved for new content |
+| `4`   | PATA_PATA        |
+| `5`   | BUG              |
+| `6`   | CANCER           |
+| `7`   | CRUISER          |
+| `8`–`255` | reserved for new content |
 
 A client receiving an unknown kind **MUST NOT** crash. It **SHOULD** display
 a placeholder.

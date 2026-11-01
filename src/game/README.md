@@ -8,7 +8,8 @@ decide, the client to predict).
 |---------------------------------|------------------------------------------------------|
 | `Arena.hpp`                     | Size of the playing field, player spawn points       |
 | `Ship.hpp`                      | Ship speed, size, health (3 hearts), missiles, respawn delay |
-| `Bydo.hpp`                      | Bydo speed, wave, size, health, points, spawn and fire rates |
+| `Bydo.hpp`                      | Bydo speed, wave, size, health, points, fire rate    |
+| `Enemies.hpp`                   | Spawn rate; Pata-Pata, Bug, Cancer, Cruiser rules    |
 | `Components/Health.hpp`         | `Health`: hit points left                            |
 | `Components/Motion.hpp`         | `Position`, `Velocity`                               |
 | `Components/Confinement.hpp`    | `ConfinedToArena`: keeps an entity inside the field  |

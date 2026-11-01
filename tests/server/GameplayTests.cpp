@@ -8,8 +8,10 @@
 #include "game/Bydo.hpp"
 #include "game/Components/Health.hpp"
 #include "game/Components/Motion.hpp"
+#include "game/Enemies.hpp"
 #include "game/Ship.hpp"
 #include "network/Protocol/Packets.hpp"
+#include "server/Components/Behaviour.hpp"
 #include "server/Components/Combat.hpp"
 #include "server/Components/NetClient.hpp"
 #include "server/Components/NetEntity.hpp"
@@ -26,11 +28,14 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <numbers>
+#include <set>
+#include <tuple>
 #include <variant>
 #include <vector>
 
 using namespace network::protocol;
-using server::Bydo;
+using server::Enemy;
 using server::NetEntity;
 using server::PlayerInput;
 using server::PlayerShip;
@@ -189,33 +194,49 @@ TEST(Gameplay, MissileLeavingTheArenaIsDespawned)
     EXPECT_TRUE(game.ofKind(EntityKind::PlayerMissile).empty());
 }
 
-// --- Bydos (#55, #56, #57) -------------------------------------------------------
+// --- Enemies (#55, #56, #57) -----------------------------------------------------
 
-TEST(Gameplay, NoBydoWithoutPlayers)
+namespace {
+
+/// An enemy owned by no player, on the right half of the arena.
+::testing::AssertionResult isEnteringEnemy(ecs::World& world, ecs::Entity entity)
+{
+    const auto& position = world.getComponent<game::Position>(entity);
+    const auto& net = world.getComponent<NetEntity>(entity);
+    const bool notAnEnemy = net.kind == EntityKind::PlayerShip
+        || net.kind == EntityKind::PlayerMissile || net.kind == EntityKind::EnemyMissile;
+    if (notAnEnemy || net.owner != NoPlayer) {
+        return ::testing::AssertionFailure() << "kind " << static_cast<int>(net.kind);
+    }
+    if (position.x < game::arena::Width / 2.0F || position.y < 0.0F
+        || position.y > game::arena::Height) {
+        return ::testing::AssertionFailure() << "at " << position.x << ", " << position.y;
+    }
+    return ::testing::AssertionSuccess();
+}
+
+} // namespace
+
+TEST(Gameplay, NoEnemyWithoutPlayers)
 {
     Game game;
 
     game.seconds(5.0F);
 
-    EXPECT_TRUE(game.all<Bydo>().empty());
+    EXPECT_TRUE(game.all<Enemy>().empty());
 }
 
-TEST(Gameplay, BydosEnterFromTheRightAtTheSpawnRate)
+TEST(Gameplay, EnemiesEnterFromTheRightAtTheSpawnRate)
 {
     Game game;
     (void)game.join(0);
 
-    game.seconds(game::bydo::SpawnInterval * 3.0F + Step);
+    game.seconds(game::enemies::SpawnInterval * 3.0F + Step);
 
-    const auto bydos = game.all<Bydo>();
-    EXPECT_EQ(bydos.size(), 3U);
-    for (const ecs::Entity bydo : bydos) {
-        const auto& position = game.world.getComponent<game::Position>(bydo);
-        EXPECT_GT(position.x, game::arena::Width / 2.0F); // Still on the right side
-        EXPECT_GT(position.y, 0.0F);
-        EXPECT_LT(position.y, game::arena::Height);
-        EXPECT_EQ(game.world.getComponent<NetEntity>(bydo).kind, EntityKind::Bydo);
-        EXPECT_EQ(game.world.getComponent<NetEntity>(bydo).owner, NoPlayer);
+    const auto enemies = game.all<Enemy>();
+    EXPECT_EQ(enemies.size(), 3U);
+    for (const ecs::Entity enemy : enemies) {
+        EXPECT_TRUE(isEnteringEnemy(game.world, enemy));
     }
 }
 
@@ -240,15 +261,17 @@ TEST(Gameplay, BydoFliesLeftInAWave)
     EXPECT_NEAR(540.0F - minY, game::bydo::WaveAmplitude, 5.0F);
 }
 
-TEST(Gameplay, BydoFiresAtTheNearestShip)
+TEST(Gameplay, BydoFiresAtTheNearestShipOnceOnScreen)
 {
     Game game;
     (void)game.join(0);
     const auto ship = game.world.getComponent<game::Position>(game.shipOf(0));
-    const ecs::Entity bydo = server::spawnBydo(game.world, ship.y, 0.0F); // Fires at once
+    const ecs::Entity bydo = server::spawnBydo(game.world, ship.y, 0.0F); // Ready at once
 
     game.steps(1);
+    EXPECT_TRUE(game.ofKind(EntityKind::EnemyMissile).empty()); // Still off screen
 
+    game.seconds(0.5F); // Entered the arena: it fires
     const auto missiles = game.ofKind(EntityKind::EnemyMissile);
     ASSERT_EQ(missiles.size(), 1U);
     const auto& velocity = game.world.getComponent<game::Velocity>(missiles[0]);
@@ -461,4 +484,211 @@ TEST(Gameplay, NewcomerGetsTheScore)
     const auto states = only<GameState>(queued(game.world, player));
     ASSERT_EQ(states.size(), 1U);
     EXPECT_EQ(states[0].score, 700U);
+}
+
+// --- The enemy roster ------------------------------------------------------------
+
+namespace {
+
+struct Roster {
+    EntityKind kind;
+    ecs::Entity (*spawn)(ecs::World&, float, float);
+    std::uint8_t health;
+    std::uint32_t points;
+    float halfWidth;
+};
+
+const std::vector<Roster>& roster()
+{
+    static const std::vector<Roster> All{
+        {EntityKind::Bydo, server::spawnBydo, game::bydo::MaxHealth, game::bydo::Points,
+            game::bydo::HalfWidth},
+        {EntityKind::PataPata, server::spawnPataPata, game::patapata::MaxHealth,
+            game::patapata::Points, game::patapata::HalfWidth},
+        {EntityKind::Bug, server::spawnBug, game::bug::MaxHealth, game::bug::Points,
+            game::bug::HalfWidth},
+        {EntityKind::Cancer, server::spawnCancer, game::cancer::MaxHealth, game::cancer::Points,
+            game::cancer::HalfWidth},
+        {EntityKind::Cruiser, server::spawnCruiser, game::cruiser::MaxHealth, game::cruiser::Points,
+            game::cruiser::HalfWidth},
+    };
+    return All;
+}
+
+/// The angle of a velocity, in radians.
+float angleOf(const game::Velocity& velocity)
+{
+    return std::atan2(velocity.dy, velocity.dx);
+}
+
+} // namespace
+
+TEST(Enemies, EveryEnemyEntersOnTheRightWithItsRules)
+{
+    for (const Roster& enemy : roster()) {
+        Game game;
+        const ecs::Entity entity = enemy.spawn(game.world, 400.0F, 1.0F);
+
+        const auto& net = game.world.getComponent<NetEntity>(entity);
+        const auto rules = std::tuple{static_cast<int>(net.kind), net.owner,
+            game.world.hasComponent<Enemy>(entity),
+            game.world.getComponent<game::Health>(entity).current,
+            game.world.getComponent<server::ScoreValue>(entity).points,
+            game.world.getComponent<game::Hitbox>(entity).layer};
+        EXPECT_EQ(rules,
+            (std::tuple{static_cast<int>(enemy.kind), NoPlayer, true, enemy.health, enemy.points,
+                game::layer::Enemy}));
+        const auto& position = game.world.getComponent<game::Position>(entity);
+        EXPECT_FLOAT_EQ(position.x, game::arena::Width + enemy.halfWidth); // Just off screen
+        EXPECT_FLOAT_EQ(position.y, 400.0F);
+        EXPECT_LT(game.world.getComponent<game::Velocity>(entity).dx, 0.0F); // Flying left
+    }
+}
+
+TEST(Enemies, EveryEnemyLeavesOnTheLeftIfNotShot)
+{
+    for (const Roster& enemy : roster()) {
+        Game game;
+        const ecs::Entity entity = enemy.spawn(game.world, 540.0F, 100.0F);
+
+        game.seconds(40.0F); // Even the cruiser has crossed by then
+
+        EXPECT_FALSE(game.world.isAlive(entity)) << static_cast<int>(enemy.kind);
+        EXPECT_EQ(server::singleton<TeamScore>(game.world).value, 0U); // Not a kill
+    }
+}
+
+TEST(Enemies, PataPataFliesInAFastWideWaveAndNeverFires)
+{
+    Game game;
+    (void)game.join(0);
+    const ecs::Entity drone = server::spawnPataPata(game.world, 540.0F, 0.0F);
+
+    float minY = 540.0F;
+    float maxY = 540.0F;
+    for (int i = 0; i < 120; ++i) { // 2 s: more than one full wave at 4 rad/s
+        game.steps(1);
+        const float y = game.world.getComponent<game::Position>(drone).y;
+        minY = std::min(minY, y);
+        maxY = std::max(maxY, y);
+    }
+
+    EXPECT_NEAR(maxY - 540.0F, game::patapata::WaveAmplitude, 8.0F);
+    EXPECT_NEAR(540.0F - minY, game::patapata::WaveAmplitude, 8.0F);
+    EXPECT_FALSE(game.world.hasComponent<server::Weapon>(drone));
+    EXPECT_TRUE(game.ofKind(EntityKind::EnemyMissile).empty());
+}
+
+TEST(Enemies, BugSteersTowardsTheShipWithinItsLimits)
+{
+    Game game;
+    (void)game.join(0);
+    const ecs::Entity ship = game.shipOf(0);
+    game.world.getComponent<game::Position>(ship).y = 800.0F;
+    const ecs::Entity bug = server::spawnBug(game.world, 200.0F, 0.0F);
+
+    game.steps(1);
+    const auto& start = game.world.getComponent<game::Velocity>(bug);
+    EXPECT_FLOAT_EQ(start.dx, -game::bug::Speed);
+    EXPECT_LE(start.dy, game::bug::VerticalAcceleration * Step + 0.01F); // Turns smoothly
+
+    game.seconds(2.0F);
+    const auto& velocity = game.world.getComponent<game::Velocity>(bug);
+    EXPECT_FLOAT_EQ(velocity.dx, -game::bug::Speed); // Never turns back
+    EXPECT_GT(velocity.dy, 0.0F); // Heading down, towards the ship
+    EXPECT_LE(velocity.dy, game::bug::MaxVerticalSpeed);
+    EXPECT_GT(game.world.getComponent<game::Position>(bug).y, 500.0F);
+}
+
+TEST(Enemies, BugFliesStraightWithoutShips)
+{
+    Game game;
+    const ecs::Entity bug = server::spawnBug(game.world, 200.0F, 0.0F);
+
+    game.seconds(1.0F);
+
+    EXPECT_FLOAT_EQ(game.world.getComponent<game::Position>(bug).y, 200.0F);
+}
+
+TEST(Enemies, CancerFiresAFanOfThreeAimedMissiles)
+{
+    Game game;
+    (void)game.join(0);
+    const auto ship = game.world.getComponent<game::Position>(game.shipOf(0));
+    const ecs::Entity cancer = server::spawnCancer(game.world, ship.y, 0.0F);
+    game.world.getComponent<game::Position>(cancer).x = 1500.0F; // On screen, level with the ship
+
+    game.steps(1);
+
+    const auto missiles = game.ofKind(EntityKind::EnemyMissile);
+    ASSERT_EQ(missiles.size(), game::cancer::Shots);
+    std::vector<float> angles;
+    for (const ecs::Entity missile : missiles) {
+        angles.push_back(angleOf(game.world.getComponent<game::Velocity>(missile)));
+    }
+    std::ranges::sort(angles, [](float a, float b) {
+        return std::abs(a) > std::abs(b); // The aimed one first: straight left, ±π
+    });
+    EXPECT_NEAR(std::abs(angles[0]), std::numbers::pi_v<float>, 0.05F); // Aimed at the ship
+    EXPECT_NEAR(std::abs(angles[1]), std::numbers::pi_v<float> - game::cancer::Spread, 0.05F);
+    EXPECT_NEAR(std::abs(angles[2]), std::numbers::pi_v<float> - game::cancer::Spread, 0.05F);
+    EXPECT_NE(std::signbit(angles[1]), std::signbit(angles[2])); // One above, one below
+}
+
+TEST(Enemies, CruiserTakesFifteenHitsAndIsWorthAThousand)
+{
+    Game game;
+    (void)game.join(0);
+    const ecs::Entity cruiser = server::spawnCruiser(game.world, 300.0F, 100.0F);
+    const auto park
+        = [&] { game.world.getComponent<game::Position>(cruiser) = {.x = 1200.0F, .y = 300.0F}; };
+
+    for (int hit = 1; hit < game::cruiser::MaxHealth; ++hit) {
+        park();
+        (void)playerMissile(game.world, {.x = 1200.0F, .y = 300.0F});
+        game.steps(1);
+    }
+    ASSERT_TRUE(game.world.isAlive(cruiser));
+    EXPECT_EQ(game.world.getComponent<game::Health>(cruiser).current, 1);
+    EXPECT_EQ(server::singleton<TeamScore>(game.world).value, 0U);
+
+    park();
+    (void)playerMissile(game.world, {.x = 1200.0F, .y = 300.0F});
+    game.steps(1);
+    EXPECT_FALSE(game.world.isAlive(cruiser));
+    EXPECT_EQ(server::singleton<TeamScore>(game.world).value, game::cruiser::Points);
+}
+
+TEST(Enemies, RammingACruiserDestroysTheShipNotTheCruiser)
+{
+    Game game;
+    (void)game.join(0);
+    const ecs::Entity ship = game.shipOf(0);
+    const ecs::Entity cruiser = server::spawnCruiser(game.world, 300.0F, 100.0F);
+    game.world.getComponent<game::Position>(cruiser)
+        = game.world.getComponent<game::Position>(ship);
+
+    game.steps(1);
+
+    EXPECT_FALSE(game.world.isAlive(ship));
+    ASSERT_TRUE(game.world.isAlive(cruiser));
+    EXPECT_EQ(game.world.getComponent<game::Health>(cruiser).current, game::cruiser::MaxHealth);
+}
+
+TEST(Enemies, TheSpawnerSendsEveryKindOfEnemy)
+{
+    Game game;
+    (void)game.join(0);
+    game.world.removeComponent<game::Health>(game.shipOf(0)); // Invincible: the game goes on
+
+    std::set<EntityKind> seen;
+    for (int second = 0; second < 90; ++second) {
+        game.seconds(1.0F);
+        game.world.query<Enemy, NetEntity>([&](ecs::Entity /*entity*/, Enemy& /*enemy*/,
+                                               NetEntity& net) { seen.insert(net.kind); });
+    }
+
+    EXPECT_EQ(seen,
+        (std::set<EntityKind>{EntityKind::Bydo, EntityKind::PataPata, EntityKind::Bug,
+            EntityKind::Cancer, EntityKind::Cruiser}));
 }

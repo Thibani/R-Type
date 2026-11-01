@@ -23,6 +23,10 @@ struct Assets {
     sf::Texture ships; // r-typesheet42.gif: one row per ship colour
     sf::Texture bydos; // r-typesheet5.gif
     sf::Texture missiles; // r-typesheet1.gif: player and enemy missiles
+    sf::Texture pataPatas; // r-typesheet8.gif
+    sf::Texture bugs; // r-typesheet16.gif
+    sf::Texture cancers; // r-typesheet19.gif
+    sf::Texture cruisers; // r-typesheet24.gif
     std::array<sf::Texture, 4> patterns; // P1-P4 swatch patterns (generated)
     sf::Font display; // Pixelify Sans: titles, tags, buttons
     sf::Font body; // Atkinson Hyperlegible: readable text
@@ -39,10 +43,13 @@ struct Assets {
 };
 
 /// Where an entity's image is, and how much it is enlarged in the arena.
+/// `mirrored` flips it horizontally (a sprite drawn facing right in its
+/// sheet, for an enemy flying left).
 struct SpriteFrame {
     const sf::Texture* texture;
     sf::IntRect rect;
     float scale;
+    bool mirrored{false};
 };
 
 /// The frame of `look` (for a ship, `player` selects the colour row).

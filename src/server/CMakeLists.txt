@@ -23,6 +23,7 @@ add_library(rtype_server
     Components/Player.hpp
     Components/NetEntity.hpp
     Components/Combat.hpp
+    Components/Behaviour.hpp
     Spawn.hpp
     Spawn.cpp
 
@@ -46,12 +47,14 @@ add_library(rtype_server
     Systems/TickSystem.cpp
     Systems/PlayerControlSystem.hpp
     Systems/PlayerControlSystem.cpp
-    Systems/BydoSpawnSystem.hpp
-    Systems/BydoSpawnSystem.cpp
-    Systems/BydoMovementSystem.hpp
-    Systems/BydoMovementSystem.cpp
-    Systems/BydoAimSystem.hpp
-    Systems/BydoAimSystem.cpp
+    Systems/EnemySpawnSystem.hpp
+    Systems/EnemySpawnSystem.cpp
+    Systems/WaveFlightSystem.hpp
+    Systems/WaveFlightSystem.cpp
+    Systems/SeekerSystem.hpp
+    Systems/SeekerSystem.cpp
+    Systems/AimSystem.hpp
+    Systems/AimSystem.cpp
     Systems/WeaponSystem.hpp
     Systems/WeaponSystem.cpp
     Systems/DamageSystem.hpp

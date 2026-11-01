@@ -10,6 +10,7 @@ add_library(rtype_game
     Arena.hpp
     Ship.hpp
     Bydo.hpp
+    Enemies.hpp
 
     Components/Motion.hpp
     Components/Health.hpp

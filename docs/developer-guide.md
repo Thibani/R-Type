@@ -22,14 +22,14 @@ How to work in this codebase. For the big picture, start with the
   the client only displays (and, later, predicts with the same `src/game` code).
 - **Errors are values.** Network input is untrusted: return `std::expected`,
   never throw on bad packets.
-- **Shared rules are constants in `src/game`** (`Ship.hpp`, `Bydo.hpp`,
+- **Shared rules are constants in `src/game`** (`Ship.hpp`, `Bydo.hpp`, `Enemies.hpp`,
   `Arena.hpp`), so server and client use the same numbers.
 
 ## Where things run (server)
 
 ```text
 frameStart()   once per frame    receive packets, sessions, inputs, ships
-simulation     0..N × 60 Hz      gameplay: control, fire, Bydos, movement, collisions, damage
+simulation     0..N × 60 Hz      gameplay: control, fire, enemies, movement, collisions, damage
 frameEnd()     once per frame    replication, sending, snapshots
 ```
 
@@ -61,14 +61,16 @@ Combat is data (`src/server/Components/Combat.hpp`):
    a `Trigger`.
 3. Only a new **behaviour** needs code: a small "brain" system that sets the
    `Trigger` (when and where to shoot) or the `Velocity` (how to move), like
-   `BydoAimSystem` and `BydoMovementSystem`.
+   `AimSystem`, `WaveFlightSystem` and `SeekerSystem`, driven by a component
+   of `src/server/Components/Behaviour.hpp`. Then add the enemy to the spawn
+   table of `EnemySpawnSystem.cpp`, and its sprite to the client.
 
 `WeaponSystem` fires every pulled trigger and `DamageSystem` applies every
 `Damage`, whatever the entity is.
 
 ### Add a new kind of networked entity
 
-1. Give it a kind in `network::protocol::EntityKind` (values 4–255 are free)
+1. Give it a kind in `network::protocol::EntityKind` (values 8–255 are free)
    and document it in `docs/protocol.md` §5.2.
 2. Add a `spawn…()` function in `src/server/Spawn.cpp` that gives it a
    `Position`, a `Velocity`, a `Hitbox` and a `NetEntity`.

@@ -12,6 +12,8 @@
 
 #include <cstddef>
 #include <optional>
+#include <utility>
+#include <vector>
 
 using namespace network::protocol;
 
@@ -79,6 +81,20 @@ TEST(Replication, SpawnCreatesAnEntityWithItsLook)
     EXPECT_FLOAT_EQ(position.y, 300.5F);
     EXPECT_FLOAT_EQ(world.getComponent<game::Velocity>(*entity).dx, -100.0F);
     EXPECT_EQ(world.getComponent<client::Appearance>(*entity).look, client::Look::Bydo);
+}
+
+TEST(Replication, EveryEnemyKindHasItsOwnLook)
+{
+    const std::vector<std::pair<EntityKind, client::Look>> enemies{
+        {EntityKind::Bydo, client::Look::Bydo},
+        {EntityKind::PataPata, client::Look::PataPata},
+        {EntityKind::Bug, client::Look::Bug},
+        {EntityKind::Cancer, client::Look::Cancer},
+        {EntityKind::Cruiser, client::Look::Cruiser},
+    };
+    for (const auto& [kind, look] : enemies) {
+        EXPECT_EQ(client::lookOf(kind), look) << static_cast<int>(kind);
+    }
 }
 
 TEST(Replication, MissileSpawnPlaysTheShotSound)
