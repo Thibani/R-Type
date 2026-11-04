@@ -35,7 +35,11 @@ Tab, Enter and Esc, so a player can never lock themselves out.
 |------------|--------------|
 | **Volume control.** Sound effects from 0 (muted) to 100 %, in the settings, saved for the next start | Comfort for sound-sensitive players; muting never hides information (see below) |
 | **No information is only audible.** Every sound (shot, explosion, death) comes from a server event that is also shown on screen (a missile appears, the Bydo or ship disappears, "P1 is down") | Deaf and hard-of-hearing players miss nothing |
-| **Players told apart by colour, pattern and a P1–P4 tag**, never by colour alone | Colour-blind players can tell the four ships apart |
+| **Colour-blind modes.** Off, protanopia, deuteranopia or tritanopia, in the settings, saved for the next start. Each mode repaints the ships, swatches, Bydos and missiles with a palette that stays distinct in a simulation of that colour blindness (checked by a test) | Players can tell every element of the game apart |
+| **Players told apart by colour, pattern and a P1–P4 tag**, never by colour alone | Colour-blind players can tell the four ships apart, in any mode |
+| **Health is labelled and counted.** "HP" next to pips that empty one by one, whatever their colour | Health never depends on telling green from red |
+| **Missiles told apart by shape.** Player missiles are long comets, enemy missiles are round balls | Telling a threat from a friendly shot never depends on colour |
+| **Hyperlegible numbers.** Scores, P1–P4 tags and player names use Atkinson Hyperlegible; the pixel font is kept for titles and buttons, because its 2 and 5 look alike | Tags and scores can be read at a glance, including with low vision |
 | **The window scales** to any size, with letterboxing that keeps the proportions | Large screens and zoomed displays work |
 | **Unknown entities are drawn as a "?"** instead of being hidden | Nothing on screen is ever invisible |
 
