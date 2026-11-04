@@ -1,5 +1,7 @@
 #pragma once
 
+#include "client/Components/Settings.hpp"
+
 #include <SFML/Graphics/Color.hpp>
 #include <SFML/Graphics/Font.hpp>
 #include <SFML/Graphics/Rect.hpp>
@@ -45,11 +47,13 @@ void tag(sf::RenderTarget& target, const Assets& assets, std::string_view label,
     sf::Vector2f centre, unsigned size);
 
 /// Player swatch: colour + pattern + tag, so players differ without colour.
-void swatch(sf::RenderTarget& target, const Assets& assets, sf::FloatRect rect, std::uint8_t player,
+void swatch(sf::RenderTarget& target, const Assets& assets, ColourMode mode, sf::FloatRect rect,
+    std::uint8_t player,
     bool active);
 
 /// The ship of `player`, enlarged to fit `rect`.
-void ship(sf::RenderTarget& target, const Assets& assets, sf::FloatRect rect, std::uint8_t player);
+void ship(sf::RenderTarget& target, const Assets& assets, ColourMode mode, sf::FloatRect rect,
+    std::uint8_t player);
 
 } // namespace widgets
 } // namespace client

@@ -110,21 +110,22 @@ void field(sf::RenderTarget& target, const Assets& assets, sf::FloatRect rect,
 void tag(sf::RenderTarget& target, const Assets& assets, std::string_view label,
     sf::Vector2f centre, unsigned size)
 {
-    const float width = textWidth(assets.display, label, size) + 12.0F;
+    const float width = textWidth(assets.bodyBold, label, size) + 12.0F;
     const float height = static_cast<float>(size) + 6.0F;
     const sf::FloatRect rect{centre - sf::Vector2f{width / 2.0F, height / 2.0F}, {width, height}};
     box(target, rect, theme::Surface, theme::Hull, 2.0F);
-    centredText(target, assets.display, label, size, theme::Text, rect);
+    centredText(target, assets.bodyBold, label, size, theme::Text, rect);
 }
 
-void swatch(sf::RenderTarget& target, const Assets& assets, sf::FloatRect rect, std::uint8_t player,
-    bool active)
+void swatch(sf::RenderTarget& target, const Assets& assets, ColourMode mode, sf::FloatRect rect,
+    std::uint8_t player, bool active)
 {
+    const auto& patterns = assets.skins.at(static_cast<std::size_t>(mode)).patterns;
     box(target, rect, theme::InputBackground, theme::Hull, 3.0F);
-    if (active && player < assets.patterns.size()) {
+    if (active && player < patterns.size()) {
         sf::RectangleShape pattern(rect.size);
         pattern.setPosition(rect.position);
-        pattern.setTexture(&assets.patterns.at(player));
+        pattern.setTexture(&patterns.at(player));
         // A texture rect larger than the 12 × 12 tile repeats it
         pattern.setTextureRect(sf::IntRect({0, 0}, sf::Vector2i(rect.size)));
         target.draw(pattern);
@@ -132,9 +133,10 @@ void swatch(sf::RenderTarget& target, const Assets& assets, sf::FloatRect rect, 
     tag(target, assets, "P" + std::to_string(player + 1), rect.getCenter(), 18);
 }
 
-void ship(sf::RenderTarget& target, const Assets& assets, sf::FloatRect rect, std::uint8_t player)
+void ship(sf::RenderTarget& target, const Assets& assets, ColourMode mode, sf::FloatRect rect,
+    std::uint8_t player)
 {
-    const auto frame = spriteFrame(assets, Look::PlayerShip, player);
+    const auto frame = spriteFrame(assets, mode, Look::PlayerShip, player);
     if (!frame) {
         return;
     }

@@ -14,6 +14,7 @@
 ///
 ///     # R-Type client settings
 ///     volume = 80
+///     colour = Off
 ///     key.up = Up
 ///     key.fire = Space
 ///
@@ -34,6 +35,10 @@ std::optional<sf::Keyboard::Key> keyFromName(std::string_view name) noexcept;
 /// Binds `key` to `action`. A key already used by another action is swapped
 /// with it, so two actions never share a key. False if the key is not bindable.
 bool bindKey(Settings& settings, Action action, sf::Keyboard::Key key) noexcept;
+
+/// Name of a colour mode, in the file and on the settings screen.
+[[nodiscard]]
+std::string_view colourModeName(ColourMode mode) noexcept;
 
 [[nodiscard]]
 Settings parseSettings(std::string_view text);

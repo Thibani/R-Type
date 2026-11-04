@@ -53,6 +53,11 @@ constexpr std::array<std::string_view, ActionCount> ActionKeys{
     "key.up", "key.down", "key.left", "key.right", "key.fire",
 };
 
+/// In `ColourMode` order.
+constexpr std::array<std::string_view, ColourModeCount> ColourModeNames{
+    "Off", "Protanopia", "Deuteranopia", "Tritanopia",
+};
+
 /// A settings file is a few hundred bytes: anything much bigger is not one.
 constexpr std::size_t MaxFileSize = std::size_t{64} * 1024;
 
@@ -98,6 +103,11 @@ std::optional<sf::Keyboard::Key> keyFromName(std::string_view name) noexcept
     return found->first;
 }
 
+std::string_view colourModeName(ColourMode mode) noexcept
+{
+    return ColourModeNames.at(static_cast<std::size_t>(mode));
+}
+
 bool bindKey(Settings& settings, Action action, sf::Keyboard::Key key) noexcept
 {
     if (!keyName(key)) {
@@ -136,6 +146,10 @@ Settings parseSettings(std::string_view text)
             if (error == std::errc{} && rest == last) {
                 settings.volume = std::clamp(volume, 0, Settings::MaxVolume);
             }
+        } else if (key == "colour") {
+            if (const auto* name = std::ranges::find(ColourModeNames, value); name != ColourModeNames.end()) {
+                settings.colourMode = static_cast<ColourMode>(name - ColourModeNames.begin());
+            }
         } else {
             for (std::size_t action = 0; action < ActionCount; ++action) {
                 const auto bound = keyFromName(value);
@@ -155,6 +169,7 @@ std::string formatSettings(const Settings& settings)
 {
     std::string text = "# R-Type client settings\n";
     text += "volume = " + std::to_string(settings.volume) + '\n';
+    text += "colour = " + std::string(colourModeName(settings.colourMode)) + '\n';
     for (std::size_t action = 0; action < ActionCount; ++action) {
         text += std::string(ActionKeys.at(action)) + " = "
             + std::string(keyName(settings.keys.at(action)).value_or("Space")) + '\n';
