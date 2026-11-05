@@ -4,14 +4,19 @@
 #include "client/Settings.hpp"
 #include "client/Singleton.hpp"
 #include "client/Systems/SettingsSystem.hpp"
+#include "client/Ui/Theme.hpp"
 #include "ecs/Time/Time.hpp"
 #include "ecs/World/World.hpp"
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <array>
+#include <cmath>
 #include <filesystem>
 #include <random>
 #include <string>
+#include <vector>
 
 using client::Action;
 using client::Settings;
@@ -125,6 +130,163 @@ TEST(Settings, GarbageGivesTheDefaults)
 
     EXPECT_EQ(settings.volume, Settings{}.volume);
     EXPECT_EQ(settings.keys, Settings::DefaultKeys);
+}
+
+TEST(Settings, ColourModeIsReadBack)
+{
+    Settings settings;
+    settings.colourMode = client::ColourMode::Tritanopia;
+
+    const std::string text = client::formatSettings(settings);
+
+    EXPECT_NE(text.find("colour = Tritanopia"), std::string::npos);
+    EXPECT_EQ(client::parseSettings(text).colourMode, client::ColourMode::Tritanopia);
+}
+
+TEST(Settings, BadColourModeKeepsTheDefault)
+{
+    EXPECT_EQ(client::parseSettings("colour = Purple").colourMode, client::ColourMode::Off);
+}
+
+// --- Colour modes -----------------------------------------------------------------
+
+namespace {
+
+using Matrix = std::array<std::array<double, 3>, 3>;
+using Lab = std::array<double, 3>;
+
+/// What a dichromat sees, in linear RGB (Machado et al. 2009, severity 1.0).
+/// Indexed by `ColourMode` - 1.
+constexpr std::array<Matrix, 3> Dichromacy{
+    Matrix{{{0.152286, 1.052583, -0.204868}, {0.114503, 0.786281, 0.099216},
+        {-0.003882, -0.048116, 1.051998}}},
+    Matrix{{{0.367322, 0.860646, -0.227968}, {0.280085, 0.672501, 0.047413},
+        {-0.011820, 0.042940, 0.968881}}},
+    Matrix{{{1.255528, -0.076749, -0.178779}, {-0.078411, 0.930809, 0.147602},
+        {0.004733, 0.691367, 0.303900}}},
+};
+
+/// `colour` as a dichromat sees it, in CIE Lab: a distance of 2 is barely visible.
+Lab seenAs(sf::Color colour, const Matrix& matrix)
+{
+    const auto linear = [](std::uint8_t channel) {
+        const double value = channel / 255.0;
+        return value <= 0.04045 ? value / 12.92 : std::pow((value + 0.055) / 1.055, 2.4);
+    };
+    const std::array<double, 3> rgb{linear(colour.r), linear(colour.g), linear(colour.b)};
+    std::array<double, 3> seen{};
+    for (std::size_t i = 0; i < 3; ++i) {
+        const auto& row = matrix.at(i);
+        seen.at(i) = std::clamp(
+            (row[0] * rgb[0]) + (row[1] * rgb[1]) + (row[2] * rgb[2]), 0.0, 1.0);
+    }
+    const auto curve = [](double t) {
+        return t > 0.008856 ? std::cbrt(t) : (7.787 * t) + (16.0 / 116.0);
+    };
+    const double x = curve(((0.4124 * seen[0]) + (0.3576 * seen[1]) + (0.1805 * seen[2])) / 0.9505);
+    const double y = curve((0.2126 * seen[0]) + (0.7152 * seen[1]) + (0.0722 * seen[2]));
+    const double z = curve(((0.0193 * seen[0]) + (0.1192 * seen[1]) + (0.9505 * seen[2])) / 1.089);
+    return {(116.0 * y) - 16.0, 500.0 * (x - y), 200.0 * (y - z)};
+}
+
+double distance(const Lab& a, const Lab& b)
+{
+    return std::hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+}
+
+} // namespace
+
+TEST(ColourModes, EveryElementStaysDistinctForThePlayerItIsMadeFor)
+{
+    constexpr double distinct = 30.0; // Far above "barely visible": told apart at a glance
+    for (std::size_t mode = 1; mode < client::ColourModeCount; ++mode) {
+        const client::theme::Palette& palette = client::theme::Palettes.at(mode);
+        std::vector<sf::Color> colours(palette.players.begin(), palette.players.end());
+        colours.insert(colours.end(), {palette.bydo.front(), palette.playerMissile, palette.enemyMissile});
+
+        const Matrix& matrix = Dichromacy.at(mode - 1);
+        for (std::size_t a = 0; a < colours.size(); ++a) {
+            const Lab seen = seenAs(colours.at(a), matrix);
+            EXPECT_GT(distance(seen, seenAs(client::theme::GameBackground, matrix)), distinct)
+                << "mode " << mode << ", colour " << a << " on the arena";
+            EXPECT_GT(distance(seen, seenAs(sf::Color::White, matrix)), distinct)
+                << "mode " << mode << ", colour " << a << " on a white swatch";
+            for (std::size_t b = a + 1; b < colours.size(); ++b) {
+                EXPECT_GT(distance(seen, seenAs(colours.at(b), matrix)), distinct)
+                    << "mode " << mode << ", colours " << a << " and " << b;
+            }
+        }
+    }
+}
+
+TEST(ColourModes, TheThreeColoursOfTheBydoStayDistinct)
+{
+    constexpr double distinct = 30.0;
+    for (std::size_t mode = 1; mode < client::ColourModeCount; ++mode) {
+        const auto& bydo = client::theme::Palettes.at(mode).bydo;
+        const Matrix& matrix = Dichromacy.at(mode - 1);
+        const Lab body = seenAs(bydo.at(0), matrix);
+        const Lab eye = seenAs(bydo.at(1), matrix);
+        const Lab lines = seenAs(bydo.at(2), matrix);
+        const Lab arena = seenAs(client::theme::GameBackground, matrix);
+
+        EXPECT_GT(distance(body, eye), distinct) << "mode " << mode;
+        EXPECT_GT(distance(body, lines), distinct) << "mode " << mode;
+        EXPECT_GT(distance(eye, lines), distinct) << "mode " << mode;
+        EXPECT_GT(distance(eye, arena), distinct) << "mode " << mode;
+        EXPECT_GT(distance(lines, arena), distinct) << "mode " << mode;
+    }
+}
+
+TEST(ColourModes, EveryColourOfTheBydoSpriteFindsItsPart)
+{
+    using client::theme::bydoPart;
+    for (const sf::Color body : {sf::Color{0xCE, 0x08, 0x00}, sf::Color{0x6B, 0x08, 0x00},
+             sf::Color{0xFF, 0x63, 0x5A}, sf::Color{0x52, 0x00, 0x00}, sf::Color{0xFF, 0xA5, 0x9C}}) {
+        EXPECT_EQ(bydoPart(body), 0U);
+    }
+    for (const sf::Color eye : {sf::Color{0x00, 0x4A, 0x00}, sf::Color{0xC6, 0xFF, 0xC6}, sf::Color{0x00, 0xDE, 0x00}}) {
+        EXPECT_EQ(bydoPart(eye), 1U);
+    }
+    EXPECT_EQ(bydoPart(sf::Color{0x94, 0xDE, 0xDE}), 2U);
+}
+
+TEST(ColourModes, TintKeepsGreysAndTransparency)
+{
+    const sf::Color from{0xCE, 0x00, 0x00};
+    const sf::Color to{0x12, 0x34, 0x56};
+
+    EXPECT_EQ(client::theme::tinted(sf::Color{0x73, 0x8C, 0x8C}, from, to), (sf::Color{0x73, 0x8C, 0x8C}));
+    EXPECT_EQ(client::theme::tinted(sf::Color::White, from, to), sf::Color::White);
+    EXPECT_EQ(client::theme::tinted(sf::Color{255, 132, 66, 0}, from, to), (sf::Color{255, 132, 66, 0}));
+}
+
+TEST(ColourModes, TintTurnsTheMainColourIntoThePaletteColour)
+{
+    const sf::Color from{0xCE, 0x08, 0x00};
+    const sf::Color to{0x20, 0x80, 0xC0};
+
+    EXPECT_EQ(client::theme::tinted(from, from, to), to);
+}
+
+TEST(ColourModes, TintKeepsTheDetailsOfASprite)
+{
+    const sf::Color to{0x20, 0x80, 0xC0};
+    const auto brightness = [](sf::Color c) { return c.r + c.g + c.b; };
+    const auto expectDarkToLight = [&](std::vector<sf::Color> shades, sf::Color from) {
+        for (std::size_t i = 1; i < shades.size(); ++i) {
+            EXPECT_LT(brightness(client::theme::tinted(shades.at(i - 1), from, to)),
+                brightness(client::theme::tinted(shades.at(i), from, to)))
+                << "shade " << i;
+        }
+    };
+
+    // Shades that HSL lightness cannot tell apart: the three blues of the player missile
+    expectDarkToLight({{0x00, 0x00, 0xFF}, {0x00, 0x9C, 0xFF}, {0x00, 0xC6, 0xFF}}, {0x00, 0xC6, 0xFF});
+    // The enemy missile, around its main colour
+    expectDarkToLight({{0xFF, 0xBD, 0x00}, {0xFF, 0xDE, 0x00}, {0xFF, 0xFF, 0x7B}}, {0xFF, 0xBD, 0x00});
+    // The body of the Bydo
+    expectDarkToLight({{0x52, 0x00, 0x00}, {0x6B, 0x08, 0x00}, {0xCE, 0x08, 0x00}, {0xFF, 0x63, 0x5A}, {0xFF, 0xA5, 0x9C}}, {0xCE, 0x08, 0x00});
 }
 
 // --- Key bindings -----------------------------------------------------------------

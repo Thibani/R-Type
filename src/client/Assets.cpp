@@ -13,12 +13,21 @@ namespace client {
 
 namespace {
 
+// Rows of r-typesheet42: light blue, pink, green, red (then blue, unused).
+// Column 2 is the ship flying level. 33 × 17 × 2 ≈ the server's 64 × 32 hitbox.
+constexpr sf::IntRect shipFrame(int row) noexcept
+{
+    return {{66, row * 17}, {33, 17}};
+}
+constexpr sf::IntRect BydoFrame{{5, 6}, {21, 24}};
+constexpr sf::IntRect PlayerMissileFrame{{249, 105}, {16, 8}};
+constexpr sf::IntRect EnemyMissileFrame{{243, 277}, {12, 10}};
+
 /// A 12 × 12 tile of player `index`'s swatch pattern: stripes, dots, checks
 /// or solid colour (from the mockup's style guide).
-sf::Image patternTile(std::size_t index)
+sf::Image patternTile(std::size_t index, sf::Color colour)
 {
     constexpr unsigned Size = 12;
-    const sf::Color colour = theme::Players.at(index);
     sf::Image image({Size, Size}, sf::Color::White);
     for (unsigned y = 0; y < Size; ++y) {
         for (unsigned x = 0; x < Size; ++x) {
@@ -40,13 +49,55 @@ sf::Image patternTile(std::size_t index)
     return image;
 }
 
-bool loadTexture(sf::Texture& texture, const std::filesystem::path& path)
+template <typename Paint>
+void repaint(sf::Image& image, sf::IntRect frame, Paint paint)
 {
-    if (!texture.loadFromFile(path)) {
+    for (int y = frame.position.y; y < frame.position.y + frame.size.y; ++y) {
+        for (int x = frame.position.x; x < frame.position.x + frame.size.x; ++x) {
+            const sf::Vector2u at(sf::Vector2i{x, y});
+            image.setPixel(at, paint(image.getPixel(at)));
+        }
+    }
+}
+
+bool loadTexture(sf::Texture& texture, const sf::Image& image)
+{
+    if (!texture.loadFromImage(image)) {
         return false;
     }
     texture.setSmooth(false); // Pixel art stays sharp when enlarged
     return true;
+}
+
+void tintFrame(sf::Image& image, sf::IntRect frame, sf::Color from, sf::Color to)
+{
+    repaint(image, frame, [&](sf::Color pixel) { return theme::tinted(pixel, from, to); });
+}
+
+/// The skin of `mode`, from the original sprite sheets.
+bool loadSkin(Skin& skin, ColourMode mode, sf::Image ships, sf::Image bydos, sf::Image missiles)
+{
+    const theme::Palette& palette = theme::Palettes.at(static_cast<std::size_t>(mode));
+    if (mode != ColourMode::Off) {
+        const theme::Palette& original = theme::Palettes.at(static_cast<std::size_t>(ColourMode::Off));
+        for (std::size_t row = 0; row < palette.players.size(); ++row) {
+            tintFrame(ships, shipFrame(static_cast<int>(row)), original.players.at(row), palette.players.at(row));
+        }
+        repaint(bydos, BydoFrame, [&](sf::Color pixel) {
+            const std::size_t part = theme::bydoPart(pixel);
+            return theme::tinted(pixel, original.bydo.at(part), palette.bydo.at(part));
+        });
+        tintFrame(missiles, PlayerMissileFrame, original.playerMissile, palette.playerMissile);
+        tintFrame(missiles, EnemyMissileFrame, original.enemyMissile, palette.enemyMissile);
+    }
+    for (std::size_t i = 0; i < skin.patterns.size(); ++i) {
+        if (!skin.patterns.at(i).loadFromImage(patternTile(i, palette.players.at(i)))) {
+            return false;
+        }
+        skin.patterns.at(i).setRepeated(true);
+    }
+    return loadTexture(skin.ships, ships) && loadTexture(skin.bydos, bydos)
+        && loadTexture(skin.missiles, missiles);
 }
 
 } // namespace
@@ -58,18 +109,20 @@ std::expected<void, std::string> Assets::load(Assets& assets, const std::filesys
     };
 
     const std::filesystem::path sprites = folder / "sprites";
-    for (const auto& [texture, file] : {std::pair{&assets.ships, "r-typesheet42.gif"},
-             std::pair{&assets.bydos, "r-typesheet5.gif"},
-             std::pair{&assets.missiles, "r-typesheet1.gif"}}) {
-        if (!loadTexture(*texture, sprites / file)) {
+    sf::Image ships;
+    sf::Image bydos;
+    sf::Image missiles;
+    for (const auto& [image, file] : {std::pair{&ships, "r-typesheet42.gif"},
+             std::pair{&bydos, "r-typesheet5.gif"},
+             std::pair{&missiles, "r-typesheet1.gif"}}) {
+        if (!image->loadFromFile(sprites / file)) {
             return fail(sprites / file);
         }
     }
-    for (std::size_t i = 0; i < assets.patterns.size(); ++i) {
-        if (!assets.patterns.at(i).loadFromImage(patternTile(i))) {
-            return std::unexpected("cannot create the player patterns");
+    for (std::size_t mode = 0; mode < assets.skins.size(); ++mode) {
+        if (!loadSkin(assets.skins.at(mode), static_cast<ColourMode>(mode), ships, bydos, missiles)) {
+            return std::unexpected("cannot create the textures of the colour modes");
         }
-        assets.patterns.at(i).setRepeated(true);
     }
 
     const std::filesystem::path fonts = folder / "fonts";
@@ -97,21 +150,21 @@ const sf::SoundBuffer& Assets::sound(Sound sound) const
     return sounds.at(static_cast<std::size_t>(sound));
 }
 
-std::optional<SpriteFrame> spriteFrame(const Assets& assets, Look look, std::uint8_t player)
+std::optional<SpriteFrame> spriteFrame(
+    const Assets& assets, ColourMode mode, Look look, std::uint8_t player)
 {
+    const Skin& skin = assets.skins.at(static_cast<std::size_t>(mode));
     switch (look) {
     case Look::PlayerShip: {
-        // Rows of r-typesheet42: light blue, pink, green, red (then blue, unused).
-        // Column 2 is the ship flying level. 33 × 17 × 2 ≈ the server's 64 × 32 hitbox.
         const int row = player < theme::Players.size() ? player : 0;
-        return SpriteFrame{&assets.ships, sf::IntRect({66, row * 17}, {33, 17}), 2.0F};
+        return SpriteFrame{.texture = &skin.ships, .rect = shipFrame(row), .scale = 2.0F};
     }
     case Look::Bydo:
-        return SpriteFrame{&assets.bydos, sf::IntRect({5, 6}, {21, 24}), 2.5F};
+        return SpriteFrame{.texture = &skin.bydos, .rect = BydoFrame, .scale = 2.5F};
     case Look::PlayerMissile:
-        return SpriteFrame{&assets.missiles, sf::IntRect({249, 105}, {16, 8}), 2.0F};
+        return SpriteFrame{.texture = &skin.missiles, .rect = PlayerMissileFrame, .scale = 2.0F};
     case Look::EnemyMissile:
-        return SpriteFrame{&assets.missiles, sf::IntRect({243, 277}, {12, 10}), 2.0F};
+        return SpriteFrame{.texture = &skin.missiles, .rect = EnemyMissileFrame, .scale = 2.0F};
     case Look::Unknown:
         break;
     }
