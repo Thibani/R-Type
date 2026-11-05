@@ -9,6 +9,7 @@
 #include "game/Components/Health.hpp"
 #include "game/Components/Motion.hpp"
 #include "game/Enemies.hpp"
+#include "game/Run.hpp"
 #include "game/Ship.hpp"
 #include "game/Waves.hpp"
 #include "network/Protocol/Packets.hpp"
@@ -348,7 +349,11 @@ TEST(Gameplay, KillIsSentWithItsReasonKillerAndScore)
     EXPECT_EQ(bydoDestroy->killerNetId, missileNetId);
     const auto states = only<GameState>(payloads);
     ASSERT_EQ(states.size(), 1U);
-    EXPECT_EQ(states[0], (GameState{.phase = GamePhase::Running, .score = game::bydo::Points}));
+    EXPECT_EQ(states[0],
+        (GameState{.phase = GamePhase::Running,
+            .score = game::bydo::Points,
+            .level = 1,
+            .lives = game::run::StartingLives}));
 }
 
 TEST(Gameplay, ShipDeathIsSentAsPlayerDied)

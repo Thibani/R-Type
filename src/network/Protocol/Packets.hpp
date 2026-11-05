@@ -76,6 +76,16 @@ struct Heartbeat {
 
 // --- Client -> server (§4.2) -------------------------------------------------
 
+/// After GAME_OVER: start a new game. Sent a few times, as it is unreliable;
+/// the server ignores it while a game is running.
+struct Restart {
+    static constexpr PacketType Type = PacketType::Restart;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = false;
+
+    friend bool operator==(const Restart&, const Restart&) = default;
+};
+
 /// The last `count` input masks of the client, oldest first.
 /// `masks[i]` is the input of tick `firstTick + i`.
 struct Input {
@@ -189,6 +199,9 @@ struct GameState {
 
     GamePhase phase{GamePhase::WaitingForPlayers};
     std::uint32_t score{};
+    std::uint8_t level{1}; // Endless mode level, 1 at the start of a game
+    std::uint8_t lives{}; // Ships the team can still lose
+    std::uint8_t bossProgress{}; // Distance to the next boss, 0-100 %; 100 while it is there
 
     friend bool operator==(const GameState&, const GameState&) = default;
 };
@@ -196,7 +209,8 @@ struct GameState {
 // --- Whole packet ------------------------------------------------------------
 
 using Payload = std::variant<ConnectRequest, ConnectAccept, ConnectReject, Disconnect, Heartbeat,
-    Input, Snapshot, EntitySpawn, EntityDestroy, PlayerJoined, PlayerLeft, PlayerDied, GameState>;
+    Input, Snapshot, EntitySpawn, EntityDestroy, PlayerJoined, PlayerLeft, PlayerDied, GameState,
+    Restart>;
 
 /// Acknowledgement carried by a packet (HAS_ACK flag, §6.1).
 struct Ack {

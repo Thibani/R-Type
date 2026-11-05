@@ -67,9 +67,9 @@ other, they share components. `RenderSystem` only reads `Position` and
 | Screen        | When                                                              |
 |---------------|-------------------------------------------------------------------|
 | Connect       | At start, and after any failure (with its reason)                 |
-| Game          | After CONNECT_ACCEPT: a single player can play at once            |
+| Game          | After CONNECT_ACCEPT: a single player can play at once. HUD: team score, level, lives (small ships), each player's hearts; top centre, the distance to the next boss, then the boss's health |
 | Waiting room  | Only if the server sends GAME_STATE = WAITING_FOR_PLAYERS         |
-| Game over     | GAME_STATE = GAME_OVER: team score and crew                       |
+| Game over     | GAME_STATE = GAME_OVER: team score, level reached, crew; **Play again** (RESTART ×3) or Back to menu |
 
 Esc opens the in-game menu (the game keeps running) or leaves the other
 screens. Players are told apart by colour, pattern and P1-P4 tag.

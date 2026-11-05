@@ -27,6 +27,11 @@ struct Assets {
     sf::Texture bugs; // r-typesheet16.gif
     sf::Texture cancers; // r-typesheet19.gif
     sf::Texture cruisers; // r-typesheet24.gif
+    sf::Texture hoppers; // r-typesheet7.gif
+    sf::Texture spinners; // r-typesheet13.gif
+    sf::Texture gunners; // r-typesheet14.gif
+    sf::Texture mines; // r-typesheet39.gif
+    sf::Texture bosses; // r-typesheet30.gif
     std::array<sf::Texture, 4> patterns; // P1-P4 swatch patterns (generated)
     sf::Font display; // Pixelify Sans: titles, tags, buttons
     sf::Font body; // Atkinson Hyperlegible: readable text
@@ -46,9 +51,9 @@ struct Assets {
 /// `mirrored` flips it horizontally (a sprite drawn facing right in its
 /// sheet, for an enemy flying left).
 struct SpriteFrame {
-    const sf::Texture* texture;
+    const sf::Texture* texture{};
     sf::IntRect rect;
-    float scale;
+    float scale{1.0F};
     bool mirrored{false};
 };
 

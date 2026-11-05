@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ecs/Entity/Entity.hpp"
+#include "game/Boss.hpp"
 #include "game/Waves.hpp"
 
 #include <cstdint>
@@ -20,6 +21,9 @@ namespace server {
 struct RunProgress {
     float elapsed{};
     std::uint32_t level{1};
+    float distancePoints{}; // Distance points earned, not yet added to the score
+    float nextBossAt{game::boss::Interval}; // `elapsed` when the next boss comes
+    std::uint32_t bossesDefeated{};
 };
 
 /// Creates one enemy at height `y` (see `Spawn.hpp`).

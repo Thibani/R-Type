@@ -15,6 +15,9 @@ namespace server {
 /// as the levels go by. Heights are random, chosen so that every member's
 /// whole flight stays inside the arena.
 ///
+/// No new arrival while a boss is in the game (`BossSystem`); the members of
+/// a formation already on their way still come.
+///
 /// The next members of a formation wait in `WaveDirector::pending`. The
 /// randomness comes from the seeded `WaveDirector` singleton, never from a
 /// global: the same seed gives the same waves (handy in tests).

@@ -41,6 +41,7 @@ struct Roster {
     std::uint8_t health;
     std::uint32_t points;
     float halfWidth;
+    float entryY{400.0F}; // Where it appears when asked for y = 400
 };
 
 const std::vector<Roster>& roster()
@@ -71,6 +72,27 @@ const std::vector<Roster>& roster()
             .health = game::cruiser::MaxHealth,
             .points = game::cruiser::Points,
             .halfWidth = game::cruiser::HalfWidth},
+        {.kind = EntityKind::Hopper,
+            .spawn = server::spawnHopper,
+            .health = game::hopper::MaxHealth,
+            .points = game::hopper::Points,
+            .halfWidth = game::hopper::HalfWidth,
+            .entryY = game::arena::Height - game::hopper::HalfHeight}, // On the floor
+        {.kind = EntityKind::Spinner,
+            .spawn = server::spawnSpinner,
+            .health = game::spinner::MaxHealth,
+            .points = game::spinner::Points,
+            .halfWidth = game::spinner::HalfWidth},
+        {.kind = EntityKind::Gunner,
+            .spawn = server::spawnGunner,
+            .health = game::gunner::MaxHealth,
+            .points = game::gunner::Points,
+            .halfWidth = game::gunner::HalfWidth},
+        {.kind = EntityKind::Mine,
+            .spawn = server::spawnMine,
+            .health = game::mine::MaxHealth,
+            .points = game::mine::Points,
+            .halfWidth = game::mine::HalfWidth},
     };
     return All;
 }
@@ -100,7 +122,7 @@ TEST(Enemies, EveryEnemyEntersOnTheRightWithItsRules)
                 game::layer::Enemy}));
         const auto& position = game.world.getComponent<game::Position>(entity);
         EXPECT_FLOAT_EQ(position.x, game::arena::Width + enemy.halfWidth); // Just off screen
-        EXPECT_FLOAT_EQ(position.y, 400.0F);
+        EXPECT_FLOAT_EQ(position.y, enemy.entryY);
         EXPECT_LT(game.world.getComponent<game::Velocity>(entity).dx, 0.0F); // Flying left
     }
 }
@@ -198,8 +220,7 @@ TEST(Enemies, CancerFiresAFanOfThreeAimedMissiles)
 
 TEST(Enemies, CruiserTakesFifteenHitsAndIsWorthAThousand)
 {
-    Game game;
-    (void)game.join(0);
+    Game game; // No ship: no distance points, only the kill counts
     const ecs::Entity cruiser = server::spawnCruiser(game.world, 300.0F, 100.0F);
     const auto park
         = [&] { game.world.getComponent<game::Position>(cruiser) = {.x = 1200.0F, .y = 300.0F}; };
@@ -234,4 +255,105 @@ TEST(Enemies, RammingACruiserDestroysTheShipNotTheCruiser)
     EXPECT_FALSE(game.world.isAlive(ship));
     ASSERT_TRUE(game.world.isAlive(cruiser));
     EXPECT_EQ(game.world.getComponent<game::Health>(cruiser).current, game::cruiser::MaxHealth);
+}
+
+// --- The second wave of enemies -----------------------------------------------
+
+namespace {
+
+/// Hits `target` with player missiles until it dies; returns how many it took.
+int shootDown(Game& game, ecs::Entity target)
+{
+    int shots = 0;
+    while (game.world.isAlive(target) && shots < 300) {
+        (void)playerMissile(game.world, game.world.getComponent<game::Position>(target));
+        game.steps(1);
+        ++shots;
+    }
+    return shots;
+}
+
+} // namespace
+
+TEST(Enemies, HopperHopsAlongTheFloor)
+{
+    Game game;
+    const ecs::Entity hopper = server::spawnHopper(game.world, 0.0F, 100.0F);
+    const float floor = game::arena::Height - game::hopper::HalfHeight;
+
+    float highest = floor;
+    float lowest = floor;
+    for (int i = 0; i < 180; ++i) { // 3 s: several hops
+        game.steps(1);
+        const float y = game.world.getComponent<game::Position>(hopper).y;
+        highest = std::min(highest, y);
+        lowest = std::max(lowest, y);
+    }
+
+    EXPECT_LT(highest, floor - 80.0F); // It jumps...
+    EXPECT_LT(lowest, floor + 15.0F); // ...and lands back on the floor
+    EXPECT_LT(game.world.getComponent<game::Position>(hopper).x, game::arena::Width);
+}
+
+TEST(Enemies, SpinnerFliesInLoops)
+{
+    Game game;
+    const ecs::Entity spinner = server::spawnSpinner(game.world, 540.0F, 0.0F);
+
+    float top = 540.0F;
+    float bottom = 540.0F;
+    for (int i = 0; i < 150; ++i) { // 2.5 s: more than a full loop at 3 rad/s
+        game.steps(1);
+        const float y = game.world.getComponent<game::Position>(spinner).y;
+        top = std::min(top, y);
+        bottom = std::max(bottom, y);
+    }
+
+    EXPECT_NEAR(bottom - top, 2.0F * game::spinner::LoopRadius, 15.0F);
+    EXPECT_LT(game.world.getComponent<game::Position>(spinner).x, game::arena::Width - 200.0F);
+}
+
+TEST(Enemies, GunnerStopsFiresThenLeaves)
+{
+    Game game;
+    (void)game.join(0);
+    (void)game.world.removeComponent<game::Hitbox>(game.shipOf(0)); // Out of the way
+    const ecs::Entity gunner = server::spawnGunner(game.world, 300.0F, 0.0F);
+
+    game.seconds(3.0F);
+    EXPECT_NEAR(game.world.getComponent<game::Position>(gunner).x, game::gunner::StopX, 10.0F);
+    EXPECT_GE(game.ofKind(EntityKind::EnemyMissile).size(), game::gunner::Shots); // A burst
+
+    game.seconds(game::gunner::HoldSeconds);
+    EXPECT_LT(game.world.getComponent<game::Position>(gunner).x, game::gunner::StopX - 100.0F);
+}
+
+TEST(Enemies, MineBurstsIntoMissilesWhenDestroyed)
+{
+    Game game;
+    const ecs::Entity mine = server::spawnMine(game.world, 500.0F, 0.0F);
+    game.world.getComponent<game::Position>(mine).x = 1200.0F;
+
+    EXPECT_EQ(shootDown(game, mine), game::mine::MaxHealth);
+
+    const auto missiles = game.ofKind(EntityKind::EnemyMissile);
+    ASSERT_EQ(missiles.size(), game::mine::BurstShots);
+    int goingRight = 0;
+    for (const ecs::Entity missile : missiles) {
+        const auto& velocity = game.world.getComponent<game::Velocity>(missile);
+        EXPECT_NEAR(std::hypot(velocity.dx, velocity.dy), game::mine::BurstSpeed, 1.0F);
+        goingRight += velocity.dx > 1.0F ? 1 : 0;
+    }
+    EXPECT_GT(goingRight, 0); // All around, not only towards the ships
+}
+
+TEST(Enemies, AMineLeavingTheArenaDoesNotBurst)
+{
+    Game game;
+    const ecs::Entity mine = server::spawnMine(game.world, 500.0F, 0.0F);
+
+    game.seconds(30.0F);
+
+    EXPECT_FALSE(game.world.isAlive(mine));
+    EXPECT_TRUE(game.ofKind(EntityKind::EnemyMissile).empty());
 }

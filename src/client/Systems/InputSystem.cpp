@@ -160,8 +160,10 @@ void activate(Session& session, Settings& settings, int index, ecs::GameLoop& lo
         }
         break;
     case Screen::WaitingRoom:
-    case Screen::GameOver:
         session.request = Request::Leave;
+        break;
+    case Screen::GameOver:
+        session.request = index == layout::PlayAgainButton ? Request::Restart : Request::Leave;
         break;
     case Screen::Game:
         if (index == layout::ResumeButton) {

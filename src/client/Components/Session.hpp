@@ -22,6 +22,7 @@ enum class Request : std::uint8_t {
     None,
     Connect,
     Leave, // Back to the connection screen
+    Restart, // A new game, after GAME OVER
     Quit, // Close the client
 };
 
@@ -56,6 +57,9 @@ struct Session {
     // meanwhile are the players already there (§8.1), not arrivals to announce
     bool catchingUp{false};
     std::uint32_t score{0}; // Team score from GAME_STATE
+    std::uint8_t level{1}; // Endless mode level from GAME_STATE
+    std::uint8_t lives{0}; // Lives the team has left, from GAME_STATE
+    std::uint8_t bossProgress{0}; // Distance to the next boss, 0-100 %, from GAME_STATE
     std::string notice; // Short message ("P4 Dave left the game"), shown until noticeUntil
     float noticeUntil{0.0F};
 };

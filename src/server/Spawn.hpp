@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ecs/Entity/Entity.hpp"
+#include "game/Boss.hpp"
 #include "game/Bydo.hpp"
 #include "game/Components/Collision.hpp"
 #include "game/Components/Motion.hpp"
@@ -10,6 +11,7 @@
 #include "server/Components/Combat.hpp"
 
 #include <cstdint>
+#include <numbers>
 
 namespace ecs {
 class World;
@@ -91,6 +93,57 @@ namespace weapons {
         .spread = game::cruiser::Spread,
     };
 
+    /// What every enemy missile has in common; only the speed changes.
+    [[nodiscard]]
+    constexpr Projectile enemyMissile(float speed) noexcept
+    {
+        return {
+            .kind = network::protocol::EntityKind::EnemyMissile,
+            .speed = speed,
+            .halfWidth = game::bydo::MissileHalfSize,
+            .halfHeight = game::bydo::MissileHalfSize,
+            .layer = game::layer::EnemyMissile,
+            .hits = game::layer::PlayerShip,
+            .damage = 1,
+        };
+    }
+
+    inline constexpr Weapon HopperGun{
+        .projectile = enemyMissile(game::hopper::MissileSpeed),
+        .interval = game::hopper::FireInterval,
+        .cooldown = 0.0F,
+        .muzzle = {.x = 0.0F, .y = -game::hopper::HalfHeight}, // From its head
+    };
+
+    /// Bursts of 3 tight missiles.
+    inline constexpr Weapon GunnerBlaster{
+        .projectile = enemyMissile(game::gunner::MissileSpeed),
+        .interval = game::gunner::FireInterval,
+        .cooldown = 0.0F,
+        .muzzle = {.x = -game::gunner::HalfWidth, .y = -12.0F}, // Its gun
+        .shots = game::gunner::Shots,
+        .spread = game::gunner::Spread,
+    };
+
+    /// The boss's attacks (`BossSystem` swaps them).
+    inline constexpr Weapon BossFan{
+        .projectile = enemyMissile(game::boss::MissileSpeed),
+        .interval = game::boss::FanInterval,
+        .cooldown = 0.0F,
+        .muzzle = {.x = -100.0F, .y = -130.0F}, // Its mouth
+        .shots = game::boss::FanShots,
+        .spread = game::boss::FanSpread,
+    };
+
+    inline constexpr Weapon BossRing{
+        .projectile = enemyMissile(game::boss::MissileSpeed),
+        .interval = game::boss::RingInterval,
+        .cooldown = 0.0F,
+        .muzzle = {},
+        .shots = game::boss::RingShots,
+        .spread = 2.0F * std::numbers::pi_v<float> / static_cast<float>(game::boss::RingShots),
+    };
+
 } // namespace weapons
 
 ecs::Entity spawnPlayerShip(ecs::World& world, std::uint8_t playerId);
@@ -113,6 +166,21 @@ ecs::Entity spawnCancer(ecs::World& world, float y, float firstShotDelay);
 
 /// Heavy cruiser (15 HP) firing aimed fans of 5 missiles; ramming it kills.
 ecs::Entity spawnCruiser(ecs::World& world, float y, float firstShotDelay);
+
+/// Robot hopping along the floor (`y` is ignored), firing aimed missiles.
+ecs::Entity spawnHopper(ecs::World& world, float y, float firstShotDelay);
+
+/// Disc flying in loops around `y`. Unarmed: it rams.
+ecs::Entity spawnSpinner(ecs::World& world, float y, float firstShotDelay);
+
+/// Robot that stops on the right, fires bursts for a few seconds, then leaves.
+ecs::Entity spawnGunner(ecs::World& world, float y, float firstShotDelay);
+
+/// Slow mine (6 HP) that bursts into 8 missiles when it is destroyed.
+ecs::Entity spawnMine(ecs::World& world, float y, float firstShotDelay);
+
+/// The boss, with `health` hit points (see `game/Boss.hpp`).
+ecs::Entity spawnBoss(ecs::World& world, float y, std::uint8_t health);
 
 /// A projectile fired by `owner` (a playerId, or `NoPlayer` for an enemy)
 /// from `from`, flying along `direction` (a unit vector).

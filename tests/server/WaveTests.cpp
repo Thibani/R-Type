@@ -39,8 +39,9 @@ public:
     {
         (void)game.join(0);
         game.world.removeComponent<game::Health>(game.shipOf(0)); // Never killed
-        server::singleton<RunProgress>(game.world).elapsed
-            = static_cast<float>(level - 1) * game::waves::LevelDuration;
+        auto& progress = server::singleton<RunProgress>(game.world);
+        progress.elapsed = static_cast<float>(level - 1) * game::waves::LevelDuration;
+        progress.nextBossAt = 1.0e9F; // Only waves here: bosses have their own tests
     }
 
     /// Plays `seconds`, recording every enemy that entered.
@@ -146,7 +147,8 @@ TEST(Waves, LaterLevelsSendEveryKindOfEnemy)
 
     EXPECT_EQ(run.kinds,
         (std::set<EntityKind>{EntityKind::Bydo, EntityKind::PataPata, EntityKind::Bug,
-            EntityKind::Cancer, EntityKind::Cruiser}));
+            EntityKind::Cancer, EntityKind::Cruiser, EntityKind::Hopper, EntityKind::Spinner,
+            EntityKind::Gunner, EntityKind::Mine}));
 }
 
 TEST(Waves, MoreEnemiesComeAtHigherLevels)

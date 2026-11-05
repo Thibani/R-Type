@@ -13,7 +13,7 @@ namespace network::protocol {
 // --- Sizes and identification (§2, §3) ---------------------------------------
 
 inline constexpr std::uint16_t Magic = 0x5254; // "RT"
-inline constexpr std::uint8_t Version = 1;
+inline constexpr std::uint8_t Version = 2;
 
 inline constexpr std::size_t HeaderSize = 20;
 inline constexpr std::size_t MaxDatagramSize = 1200;
@@ -29,6 +29,8 @@ inline constexpr std::size_t MaxSnapshotEntities
 inline constexpr std::uint8_t MaxPlayers = 4;
 inline constexpr std::uint8_t NoPlayer = 0xFF;
 inline constexpr std::uint16_t NoEntity = 0xFFFF;
+/// `GAME_STATE.bossProgress` is a percentage.
+inline constexpr std::uint8_t MaxBossProgress = 100;
 
 // --- Header flags (§3.1) -----------------------------------------------------
 
@@ -47,6 +49,7 @@ enum class PacketType : std::uint8_t {
     Disconnect = 0x04,
     Heartbeat = 0x05,
     Input = 0x10,
+    Restart = 0x11,
     Snapshot = 0x20,
     EntitySpawn = 0x21,
     EntityDestroy = 0x22,
@@ -98,7 +101,7 @@ enum class GamePhase : std::uint8_t {
     GameOver = 2,
 };
 
-/// Kind of a networked entity. Values 8-255 are reserved for new content:
+/// Kind of a networked entity. Values 13-255 are reserved for new content:
 /// receivers keep unknown kinds as-is instead of rejecting the packet.
 enum class EntityKind : std::uint8_t {
     PlayerShip = 0,
@@ -109,6 +112,11 @@ enum class EntityKind : std::uint8_t {
     Bug = 5,
     Cancer = 6,
     Cruiser = 7,
+    Hopper = 8,
+    Spinner = 9,
+    Gunner = 10,
+    Mine = 11,
+    Boss = 12,
 };
 
 /// Bits of an input mask (§4.2).

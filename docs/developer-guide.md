@@ -71,7 +71,7 @@ Combat is data (`src/server/Components/Combat.hpp`):
 
 ### Add a new kind of networked entity
 
-1. Give it a kind in `network::protocol::EntityKind` (values 8–255 are free)
+1. Give it a kind in `network::protocol::EntityKind` (values 13–255 are free)
    and document it in `docs/protocol.md` §5.2.
 2. Add a `spawn…()` function in `src/server/Spawn.cpp` that gives it a
    `Position`, a `Velocity`, a `Hitbox` and a `NetEntity`.

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "network/Protocol/Packets.hpp"
 #include "network/Protocol/Protocol.hpp"
 #include "network/Reliability/ReliableChannel.hpp"
 #include "network/Transport/UdpSocket.hpp"
@@ -24,7 +25,7 @@ struct NetClient {
     network::ReliableChannel::Clock::time_point lastReceived; // For the 5 s timeout
     network::ReliableChannel::Clock::time_point lastSent; // For the 250 ms heartbeat
     std::set<std::uint16_t> knownEntities; // netIds sent in ENTITY_SPAWN, not destroyed since
-    std::optional<std::uint32_t> knownScore; // Score of the last GAME_STATE it was sent
+    std::optional<network::protocol::GameState> knownState; // The last GAME_STATE it was sent
 };
 
 /// Marks a session to close at the end of the frame (`SessionCleanupSystem`),

@@ -82,7 +82,9 @@ bool sharesAKey(const Settings& settings) noexcept
 
 std::optional<std::string_view> keyName(sf::Keyboard::Key key) noexcept
 {
-    const auto* found = std::ranges::find(BindableKeys, key, &NamedKey::first);
+    // Not `auto*`: with MSVC, std::array iterators are classes, not pointers
+    // NOLINTNEXTLINE(readability-qualified-auto)
+    const auto found = std::ranges::find(BindableKeys, key, &NamedKey::first);
     if (found == BindableKeys.end()) {
         return std::nullopt;
     }
@@ -91,7 +93,8 @@ std::optional<std::string_view> keyName(sf::Keyboard::Key key) noexcept
 
 std::optional<sf::Keyboard::Key> keyFromName(std::string_view name) noexcept
 {
-    const auto* found = std::ranges::find(BindableKeys, name, &NamedKey::second);
+    // NOLINTNEXTLINE(readability-qualified-auto): not a pointer with MSVC
+    const auto found = std::ranges::find(BindableKeys, name, &NamedKey::second);
     if (found == BindableKeys.end()) {
         return std::nullopt;
     }
@@ -106,7 +109,8 @@ bool bindKey(Settings& settings, Action action, sf::Keyboard::Key key) noexcept
     auto& keys = settings.keys;
     const auto index = static_cast<std::size_t>(action);
     // The action that had this key gets ours: two actions never share a key
-    if (auto* other = std::ranges::find(keys, key); other != keys.end()) {
+    // NOLINTNEXTLINE(readability-qualified-auto): not a pointer with MSVC
+    if (auto other = std::ranges::find(keys, key); other != keys.end()) {
         *other = keys.at(index);
     }
     keys.at(index) = key;

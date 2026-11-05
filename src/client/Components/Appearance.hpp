@@ -17,6 +17,11 @@ enum class Look : std::uint8_t {
     Bug,
     Cancer,
     Cruiser,
+    Hopper,
+    Spinner,
+    Gunner,
+    Mine,
+    Boss,
     Unknown, // A kind added after this client was built: drawn as a "?" (§5.2)
 };
 
@@ -46,6 +51,16 @@ constexpr Look lookOf(network::protocol::EntityKind kind) noexcept
         return Look::Cancer;
     case network::protocol::EntityKind::Cruiser:
         return Look::Cruiser;
+    case network::protocol::EntityKind::Hopper:
+        return Look::Hopper;
+    case network::protocol::EntityKind::Spinner:
+        return Look::Spinner;
+    case network::protocol::EntityKind::Gunner:
+        return Look::Gunner;
+    case network::protocol::EntityKind::Mine:
+        return Look::Mine;
+    case network::protocol::EntityKind::Boss:
+        return Look::Boss;
     }
     return Look::Unknown;
 }

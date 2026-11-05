@@ -152,6 +152,16 @@ void ServerConnection::sendInput(const Input& input, Clock::time_point now)
     }
 }
 
+void ServerConnection::sendRestart(Clock::time_point now)
+{
+    if (_status != Status::Connected) {
+        return;
+    }
+    for (int i = 0; i < RestartRepeats; ++i) {
+        send(_channel.wrap(Restart{}, now), now);
+    }
+}
+
 void ServerConnection::disconnect(Clock::time_point now)
 {
     sendDisconnect(DisconnectReason::Quit, now);

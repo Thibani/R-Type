@@ -13,6 +13,7 @@ namespace server {
 ///                 SessionReceiveSystem  other packets → session, ClientMessage
 ///                 TimeoutSystem         silent sessions → Disconnecting
 ///                 InputSystem           INPUT → the player's PlayerInput
+///                 RestartSystem         RESTART after GAME OVER → a new game
 ///                 PlayerShipSystem      one ship per connected player, respawn delay
 ///     simulation  installSimulation()   below
 ///     frameEnd    SessionCleanupSystem  Disconnecting → PLAYER_LEFT, entity destroyed
@@ -30,18 +31,25 @@ void installSystems(ecs::World& world, ecs::GameLoop& loop, network::NetworkThre
 /// The simulation alone (the World's own systems, at the fixed step), in order:
 ///
 ///     TickSystem            SimulationTick + 1, first of every step
+///     MatchSystem           no life and no ship left → GAME OVER; nobody left → new game
 ///     PlayerControlSystem   PlayerInput → ship Velocity, FIRE → ship Trigger
 ///     ProgressSystem        seconds played (while ships exist) → level of the run
+///     BossSystem            boss arrival (every 90 s of play), its attacks, its defeat
 ///     WaveSystem            enemies and formations from the right, faster each level
 ///     WaveFlightSystem      WaveFlight Velocity: left, in a wave (Bydo, PataPata, Cancer)
 ///     SeekerSystem          Seeker Velocity: left, steering towards a ship (Bug)
+///     CircleFlightSystem    CircleFlight Velocity: loops while drifting left (Spinner)
+///     HopSystem             Hop Velocity: jumps along the floor (Hopper)
+///     HoverSystem           Hover Velocity: stops, holds, leaves (Gunner, boss)
 ///     AimSystem             AimsAtShips Trigger: pulled on screen, aimed at the nearest ship
 ///     WeaponSystem          pulled Trigger + Weapon ready → projectile
 ///     game::MovementSystem  Position += Velocity × step
 ///     game::ConfinementSystem ships (ConfinedToArena) kept inside the arena
 ///     game::ArenaExitSystem missiles and enemies that left → despawn (OUT_OF_BOUNDS)
 ///     game::CollisionSystem overlapping hitboxes → CollisionEvent
-///     DamageSystem          CollisionEvent + Damage → hits, kills, score, respawn timer
+///     DamageSystem          CollisionEvent + Damage → hits, kills, score
+///     LivesSystem           ship killed → one life less, respawn timer or Eliminated
+///     DeathBurstSystem      BurstOnDeath killed → projectiles all around (Mine)
 ///     game::DespawnSystem   DespawnRequest → DespawnEvent, entity destroyed
 ///
 /// Separate so the gameplay tests run exactly the server's simulation.

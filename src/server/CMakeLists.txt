@@ -25,8 +25,11 @@ add_library(rtype_server
     Components/Combat.hpp
     Components/Behaviour.hpp
     Components/Waves.hpp
+    Components/Match.hpp
     Spawn.hpp
     Spawn.cpp
+    Run.hpp
+    Run.cpp
 
     Systems/NetReceiveSystem.hpp
     Systems/NetReceiveSystem.cpp
@@ -42,10 +45,14 @@ add_library(rtype_server
     Systems/NetSendSystem.cpp
     Systems/InputSystem.hpp
     Systems/InputSystem.cpp
+    Systems/RestartSystem.hpp
+    Systems/RestartSystem.cpp
     Systems/PlayerShipSystem.hpp
     Systems/PlayerShipSystem.cpp
     Systems/TickSystem.hpp
     Systems/TickSystem.cpp
+    Systems/MatchSystem.hpp
+    Systems/MatchSystem.cpp
     Systems/PlayerControlSystem.hpp
     Systems/PlayerControlSystem.cpp
     Systems/ProgressSystem.hpp
@@ -58,10 +65,22 @@ add_library(rtype_server
     Systems/SeekerSystem.cpp
     Systems/AimSystem.hpp
     Systems/AimSystem.cpp
+    Systems/CircleFlightSystem.hpp
+    Systems/CircleFlightSystem.cpp
+    Systems/HopSystem.hpp
+    Systems/HopSystem.cpp
+    Systems/HoverSystem.hpp
+    Systems/HoverSystem.cpp
+    Systems/BossSystem.hpp
+    Systems/BossSystem.cpp
+    Systems/DeathBurstSystem.hpp
+    Systems/DeathBurstSystem.cpp
     Systems/WeaponSystem.hpp
     Systems/WeaponSystem.cpp
     Systems/DamageSystem.hpp
     Systems/DamageSystem.cpp
+    Systems/LivesSystem.hpp
+    Systems/LivesSystem.cpp
     Systems/ReplicationSystem.hpp
     Systems/ReplicationSystem.cpp
     Systems/SnapshotSystem.hpp

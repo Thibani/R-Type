@@ -112,6 +112,11 @@ namespace {
         return true;
     }
 
+    bool validate(const Restart& /*packet*/) noexcept
+    {
+        return true;
+    }
+
     bool validate(const Input& packet) noexcept
     {
         if (packet.count < 1 || packet.count > MaxInputMasks) {
@@ -159,7 +164,8 @@ namespace {
 
     bool validate(const GameState& packet) noexcept
     {
-        return inRange(packet.phase, GamePhase::WaitingForPlayers, GamePhase::GameOver);
+        return inRange(packet.phase, GamePhase::WaitingForPlayers, GamePhase::GameOver)
+            && packet.bossProgress <= MaxBossProgress;
     }
 
     // --- Names (§2.2) ---------------------------------------------------------
@@ -300,7 +306,12 @@ namespace {
     {
         writer.write(std::to_underlying(packet.phase));
         writer.write(packet.score);
+        writer.write(packet.level);
+        writer.write(packet.lives);
+        writer.write(packet.bossProgress);
     }
+
+    void writePayload(ByteWriter& /*writer*/, const Restart& /*packet*/) noexcept { }
 
     // --- Payload readers ------------------------------------------------------
     //
@@ -433,6 +444,14 @@ namespace {
     {
         packet.phase = static_cast<GamePhase>(reader.read<std::uint8_t>());
         packet.score = reader.read<std::uint32_t>();
+        packet.level = reader.read<std::uint8_t>();
+        packet.lives = reader.read<std::uint8_t>();
+        packet.bossProgress = reader.read<std::uint8_t>();
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& /*reader*/, Restart& /*packet*/)
+    {
         return {};
     }
 
@@ -596,6 +615,8 @@ std::expected<Packet, DecodeError> decode(std::span<const std::byte> datagram, D
         return decodeAs<PlayerDied>(*header, payload, direction);
     case PacketType::GameState:
         return decodeAs<GameState>(*header, payload, direction);
+    case PacketType::Restart:
+        return decodeAs<Restart>(*header, payload, direction);
     }
     return std::unexpected(DecodeError::UnknownType);
 }

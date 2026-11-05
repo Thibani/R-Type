@@ -1,10 +1,14 @@
-# R-Type Network Protocol — Version 1
+# R-Type Network Protocol — Version 2
 
 | Status   | Draft                       |
 |----------|-----------------------------|
-| Version  | 1                           |
+| Version  | 2                           |
 | Transport| UDP only                    |
 | Issue    | #21 (design), #10 (documentation) |
+
+**Changes since version 1:** `GAME_STATE` carries the level, the lives and
+the distance to the next boss (10 bytes instead of 7); new `RESTART` packet
+(client → server) to play again after a game over; new entity kinds 4–12.
 
 This document specifies the binary protocol spoken between `r-type_client`
 and `r-type_server`. It is meant to be complete enough to write a new client
@@ -107,7 +111,7 @@ Every datagram starts with this 20-byte header.
 | Offset | Size | Field          | Description                                                  |
 |-------:|-----:|----------------|--------------------------------------------------------------|
 | 0      | 2    | `magic`        | Always `0x5254` (`"RT"`). Filters out stray traffic.          |
-| 2      | 1    | `version`      | Protocol version. This document describes version `1`.       |
+| 2      | 1    | `version`      | Protocol version. This document describes version `2`.       |
 | 3      | 1    | `type`         | Packet type, see [§4](#4-packet-types).                       |
 | 4      | 1    | `flags`        | Bit field, see below.                                         |
 | 5      | 1    | `reserved`     | **MUST** be `0`.                                              |
@@ -123,11 +127,11 @@ Every datagram starts with this 20-byte header.
 |----:|------------|----------------------------------------------------------------------|
 | 0   | `RELIABLE` | The payload starts with a `u16 reliableId` and must be acknowledged. |
 | 1   | `HAS_ACK`  | `ack` and `ackBits` are meaningful. Clear until a packet is received.|
-| 2–7 | —          | Reserved, **MUST** be `0` in version 1.                              |
+| 2–7 | —          | Reserved, **MUST** be `0` in version 2.                              |
 
 ### 3.2 Versioning
 
-- The `version` byte must match exactly. Version 1 peers do not negotiate.
+- The `version` byte must match exactly. Peers do not negotiate.
 - Any change to an existing layout bumps the version.
 - A `CONNECT_REQUEST` with a different version is answered with
   `CONNECT_REJECT (VERSION_MISMATCH)`, sent with the server's own version.
@@ -150,15 +154,16 @@ Sizes are payload sizes, header excluded. Reliable packets include their
 | `0x04` | `DISCONNECT`      | both      | no       | 1                  |
 | `0x05` | `HEARTBEAT`       | both      | no       | 0                  |
 | `0x10` | `INPUT`           | C → S     | no       | 6 … 13 (`5 + count`) |
+| `0x11` | `RESTART`         | C → S     | no       | 0                  |
 | `0x20` | `SNAPSHOT`        | S → C     | no       | `11 + 13 × count`  |
 | `0x21` | `ENTITY_SPAWN`    | S → C     | **yes**  | 14                 |
 | `0x22` | `ENTITY_DESTROY`  | S → C     | **yes**  | 7                  |
 | `0x23` | `PLAYER_JOINED`   | S → C     | **yes**  | 19                 |
 | `0x24` | `PLAYER_LEFT`     | S → C     | **yes**  | 4                  |
 | `0x25` | `PLAYER_DIED`     | S → C     | **yes**  | 5                  |
-| `0x26` | `GAME_STATE`      | S → C     | **yes**  | 7                  |
+| `0x26` | `GAME_STATE`      | S → C     | **yes**  | 10                 |
 
-Ranges `0x00`, `0x06–0x0F`, `0x11–0x1F` and `0x27–0xFF` are reserved.
+Ranges `0x00`, `0x06–0x0F`, `0x12–0x1F` and `0x27–0xFF` are reserved.
 
 ### 4.1 Connection
 
@@ -226,6 +231,13 @@ ticks newer than the last one it processed for that client, and ignores the
 others.
 
 The client sends `INPUT` once per input tick, even when no key is pressed.
+
+#### `RESTART` (`0x11`)
+
+No payload. After `GAME_STATE` (`GAME_OVER`), a player asks for a new game.
+The client sends it 3 times (it is unreliable); the server ignores it while a
+game is running, so the repeats do nothing. The new game is announced by
+`GAME_STATE` (`RUNNING`) with the score at `0`, level `1` and full lives.
 
 ### 4.3 Server → client
 
@@ -316,13 +328,19 @@ newcomer once for every player already connected.
 | 2      | 1    | `playerId`    |
 | 3      | 2    | `killerNetId` |
 
-`GAME_STATE` (`0x26`) — the game changed phase or the score changed.
+`GAME_STATE` (`0x26`) — the game changed: phase, score, level or lives.
 
 | Offset | Size | Field        | Values                                        |
 |-------:|-----:|--------------|-----------------------------------------------|
 | 0      | 2    | `reliableId` |                                               |
 | 2      | 1    | `state`      | `0` WAITING_FOR_PLAYERS, `1` RUNNING, `2` GAME_OVER |
-| 3      | 4    | `score`      | Shared team score.                            |
+| 3      | 4    | `score`      | Shared team score (kills and distance).       |
+| 7      | 1    | `level`      | Endless mode level, `1` at the start of a game. |
+| 8      | 1    | `lives`      | Ships the team can still lose; `0` at game over. |
+| 9      | 1    | `bossProgress` | Distance to the next boss, `0`–`100` %; `100` while a boss is there. Above `100`: invalid. |
+
+A game is over when the team has no life left and no ship is in the game.
+Any player can then send `RESTART`.
 
 ---
 
@@ -352,7 +370,12 @@ enough on the wire. The server keeps the `Entity ↔ netId` mapping.
 | `5`   | BUG              |
 | `6`   | CANCER           |
 | `7`   | CRUISER          |
-| `8`–`255` | reserved for new content |
+| `8`   | HOPPER           |
+| `9`   | SPINNER          |
+| `10`  | GUNNER           |
+| `11`  | MINE             |
+| `12`  | BOSS             |
+| `13`–`255` | reserved for new content |
 
 A client receiving an unknown kind **MUST NOT** crash. It **SHOULD** display
 a placeholder.
@@ -398,7 +421,7 @@ four players are distinct. `0xFF` means "no player" (`owner` of an enemy).
   messages wait until the window moves. Without this rule, losing a single
   message while many others are in flight would disconnect a healthy peer.
 
-In version 1 only the server sends reliable messages.
+In version 2 only the server sends reliable messages.
 
 ---
 
@@ -502,7 +525,7 @@ the baseline for the optimisation work of Part 2 (#77, #78, #79, #93).
 
 ```text
 52 54             magic "RT"
-01                version 1
+02                version 2
 01                type CONNECT_REQUEST
 00                flags: none (nothing received yet, so no HAS_ACK)
 00                reserved
@@ -520,7 +543,7 @@ Total: 36 bytes.
 
 ## 11. Possible extensions
 
-Kept out of version 1, but the header leaves room for them:
+Kept out of version 2, but the header leaves room for them:
 
 - a `COMPRESSED` flag bit for LZ4 or zlib payloads (#79);
 - delta snapshots relative to the last acknowledged snapshot (#78);

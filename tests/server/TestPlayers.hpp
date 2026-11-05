@@ -25,7 +25,7 @@ inline ecs::Entity addPlayer(ecs::World& world, std::uint8_t playerId)
             .lastReceived = {},
             .lastSent = {},
             .knownEntities = {},
-            .knownScore = std::nullopt,
+            .knownState = std::nullopt,
         });
     return player;
 }

@@ -19,8 +19,10 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
+#include <utility>
 
 namespace client {
 
@@ -198,10 +200,10 @@ std::string controlsReminder(const Settings& settings)
     return move + "  ·  " + name(Action::Fire) + ": fire  ·  Esc: menu";
 }
 
-void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
-    const Session& session, float now)
+/// Top left: team score, level, and the team's lives as small ships.
+void drawRunStats(sf::RenderTarget& target, const Assets& assets, const Session& session)
 {
-    // Team score, top left
+    // Team score
     const std::string score = formatScore(session.score);
     const float scoreWidth = std::max(textWidth(assets.bodyBold, "TEAM SCORE", 13),
                                  textWidth(assets.display, score, 32))
@@ -209,6 +211,80 @@ void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
     box(target, {{20.0F, 20.0F}, {scoreWidth, 64.0F}}, theme::Surface, theme::Hull, 4.0F);
     text(target, assets.bodyBold, "TEAM SCORE", 13, theme::Muted, {38.0F, 29.0F});
     text(target, assets.display, score, 32, theme::Blue, {38.0F, 48.0F});
+
+    // Level, then the team's lives as small ships, next to the score
+    const std::string level = std::to_string(session.level);
+    const float levelLeft = 20.0F + scoreWidth + 12.0F;
+    const float levelWidth
+        = std::max(textWidth(assets.bodyBold, "LEVEL", 13), textWidth(assets.display, level, 32))
+        + 36.0F;
+    box(target, {{levelLeft, 20.0F}, {levelWidth, 64.0F}}, theme::Surface, theme::Hull, 4.0F);
+    text(target, assets.bodyBold, "LEVEL", 13, theme::Muted, {levelLeft + 18.0F, 29.0F});
+    text(target, assets.display, level, 32, theme::Text, {levelLeft + 18.0F, 48.0F});
+
+    const float livesLeft = levelLeft + levelWidth + 12.0F;
+    const float livesWidth = std::max(textWidth(assets.bodyBold, "LIVES", 13),
+                                 static_cast<float>(std::max<int>(session.lives, 1)) * 44.0F)
+        + 36.0F;
+    box(target, {{livesLeft, 20.0F}, {livesWidth, 64.0F}}, theme::Surface, theme::Hull, 4.0F);
+    text(target, assets.bodyBold, "LIVES", 13, theme::Muted, {livesLeft + 18.0F, 29.0F});
+    const std::uint8_t colour = session.playerId.value_or(0);
+    for (std::uint8_t life = 0; life < session.lives; ++life) {
+        widgets::ship(target, assets,
+            {{livesLeft + 18.0F + (static_cast<float>(life) * 44.0F), 52.0F}, {38.0F, 20.0F}},
+            colour);
+    }
+}
+
+/// The boss on screen, if any: its health and full health (from the snapshots).
+std::optional<std::pair<std::uint8_t, std::uint8_t>> bossHealth(ecs::World& world)
+{
+    std::optional<std::pair<std::uint8_t, std::uint8_t>> found;
+    world.query<NetEntity>([&](ecs::Entity /*entity*/, const NetEntity& data) {
+        if (data.kind == network::protocol::EntityKind::Boss) {
+            found = std::pair{data.health, data.peakHealth};
+        }
+    });
+    return found;
+}
+
+/// Top centre: the distance to the next boss, or the boss's health while it
+/// is there.
+void drawBossBar(
+    sf::RenderTarget& target, const Assets& assets, ecs::World& world, const Session& session)
+{
+    constexpr float width = 520.0F;
+    const sf::FloatRect panel{
+        {(theme::UiWidth - width - 36.0F) / 2.0F, 96.0F}, {width + 36.0F, 56.0F}};
+    const sf::FloatRect bar{panel.position + sf::Vector2f{18.0F, 30.0F}, {width, 14.0F}};
+    const auto boss = bossHealth(world);
+    float filled = static_cast<float>(session.bossProgress) / 100.0F;
+    std::string label = "NEXT BOSS  " + std::to_string(session.bossProgress) + " %";
+    sf::Color colour = theme::Blue;
+    if (boss) {
+        const auto [health, full] = *boss;
+        filled = full > 0 ? static_cast<float>(health) / static_cast<float>(full) : 1.0F;
+        label = "BOSS";
+        colour = theme::Red;
+    } else if (session.bossProgress >= 100) {
+        label = "BOSS INCOMING";
+        colour = theme::Red;
+    }
+    box(target, panel, theme::Surface, theme::Hull, 4.0F);
+    text(target, assets.bodyBold, label, 13, theme::Muted,
+        panel.position + sf::Vector2f{18.0F, 9.0F});
+    box(target, bar, sf::Color::White, theme::Hull, 2.0F);
+    if (filled > 0.0F) {
+        box(target, {bar.position, {width * std::min(filled, 1.0F), bar.size.y}}, colour,
+            theme::Hull, 2.0F);
+    }
+}
+
+void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
+    const Session& session, float now)
+{
+    drawRunStats(target, assets, session);
+    drawBossBar(target, assets, world, session);
 
     // One chip per player, right-aligned: swatch, name, health or state
     const auto health = shipHealth(world);
@@ -341,6 +417,8 @@ void drawGameOver(sf::RenderTarget& target, const Assets& assets, const Session&
         {scoreBox.position + sf::Vector2f{0.0F, 18.0F}, {boxWidth, 16.0F}});
     centredText(target, assets.display, score, 72, theme::Blue,
         {scoreBox.position + sf::Vector2f{0.0F, 42.0F}, {boxWidth, 72.0F}});
+    centredText(target, assets.bodyBold, "Level " + std::to_string(session.level) + " reached", 17,
+        theme::Text, {{0.0F, 384.0F}, {theme::UiWidth, 22.0F}});
 
     // The crew: the players still in the game
     std::vector<std::size_t> crew;
@@ -365,7 +443,10 @@ void drawGameOver(sf::RenderTarget& target, const Assets& assets, const Session&
         centredText(target, assets.bodyBold, session.players.at(i).name, 15, theme::Text,
             {{card.position.x, card.position.y + 118.0F}, {width, 24.0F}});
     }
-    widgets::button(target, assets, layout::BackToMenu, "Back to menu", true, session.focus == 0);
+    widgets::button(target, assets, layout::PlayAgain, "Play again", true,
+        session.focus == layout::PlayAgainButton);
+    widgets::button(target, assets, layout::BackToMenu, "Back to menu", false,
+        session.focus == layout::BackToMenuButton);
 }
 
 } // namespace

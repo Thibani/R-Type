@@ -52,8 +52,11 @@ constexpr sf::FloatRect settingsRow(int row) noexcept
     return {{372.0F, 128.0F + (static_cast<float>(row) * 58.0F)}, {536.0F, 50.0F}};
 }
 
-// Game over
-inline constexpr sf::FloatRect BackToMenu{{530.0F, 612.0F}, {220.0F, 56.0F}};
+// Game over: "Play again" first, so Enter starts a new game
+inline constexpr sf::FloatRect PlayAgain{{410.0F, 612.0F}, {220.0F, 56.0F}};
+inline constexpr sf::FloatRect BackToMenu{{650.0F, 612.0F}, {220.0F, 56.0F}};
+inline constexpr int PlayAgainButton = 0;
+inline constexpr int BackToMenuButton = 1;
 
 /// The focusable parts of the current screen, in focus order.
 [[nodiscard]]
@@ -77,7 +80,7 @@ inline std::vector<sf::FloatRect> focusables(const Session& session)
         }
         return {};
     case Screen::GameOver:
-        return {BackToMenu};
+        return {PlayAgain, BackToMenu};
     }
     return {};
 }

@@ -188,6 +188,109 @@ ecs::Entity spawnCruiser(ecs::World& world, float y, float firstShotDelay)
     return cruiser;
 }
 
+ecs::Entity spawnHopper(ecs::World& world, float /*y*/, float firstShotDelay)
+{
+    using namespace game::hopper;
+    const float floorY = game::arena::Height - HalfHeight;
+    const ecs::Entity hopper = spawnEnemy(world,
+        {.kind = EntityKind::Hopper,
+            .y = floorY,
+            .halfWidth = HalfWidth,
+            .halfHeight = HalfHeight,
+            .speed = Speed,
+            .health = MaxHealth,
+            .points = Points,
+            .ram = Damage{.amount = 1, .diesOnHit = true}});
+    world.addComponent(hopper, Hop{.floorY = floorY, .jumpSpeed = JumpSpeed, .gravity = Gravity});
+    arm(world, hopper, weapons::HopperGun, firstShotDelay);
+    return hopper;
+}
+
+ecs::Entity spawnSpinner(ecs::World& world, float y, float /*firstShotDelay*/)
+{
+    using namespace game::spinner;
+    const ecs::Entity spinner = spawnEnemy(world,
+        {.kind = EntityKind::Spinner,
+            .y = y,
+            .halfWidth = HalfWidth,
+            .halfHeight = HalfHeight,
+            .speed = Speed,
+            .health = MaxHealth,
+            .points = Points,
+            .ram = Damage{.amount = 1, .diesOnHit = true}});
+    world.addComponent(spinner,
+        CircleFlight{.speed = Speed, .radius = LoopRadius, .loopSpeed = LoopSpeed, .angle = 0.0F});
+    return spinner;
+}
+
+ecs::Entity spawnGunner(ecs::World& world, float y, float firstShotDelay)
+{
+    using namespace game::gunner;
+    const ecs::Entity gunner = spawnEnemy(world,
+        {.kind = EntityKind::Gunner,
+            .y = y,
+            .halfWidth = HalfWidth,
+            .halfHeight = HalfHeight,
+            .speed = Speed,
+            .health = MaxHealth,
+            .points = Points,
+            .ram = Damage{.amount = 1, .diesOnHit = true}});
+    world.addComponent(gunner,
+        Hover{.stopX = StopX,
+            .speed = Speed,
+            .holdSeconds = HoldSeconds,
+            .bobAmplitude = 20.0F,
+            .bobFrequency = 2.0F,
+            .held = 0.0F});
+    arm(world, gunner, weapons::GunnerBlaster, firstShotDelay);
+    return gunner;
+}
+
+ecs::Entity spawnMine(ecs::World& world, float y, float /*firstShotDelay*/)
+{
+    using namespace game::mine;
+    const ecs::Entity mine = spawnEnemy(world,
+        {.kind = EntityKind::Mine,
+            .y = y,
+            .halfWidth = HalfWidth,
+            .halfHeight = HalfHeight,
+            .speed = Speed,
+            .health = MaxHealth,
+            .points = Points,
+            .ram = Damage{.amount = RamDamage, .diesOnHit = true}});
+    world.addComponent(mine,
+        WaveFlight{
+            .baseY = y, .speed = Speed, .amplitude = WaveAmplitude, .frequency = WaveFrequency});
+    world.addComponent(
+        mine, BurstOnDeath{.projectile = weapons::enemyMissile(BurstSpeed), .shots = BurstShots});
+    return mine;
+}
+
+ecs::Entity spawnBoss(ecs::World& world, float y, std::uint8_t health)
+{
+    using namespace game::boss;
+    const ecs::Entity boss = spawnEnemy(world,
+        {.kind = EntityKind::Boss,
+            .y = y,
+            .halfWidth = HalfWidth,
+            .halfHeight = HalfHeight,
+            .speed = Speed,
+            .health = health,
+            .points = Points,
+            .ram = Damage{.amount = game::ship::MaxHealth, .diesOnHit = false}}); // Too big to ram
+    world.addComponent(boss, Boss{.maxHealth = health});
+    world.addComponent(boss,
+        Hover{.stopX = StopX,
+            .speed = Speed,
+            .holdSeconds = 0.0F, // Stays until it dies
+            .bobAmplitude = BobAmplitude,
+            .bobFrequency = BobFrequency,
+            .held = 0.0F});
+    world.addComponent(boss, AttackCycle{.current = BossAttack::Fan, .timeLeft = AttackSeconds});
+    arm(world, boss, weapons::BossFan, 1.0F);
+    return boss;
+}
+
 ecs::Entity spawnProjectile(ecs::World& world, const Projectile& projectile, std::uint8_t owner,
     game::Position from, game::Velocity direction)
 {

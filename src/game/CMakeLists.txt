@@ -12,6 +12,8 @@ add_library(rtype_game
     Bydo.hpp
     Enemies.hpp
     Waves.hpp
+    Run.hpp
+    Boss.hpp
 
     Components/Motion.hpp
     Components/Health.hpp

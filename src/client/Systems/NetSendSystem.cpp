@@ -49,6 +49,8 @@ void NetSendSystem::update(ecs::World& world, const ecs::Time& /*time*/)
 
     if (session.request == Request::Connect) {
         connect(session, _connection, now);
+    } else if (session.request == Request::Restart) {
+        _connection.sendRestart(now); // GAME_STATE (RUNNING) brings the game back
     } else if (session.request == Request::Leave) {
         _connection.disconnect(now);
         clearSession(world);

@@ -13,6 +13,10 @@
 /// | Bug      | left, steers towards a ship  | never (rams)               |  1 |    150 |
 /// | Cancer   | slowly left, small wave      | 3 missiles, aimed fan      |  3 |    300 |
 /// | Cruiser  | very slowly left             | 5 missiles, aimed fan      | 15 |   1000 |
+/// | Hopper   | hops along the floor         | 1 missile, aimed           |  2 |    200 |
+/// | Spinner  | left, in loops               | never (rams)               |  2 |    250 |
+/// | Gunner   | stops on the right, leaves   | bursts of 3, aimed         |  4 |    400 |
+/// | Mine     | drifts slowly                | 8 missiles when destroyed  |  6 |    500 |
 namespace game {
 
 /// Small spinning drone: fast, erratic, harmless unless it rams a ship.
@@ -77,5 +81,70 @@ inline constexpr float Spread = 0.25F; // Between two missiles of the fan
 inline constexpr float MissileSpeed = 280.0F;
 
 } // namespace cruiser
+
+/// Walking robot: hops along the floor, firing at the ships.
+namespace hopper {
+
+inline constexpr float Speed = 150.0F;
+inline constexpr float JumpSpeed = 520.0F; // Upwards, at each landing
+inline constexpr float Gravity = 1200.0F; // Units per second²
+inline constexpr float HalfWidth = 40.0F;
+inline constexpr float HalfHeight = 40.0F;
+inline constexpr std::uint8_t MaxHealth = 2;
+inline constexpr std::uint32_t Points = 200;
+
+inline constexpr float FireInterval = 1.6F;
+inline constexpr float MissileSpeed = 340.0F;
+
+} // namespace hopper
+
+/// Spinning disc: drifts left while flying in loops.
+namespace spinner {
+
+inline constexpr float Speed = 160.0F; // Drift towards the left
+inline constexpr float LoopRadius = 110.0F;
+inline constexpr float LoopSpeed = 3.0F; // Radians per second
+inline constexpr float HalfWidth = 40.0F;
+inline constexpr float HalfHeight = 36.0F;
+inline constexpr std::uint8_t MaxHealth = 2;
+inline constexpr std::uint32_t Points = 250;
+
+} // namespace spinner
+
+/// Armed robot: stops at `StopX`, fires bursts for `HoldSeconds`, then leaves.
+namespace gunner {
+
+inline constexpr float Speed = 260.0F;
+inline constexpr float StopX = 1480.0F;
+inline constexpr float HoldSeconds = 6.0F;
+inline constexpr float HalfWidth = 44.0F;
+inline constexpr float HalfHeight = 44.0F;
+inline constexpr std::uint8_t MaxHealth = 4;
+inline constexpr std::uint32_t Points = 400;
+
+inline constexpr float FireInterval = 1.2F;
+inline constexpr std::uint8_t Shots = 3;
+inline constexpr float Spread = 0.12F;
+inline constexpr float MissileSpeed = 420.0F;
+
+} // namespace gunner
+
+/// Spiked mine: drifts slowly and, when destroyed, bursts into a ring of
+/// `BurstShots` missiles. Shoot it from afar.
+namespace mine {
+
+inline constexpr float Speed = 90.0F;
+inline constexpr float WaveAmplitude = 30.0F;
+inline constexpr float WaveFrequency = 1.5F; // Radians per second
+inline constexpr float HalfWidth = 52.0F;
+inline constexpr float HalfHeight = 52.0F;
+inline constexpr std::uint8_t MaxHealth = 6;
+inline constexpr std::uint32_t Points = 500;
+inline constexpr std::uint8_t RamDamage = 2;
+
+inline constexpr std::uint8_t BurstShots = 8;
+inline constexpr float BurstSpeed = 260.0F;
+
+} // namespace mine
 
 } // namespace game

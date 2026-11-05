@@ -8,16 +8,24 @@
 #include "server/Components/Combat.hpp"
 #include "server/Singleton.hpp"
 #include "server/Systems/AimSystem.hpp"
+#include "server/Systems/BossSystem.hpp"
+#include "server/Systems/CircleFlightSystem.hpp"
 #include "server/Systems/ConnectionSystem.hpp"
 #include "server/Systems/DamageSystem.hpp"
+#include "server/Systems/DeathBurstSystem.hpp"
 #include "server/Systems/DiscardPacketsSystem.hpp"
+#include "server/Systems/HopSystem.hpp"
+#include "server/Systems/HoverSystem.hpp"
 #include "server/Systems/InputSystem.hpp"
+#include "server/Systems/LivesSystem.hpp"
+#include "server/Systems/MatchSystem.hpp"
 #include "server/Systems/NetReceiveSystem.hpp"
 #include "server/Systems/NetSendSystem.hpp"
 #include "server/Systems/PlayerControlSystem.hpp"
 #include "server/Systems/PlayerShipSystem.hpp"
 #include "server/Systems/ProgressSystem.hpp"
 #include "server/Systems/ReplicationSystem.hpp"
+#include "server/Systems/RestartSystem.hpp"
 #include "server/Systems/SeekerSystem.hpp"
 #include "server/Systems/SessionCleanupSystem.hpp"
 #include "server/Systems/SessionReceiveSystem.hpp"
@@ -35,11 +43,16 @@ void installSimulation(ecs::World& world)
     (void)singleton<TeamScore>(world); // Created now: DamageSystem adds to it during events
 
     world.systems().add<TickSystem>();
+    world.systems().add<MatchSystem>();
     world.systems().add<PlayerControlSystem>();
     world.systems().add<ProgressSystem>();
+    world.systems().add<BossSystem>(world);
     world.systems().add<WaveSystem>();
     world.systems().add<WaveFlightSystem>();
     world.systems().add<SeekerSystem>();
+    world.systems().add<CircleFlightSystem>();
+    world.systems().add<HopSystem>();
+    world.systems().add<HoverSystem>();
     world.systems().add<AimSystem>();
     world.systems().add<WeaponSystem>();
     world.systems().add<game::MovementSystem>();
@@ -47,6 +60,8 @@ void installSimulation(ecs::World& world)
     world.systems().add<game::ArenaExitSystem>();
     world.systems().add<game::CollisionSystem>();
     world.systems().add<DamageSystem>(world);
+    world.systems().add<LivesSystem>(world);
+    world.systems().add<DeathBurstSystem>(world);
     world.systems().add<game::DespawnSystem>(world);
 }
 
@@ -57,6 +72,7 @@ void installSystems(ecs::World& world, ecs::GameLoop& loop, network::NetworkThre
     loop.frameStart().add<SessionReceiveSystem>();
     loop.frameStart().add<TimeoutSystem>();
     loop.frameStart().add<InputSystem>();
+    loop.frameStart().add<RestartSystem>();
     loop.frameStart().add<PlayerShipSystem>();
 
     installSimulation(world);

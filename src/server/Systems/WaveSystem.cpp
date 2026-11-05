@@ -6,6 +6,7 @@
 #include "game/Bydo.hpp"
 #include "game/Enemies.hpp"
 #include "game/Waves.hpp"
+#include "server/Components/Behaviour.hpp"
 #include "server/Components/Player.hpp"
 #include "server/Components/Waves.hpp"
 #include "server/Singleton.hpp"
@@ -29,6 +30,10 @@ constexpr float PataPataMargin = game::patapata::HalfHeight + game::patapata::Wa
 constexpr float BugMargin = game::bug::HalfHeight;
 constexpr float CancerMargin = game::cancer::HalfHeight + game::cancer::WaveAmplitude;
 constexpr float CruiserMargin = game::cruiser::HalfHeight;
+constexpr float HopperMargin = game::hopper::HalfHeight; // It walks on the floor anyway
+constexpr float SpinnerMargin = game::spinner::HalfHeight + game::spinner::LoopRadius;
+constexpr float GunnerMargin = game::gunner::HalfHeight + 20.0F; // Its bob
+constexpr float MineMargin = game::mine::HalfHeight + game::mine::WaveAmplitude;
 
 // --- Single enemies --------------------------------------------------------------
 
@@ -49,6 +54,10 @@ constexpr std::array Singles{
     Single{.spawn = spawnBug, .unlock = 2, .weight = 15, .growth = 4, .margin = BugMargin},
     Single{.spawn = spawnCancer, .unlock = 3, .weight = 10, .growth = 3, .margin = CancerMargin},
     Single{.spawn = spawnCruiser, .unlock = 4, .weight = 4, .growth = 2, .margin = CruiserMargin},
+    Single{.spawn = spawnHopper, .unlock = 2, .weight = 10, .growth = 3, .margin = HopperMargin},
+    Single{.spawn = spawnSpinner, .unlock = 3, .weight = 10, .growth = 3, .margin = SpinnerMargin},
+    Single{.spawn = spawnGunner, .unlock = 4, .weight = 6, .growth = 2, .margin = GunnerMargin},
+    Single{.spawn = spawnMine, .unlock = 5, .weight = 4, .growth = 2, .margin = MineMargin},
 };
 
 // --- Formations ------------------------------------------------------------------
@@ -108,12 +117,43 @@ constexpr std::array Escort{
     Member{.spawn = spawnCancer, .dy = 150.0F, .delay = 0.6F},
 };
 
+/// Three Hoppers walking in single file.
+constexpr std::array HopperPatrol{
+    Member{.spawn = spawnHopper, .dy = 0.0F, .delay = 0.0F},
+    Member{.spawn = spawnHopper, .dy = 0.0F, .delay = 0.8F},
+    Member{.spawn = spawnHopper, .dy = 0.0F, .delay = 1.6F},
+};
+
+/// Two Spinners looping above and below each other.
+constexpr std::array SpinnerPair{
+    Member{.spawn = spawnSpinner, .dy = -130.0F, .delay = 0.0F},
+    Member{.spawn = spawnSpinner, .dy = 130.0F, .delay = 0.5F},
+};
+
+/// Three Gunners stopping in a column, all firing.
+constexpr std::array GunnerSquad{
+    Member{.spawn = spawnGunner, .dy = -250.0F, .delay = 0.0F},
+    Member{.spawn = spawnGunner, .dy = 0.0F, .delay = 0.3F},
+    Member{.spawn = spawnGunner, .dy = 250.0F, .delay = 0.6F},
+};
+
+/// Three Mines drifting in, one after the other.
+constexpr std::array Minefield{
+    Member{.spawn = spawnMine, .dy = -220.0F, .delay = 0.0F},
+    Member{.spawn = spawnMine, .dy = 0.0F, .delay = 1.0F},
+    Member{.spawn = spawnMine, .dy = 220.0F, .delay = 2.0F},
+};
+
 constexpr std::array Formations{
     Formation{.members = PataPataLine, .unlock = 1, .margin = PataPataMargin},
     Formation{.members = BydoV, .unlock = 2, .margin = BydoMargin + 140.0F},
     Formation{.members = BugRush, .unlock = 3, .margin = BugMargin + 150.0F},
     Formation{.members = CancerPair, .unlock = 4, .margin = CancerMargin + 120.0F},
     Formation{.members = Escort, .unlock = 5, .margin = CancerMargin + 150.0F},
+    Formation{.members = HopperPatrol, .unlock = 3, .margin = HopperMargin},
+    Formation{.members = SpinnerPair, .unlock = 4, .margin = SpinnerMargin + 130.0F},
+    Formation{.members = GunnerSquad, .unlock = 6, .margin = GunnerMargin + 250.0F},
+    Formation{.members = Minefield, .unlock = 7, .margin = MineMargin + 220.0F},
 };
 
 // --- Choosing --------------------------------------------------------------------
@@ -206,10 +246,15 @@ void WaveSystem::update(ecs::World& world, const ecs::Time& time)
         return; // Nobody to fight: the waves wait
     }
 
+    bool bossFight = false;
+    world.query<Boss>([&](ecs::Entity /*entity*/, const Boss& /*boss*/) { bossFight = true; });
+
     const std::uint32_t level = singleton<RunProgress>(world).level;
     auto& director = singleton<WaveDirector>(world);
-    director.untilNext -= time.deltaSeconds();
-    if (director.untilNext <= 0.0F) {
+    if (!bossFight) { // The waves wait while the boss is there
+        director.untilNext -= time.deltaSeconds();
+    }
+    if (!bossFight && director.untilNext <= 0.0F) {
         std::bernoulli_distribution formation(
             static_cast<double>(game::waves::formationChance(level)));
         const float duration = formation(director.random) ? queueFormation(director, level)

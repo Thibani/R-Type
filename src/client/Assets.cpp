@@ -64,7 +64,12 @@ std::expected<void, std::string> Assets::load(Assets& assets, const std::filesys
              std::pair{&assets.pataPatas, "r-typesheet8.gif"},
              std::pair{&assets.bugs, "r-typesheet16.gif"},
              std::pair{&assets.cancers, "r-typesheet19.gif"},
-             std::pair{&assets.cruisers, "r-typesheet24.gif"}}) {
+             std::pair{&assets.cruisers, "r-typesheet24.gif"},
+             std::pair{&assets.hoppers, "r-typesheet7.gif"},
+             std::pair{&assets.spinners, "r-typesheet13.gif"},
+             std::pair{&assets.gunners, "r-typesheet14.gif"},
+             std::pair{&assets.mines, "r-typesheet39.gif"},
+             std::pair{&assets.bosses, "r-typesheet30.gif"}}) {
         if (!loadTexture(*texture, sprites / file)) {
             return fail(sprites / file);
         }
@@ -139,6 +144,16 @@ std::optional<SpriteFrame> spriteFrame(const Assets& assets, Look look, std::uin
         return frame(assets.cancers, {103, 6}, {24, 21}, 2.5F);
     case Look::Cruiser: // Drawn facing right in the sheet. 48 × 48 × 2.5: hitbox 108 × 108
         return frame(assets.cruisers, {9, 9}, {48, 48}, 2.5F, true);
+    case Look::Hopper: // Standing. 32 × 29 × 2.5: hitbox 80 × 80
+        return frame(assets.hoppers, {1, 4}, {32, 29}, 2.5F);
+    case Look::Spinner: // 32 × 29 × 2.5: hitbox 80 × 72
+        return frame(assets.spinners, {1, 3}, {32, 29}, 2.5F);
+    case Look::Gunner: // Gun forward. 48 × 47 × 2: hitbox 88 × 88
+        return frame(assets.gunners, {1, 2}, {48, 47}, 2.0F);
+    case Look::Mine: // 64 × 64 × 1.7: hitbox 104 × 104
+        return frame(assets.mines, {34, 2}, {64, 64}, 1.7F);
+    case Look::Boss: // 155 × 204 × 2: hitbox 240 × 360 (its body, not the tail tips)
+        return frame(assets.bosses, {27, 2}, {155, 204}, 2.0F);
     case Look::Unknown:
         break;
     }
