@@ -62,11 +62,12 @@ Tab, Enter and Esc, so a player can never lock themselves out.
   nothing is only visual.
 - English throughout, short sentences, one idea per paragraph.
 
-## Missing, planned for Part 2
+## Still missing
 
 | Need | Plan |
 |------|------|
 | Gamepad support | Remappable gamepad buttons (#125) |
-| Adjustable game speed or difficulty | Server-side rules (#87, game modes) |
-| High-contrast theme | Theme options |
-| Visual cue for incoming fire | Highlight Bydos about to shoot |
+| Adjustable game speed or difficulty | Not planned |
+| Larger text | Interface scaling (#123) |
+| High-contrast theme | Not scheduled |
+| Visual cue for incoming fire | Not scheduled |

@@ -3,11 +3,12 @@
 A networked R-Type game written in modern C++ (C++23), built on top of a
 reusable Entity-Component-System (ECS) game engine.
 
-> **Status:** Part 1 prototype. Up to 4 players join an authoritative server
+> **Status:** Part 2 in progress. Up to 4 players join an authoritative server
 > with the graphical client, fly their ships, shoot the Bydos that come in
 > waves and shoot back, and share a team score. A client that crashes or
-> leaves does not stop the game. Next (Part 2): game phases (lobby, game
-> over), levels, bosses, and the advanced networking track.
+> leaves does not stop the game. Players can set the volume and their keys.
+> Next: more accessibility options, accounts, chat, friends and a lobby, then
+> game phases, levels, bosses and the endless, campaign and versus modes.
 
 ---
 
@@ -25,8 +26,11 @@ Optional, for code quality: `clang-format` and `clang-tidy` (19 or newer: older 
 On Linux, the client (SFML) also needs the X11, OpenGL and udev headers:
 `sudo apt install libx11-dev libxrandr-dev libxcursor-dev libxi-dev libudev-dev libgl-dev`.
 
-On Windows, run the commands below from the **Developer PowerShell for VS**
-(it provides the compiler and Ninja) or from Git Bash for the shell scripts.
+On Windows, install Git, CMake and **Visual Studio** (not VS Code) with the
+**Desktop development with C++** workload, which includes MSVC and Ninja. Run the
+commands below from the **Developer PowerShell for VS** so they can find them, and
+use Git Bash for the shell scripts. CI builds and tests every pull request on
+Windows this way.
 
 Third-party libraries (GoogleTest, standalone Asio and SFML) are downloaded automatically
 at configure time with [CPM.cmake](https://github.com/cpm-cmake/CPM.cmake).

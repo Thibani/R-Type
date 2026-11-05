@@ -1,6 +1,6 @@
 # R-Type Network Protocol — Version 1
 
-| Status   | Draft                       |
+| Status   | Implemented                 |
 |----------|-----------------------------|
 | Version  | 1                           |
 | Transport| UDP only                    |
@@ -38,7 +38,7 @@ are to be interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/
    | <-------- ENTITY_SPAWN  (reliable) --- |  one per existing entity
    |                                        |
    | -- INPUT (every client frame) -------> |
-   | <------------ SNAPSHOT (20-30 Hz) ---- |
+   | <------------ SNAPSHOT (30 Hz) ------ |
    | <------- events (reliable) ----------- |
    |                                        |
    | -- DISCONNECT -----------------------> |  or silence => timeout
@@ -487,8 +487,7 @@ CPU speed.
 **Bandwidth estimate.** With 4 ships, 30 Bydos and 60 missiles (94 entities),
 a snapshot takes 2 parts, about 1280 bytes in total with headers. At 30 Hz that is about
 **38 KB/s per client** downstream, events excluded. Upstream, `INPUT` at
-60 Hz with 8 masks is 33 bytes × 60 ≈ **2 KB/s per client**. These figures are
-the baseline for the optimisation work of Part 2 (#77, #78, #79, #93).
+60 Hz with 8 masks is 33 bytes × 60 ≈ **2 KB/s per client**.
 
 ---
 
@@ -518,8 +517,8 @@ Total: 36 bytes.
 
 Kept out of version 1, but the header leaves room for them:
 
-- a `COMPRESSED` flag bit for LZ4 or zlib payloads (#79);
-- delta snapshots relative to the last acknowledged snapshot (#78);
+- a `COMPRESSED` flag bit for LZ4 or zlib payloads;
+- delta snapshots relative to the last acknowledged snapshot;
 - rooms and lobbies, as new packet types in the `0x30–0x4F` range (#71, #72);
 - reliable client → server messages (chat, room commands) using the same
   mechanism as [§6.2](#62-reliable-messages).
