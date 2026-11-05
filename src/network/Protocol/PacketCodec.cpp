@@ -461,8 +461,10 @@ namespace {
     std::expected<Packet, DecodeError> decodeAs(
         const PacketHeader& header, std::span<const std::byte> payload, Direction direction)
     {
-        if (T::Way != Direction::Both && T::Way != direction) {
-            return std::unexpected(DecodeError::WrongDirection);
+        if constexpr (T::Way != Direction::Both) {
+            if (T::Way != direction) {
+                return std::unexpected(DecodeError::WrongDirection);
+            }
         }
         if (((header.flags & flags::Reliable) != 0) != T::Reliable) {
             return std::unexpected(DecodeError::ReliableFlagMismatch);

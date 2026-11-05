@@ -19,7 +19,7 @@ How to work in this codebase. For the big picture, start with the
 - **Gameplay entities leave through `DespawnRequest`**, never `destroyEntity`:
   that is how the clients get the reason (killed, out of bounds, expired).
 - **The server decides.** A rule that changes the game runs on the server;
-  the client only displays (and, later, predicts with the same `src/game` code).
+  the client only displays.
 - **Errors are values.** Network input is untrusted: return `std::expected`,
   never throw on bad packets.
 - **Shared rules are constants in `src/game`** (`Ship.hpp`, `Bydo.hpp`, `Enemies.hpp`,

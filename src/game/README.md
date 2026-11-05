@@ -1,8 +1,7 @@
 # Game
 
 R-Type gameplay shared by `r-type_server` and `r-type_client`: components,
-constants, and the systems both sides must run identically (the server to
-decide, the client to predict).
+constants, and the systems both sides can share.
 
 | File                            | Content                                              |
 |---------------------------------|------------------------------------------------------|

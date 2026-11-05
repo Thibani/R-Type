@@ -39,9 +39,10 @@ inline constexpr sf::FloatRect Resume{{462.0F, 342.0F}, {356.0F, 56.0F}};
 inline constexpr sf::FloatRect MenuSettings{{462.0F, 416.0F}, {356.0F, 56.0F}};
 inline constexpr sf::FloatRect LeaveGame{{462.0F, 490.0F}, {356.0F, 56.0F}};
 
-// Settings, over any screen: volume, one row per action, then two buttons
+// Settings, over any screen: volume, colours, one row per action, then two buttons
 inline constexpr int VolumeRow = 0;
-inline constexpr int FirstKeyRow = 1; // + Action index
+inline constexpr int ColourRow = 1;
+inline constexpr int FirstKeyRow = 2; // + Action index
 inline constexpr int ResetRow = FirstKeyRow + static_cast<int>(ActionCount);
 inline constexpr int BackRow = ResetRow + 1;
 inline constexpr sf::FloatRect SettingsPanel{{340.0F, 40.0F}, {600.0F, 640.0F}};
@@ -49,7 +50,7 @@ inline constexpr sf::FloatRect SettingsPanel{{340.0F, 40.0F}, {600.0F, 640.0F}};
 [[nodiscard]]
 constexpr sf::FloatRect settingsRow(int row) noexcept
 {
-    return {{372.0F, 128.0F + (static_cast<float>(row) * 58.0F)}, {536.0F, 50.0F}};
+    return {{372.0F, 122.0F + (static_cast<float>(row) * 52.0F)}, {536.0F, 46.0F}};
 }
 
 // Game over: "Play again" first, so Enter starts a new game

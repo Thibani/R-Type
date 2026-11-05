@@ -1,6 +1,7 @@
 #pragma once
 
 #include "client/Components/Appearance.hpp"
+#include "client/Components/Settings.hpp"
 #include "client/Components/SoundEvent.hpp"
 
 #include <SFML/Audio/SoundBuffer.hpp>
@@ -17,9 +18,8 @@
 
 namespace client {
 
-/// Everything loaded from the `assets/` folder, once at startup. Systems keep
-/// a reference: it must outlive the game loop.
-struct Assets {
+/// The images of one colour mode.
+struct Skin {
     sf::Texture ships; // r-typesheet42.gif: one row per ship colour
     sf::Texture bydos; // r-typesheet5.gif
     sf::Texture missiles; // r-typesheet1.gif: player and enemy missiles
@@ -33,8 +33,14 @@ struct Assets {
     sf::Texture mines; // r-typesheet39.gif
     sf::Texture bosses; // r-typesheet30.gif
     std::array<sf::Texture, 4> patterns; // P1-P4 swatch patterns (generated)
-    sf::Font display; // Pixelify Sans: titles, tags, buttons
-    sf::Font body; // Atkinson Hyperlegible: readable text
+};
+
+/// Everything loaded from the `assets/` folder, once at startup. Systems keep
+/// a reference: it must outlive the game loop.
+struct Assets {
+    std::array<Skin, ColourModeCount> skins; // Indexed by `ColourMode`
+    sf::Font display; // Pixelify Sans: titles and buttons, never digits (its 2 and 5 look alike)
+    sf::Font body; // Atkinson Hyperlegible: readable text, numbers, names and tags
     sf::Font bodyBold;
     std::array<sf::SoundBuffer, 4> sounds; // Indexed by `Sound`
 
@@ -60,7 +66,8 @@ struct SpriteFrame {
 /// The frame of `look` (for a ship, `player` selects the colour row).
 /// Unknown looks have no frame: they are drawn as a "?" placeholder.
 [[nodiscard]]
-std::optional<SpriteFrame> spriteFrame(const Assets& assets, Look look, std::uint8_t player);
+std::optional<SpriteFrame> spriteFrame(
+    const Assets& assets, ColourMode mode, Look look, std::uint8_t player);
 
 /// The `assets/` folder: next to the executable, else in the current folder.
 [[nodiscard]]

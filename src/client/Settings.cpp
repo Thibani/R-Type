@@ -53,6 +53,11 @@ constexpr std::array<std::string_view, ActionCount> ActionKeys{
     "key.up", "key.down", "key.left", "key.right", "key.fire",
 };
 
+/// In `ColourMode` order.
+constexpr std::array<std::string_view, ColourModeCount> ColourModeNames{
+    "Off", "Protanopia", "Deuteranopia", "Tritanopia",
+};
+
 /// A settings file is a few hundred bytes: anything much bigger is not one.
 constexpr std::size_t MaxFileSize = std::size_t{64} * 1024;
 
@@ -82,8 +87,7 @@ bool sharesAKey(const Settings& settings) noexcept
 
 std::optional<std::string_view> keyName(sf::Keyboard::Key key) noexcept
 {
-    // Not `auto*`: with MSVC, std::array iterators are classes, not pointers
-    // NOLINTNEXTLINE(readability-qualified-auto)
+    // NOLINTNEXTLINE(readability-qualified-auto): a raw pointer on libstdc++ only, not on MSVC
     const auto found = std::ranges::find(BindableKeys, key, &NamedKey::first);
     if (found == BindableKeys.end()) {
         return std::nullopt;
@@ -93,12 +97,17 @@ std::optional<std::string_view> keyName(sf::Keyboard::Key key) noexcept
 
 std::optional<sf::Keyboard::Key> keyFromName(std::string_view name) noexcept
 {
-    // NOLINTNEXTLINE(readability-qualified-auto): not a pointer with MSVC
+    // NOLINTNEXTLINE(readability-qualified-auto): a raw pointer on libstdc++ only, not on MSVC
     const auto found = std::ranges::find(BindableKeys, name, &NamedKey::second);
     if (found == BindableKeys.end()) {
         return std::nullopt;
     }
     return found->first;
+}
+
+std::string_view colourModeName(ColourMode mode) noexcept
+{
+    return ColourModeNames.at(static_cast<std::size_t>(mode));
 }
 
 bool bindKey(Settings& settings, Action action, sf::Keyboard::Key key) noexcept
@@ -109,7 +118,7 @@ bool bindKey(Settings& settings, Action action, sf::Keyboard::Key key) noexcept
     auto& keys = settings.keys;
     const auto index = static_cast<std::size_t>(action);
     // The action that had this key gets ours: two actions never share a key
-    // NOLINTNEXTLINE(readability-qualified-auto): not a pointer with MSVC
+    // NOLINTNEXTLINE(readability-qualified-auto): a raw pointer on libstdc++ only, not on MSVC
     if (auto other = std::ranges::find(keys, key); other != keys.end()) {
         *other = keys.at(index);
     }
@@ -140,6 +149,11 @@ Settings parseSettings(std::string_view text)
             if (error == std::errc{} && rest == last) {
                 settings.volume = std::clamp(volume, 0, Settings::MaxVolume);
             }
+        } else if (key == "colour") {
+            // NOLINTNEXTLINE(readability-qualified-auto): a raw pointer on libstdc++ only, not on MSVC
+            if (const auto name = std::ranges::find(ColourModeNames, value); name != ColourModeNames.end()) {
+                settings.colourMode = static_cast<ColourMode>(name - ColourModeNames.begin());
+            }
         } else {
             for (std::size_t action = 0; action < ActionCount; ++action) {
                 const auto bound = keyFromName(value);
@@ -159,6 +173,7 @@ std::string formatSettings(const Settings& settings)
 {
     std::string text = "# R-Type client settings\n";
     text += "volume = " + std::to_string(settings.volume) + '\n';
+    text += "colour = " + std::string(colourModeName(settings.colourMode)) + '\n';
     for (std::size_t action = 0; action < ActionCount; ++action) {
         text += std::string(ActionKeys.at(action)) + " = "
             + std::string(keyName(settings.keys.at(action)).value_or("Space")) + '\n';
@@ -170,9 +185,13 @@ std::optional<std::filesystem::path> settingsPath()
 {
     const auto variable = [](const char* name) -> std::string {
 #ifdef _MSC_VER
-#pragma warning(suppress : 4996) // Read once at start, never written: getenv is fine
+#pragma warning(push)
+#pragma warning(disable : 4996) // Read once at start, never written: getenv is fine
 #endif
         const char* value = std::getenv(name); // NOLINT(concurrency-mt-unsafe)
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
         return value != nullptr ? value : "";
     };
 #ifdef _WIN32

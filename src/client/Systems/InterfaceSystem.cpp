@@ -86,11 +86,11 @@ void errorBox(
 }
 
 /// The coloured top of a player card: pattern, tag, and "YOU" for us.
-void cardHead(sf::RenderTarget& target, const Assets& assets, sf::FloatRect rect,
+void cardHead(sf::RenderTarget& target, const Assets& assets, ColourMode mode, sf::FloatRect rect,
     std::size_t player, bool filled, bool isYou)
 {
     if (filled) {
-        widgets::swatch(target, assets, rect, static_cast<std::uint8_t>(player), true);
+        widgets::swatch(target, assets, mode, rect, static_cast<std::uint8_t>(player), true);
     } else {
         box(target, rect, theme::InputBackground, theme::InputBackground, 0.0F);
         widgets::tag(target, assets, playerLabel(player), rect.getCenter(), 18);
@@ -105,11 +105,12 @@ void cardHead(sf::RenderTarget& target, const Assets& assets, sf::FloatRect rect
     }
 }
 
-void drawConnect(sf::RenderTarget& target, const Assets& assets, const Session& session)
+void drawConnect(
+    sf::RenderTarget& target, const Assets& assets, ColourMode mode, const Session& session)
 {
     drawLightBackground(target);
     title(target, assets, "R-TYPE", 150, {80.0F, 220.0F});
-    widgets::ship(target, assets, {{80.0F, 417.0F}, {192.0F, 72.0F}}, 0);
+    widgets::ship(target, assets, mode, {{80.0F, 417.0F}, {192.0F, 72.0F}}, 0);
 
     box(target, layout::ConnectPanel, theme::Surface, theme::Hull, 4.0F, true);
     text(target, assets.display, "Join a game", 32, theme::Text, {700.0F, 164.0F});
@@ -136,7 +137,8 @@ void drawConnect(sf::RenderTarget& target, const Assets& assets, const Session& 
         {80.0F, 682.0F});
 }
 
-void drawWaitingRoom(sf::RenderTarget& target, const Assets& assets, const Session& session)
+void drawWaitingRoom(
+    sf::RenderTarget& target, const Assets& assets, ColourMode mode, const Session& session)
 {
     drawLightBackground(target);
     title(target, assets, "Waiting room", 60, {80.0F, 56.0F});
@@ -154,12 +156,12 @@ void drawWaitingRoom(sf::RenderTarget& target, const Assets& assets, const Sessi
         const sf::FloatRect card{
             {80.0F + (static_cast<float>(i) * (Width + Gap)), 178.0F}, {Width, 400.0F}};
         box(target, card, theme::Surface, theme::Hull, slot.present ? 4.0F : 3.0F, slot.present);
-        cardHead(target, assets, {card.position, {Width, 88.0F}}, i, slot.present,
+        cardHead(target, assets, mode, {card.position, {Width, 88.0F}}, i, slot.present,
             session.playerId == i);
         if (slot.present) {
-            widgets::ship(target, assets, {{card.position.x + 33.0F, 298.0F}, {192.0F, 72.0F}},
+            widgets::ship(target, assets, mode, {{card.position.x + 33.0F, 298.0F}, {192.0F, 72.0F}},
                 static_cast<std::uint8_t>(i));
-            centredText(target, assets.display, slot.name, 24, theme::Text,
+            centredText(target, assets.bodyBold, slot.name, 24, theme::Text,
                 {{card.position.x, 390.0F}, {Width, 30.0F}});
         } else {
             centredText(target, assets.body, "Free slot", 15, theme::Muted,
@@ -206,11 +208,11 @@ void drawRunStats(sf::RenderTarget& target, const Assets& assets, const Session&
     // Team score
     const std::string score = formatScore(session.score);
     const float scoreWidth = std::max(textWidth(assets.bodyBold, "TEAM SCORE", 13),
-                                 textWidth(assets.display, score, 32))
+                                 textWidth(assets.bodyBold, score, 32))
         + 36.0F;
     box(target, {{20.0F, 20.0F}, {scoreWidth, 64.0F}}, theme::Surface, theme::Hull, 4.0F);
     text(target, assets.bodyBold, "TEAM SCORE", 13, theme::Muted, {38.0F, 29.0F});
-    text(target, assets.display, score, 32, theme::Blue, {38.0F, 48.0F});
+    text(target, assets.bodyBold, score, 32, theme::Blue, {38.0F, 48.0F});
 
     // Level, then the team's lives as small ships, next to the score
     const std::string level = std::to_string(session.level);
@@ -288,6 +290,7 @@ void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
 
     // One chip per player, right-aligned: swatch, name, health or state
     const auto health = shipHealth(world);
+    const Settings& settings = singleton<Settings>(world);
     float right = theme::UiWidth - 20.0F;
     for (std::size_t back = session.players.size(); back > 0; --back) {
         const std::size_t i = back - 1;
@@ -301,7 +304,8 @@ void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
         const sf::FloatRect chip{{right - width, 20.0F}, {width, 64.0F}};
         right -= width + 20.0F;
         box(target, chip, theme::Surface, theme::Hull, slot.left ? 3.0F : 4.0F);
-        widgets::swatch(target, assets, {chip.position + sf::Vector2f{8.0F, 8.0F}, {56.0F, 48.0F}},
+        widgets::swatch(target, assets, settings.colourMode,
+            {chip.position + sf::Vector2f{8.0F, 8.0F}, {56.0F, 48.0F}},
             static_cast<std::uint8_t>(i), slot.present && !slot.down);
         const sf::Vector2f column = chip.position + sf::Vector2f{76.0F, 10.0F};
         text(target, assets.bodyBold, name, 15, theme::Text, column);
@@ -312,13 +316,14 @@ void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
             text(target, assets.bodyBold, "Down", 14, theme::Red,
                 column + sf::Vector2f{0.0F, 26.0F});
         } else {
+            text(target, assets.bodyBold, "HP", 14, theme::Text, column + sf::Vector2f{0.0F, 26.0F});
             const std::uint8_t points = health.at(i);
             for (std::uint8_t pip = 0; pip < 3; ++pip) {
                 const sf::Color fill = pip >= points ? sf::Color::White
                     : points == 1                    ? theme::Red
                                                      : theme::Green;
                 box(target,
-                    {column + sf::Vector2f{2.0F + (static_cast<float>(pip) * 28.0F), 30.0F},
+                    {column + sf::Vector2f{26.0F + (static_cast<float>(pip) * 26.0F), 30.0F},
                         {22.0F, 12.0F}},
                     fill, theme::Hull, 2.0F);
             }
@@ -333,7 +338,7 @@ void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
             toast.position + sf::Vector2f{14.0F, 12.0F});
     }
 
-    const std::string reminder = controlsReminder(singleton<Settings>(world));
+    const std::string reminder = controlsReminder(settings);
     const float reminderWidth = textWidth(assets.body, reminder, 15) + 24.0F;
     box(target, {{20.0F, 668.0F}, {reminderWidth, 32.0F}}, theme::Surface, theme::Hull, 3.0F);
     text(target, assets.body, reminder, 15, theme::Text, {32.0F, 677.0F});
@@ -362,11 +367,11 @@ void settingsRow(sf::RenderTarget& target, const Assets& assets, int row, std::s
     const sf::FloatRect rect = layout::settingsRow(row);
     box(target, rect, theme::Surface, focused ? theme::Blue : theme::HullLight, focused ? 4.0F : 2.0F);
     text(target, assets.bodyBold, label, 17, theme::Text,
-        {rect.position.x + 16.0F, rect.position.y + 14.0F});
+        {rect.position.x + 16.0F, rect.position.y + 12.0F});
     const unsigned size = 17;
     const float width = textWidth(assets.bodyBold, value, size);
     text(target, assets.bodyBold, value, size, waiting ? theme::Blue : theme::Text,
-        {rect.position.x + rect.size.x - 16.0F - width, rect.position.y + 14.0F});
+        {rect.position.x + rect.size.x - 16.0F - width, rect.position.y + 12.0F});
 }
 
 void drawSettings(sf::RenderTarget& target, const Assets& assets, const Session& session,
@@ -380,6 +385,10 @@ void drawSettings(sf::RenderTarget& target, const Assets& assets, const Session&
     settingsRow(target, assets, layout::VolumeRow, "Sound effects",
         settings.volume == 0 ? "< Muted >" : "< " + std::to_string(settings.volume) + " % >",
         session.focus == layout::VolumeRow, false);
+
+    settingsRow(target, assets, layout::ColourRow, "Colour-blind mode",
+        "< " + std::string(colourModeName(settings.colourMode)) + " >",
+        session.focus == layout::ColourRow, false);
 
     constexpr std::array<std::string_view, ActionCount> actions{
         "Move up", "Move down", "Move left", "Move right", "Fire",
@@ -399,23 +408,24 @@ void drawSettings(sf::RenderTarget& target, const Assets& assets, const Session&
     if (!settings.saveError.empty()) {
         errorBox(target, assets, {{372.0F, 590.0F}, {536.0F, 40.0F}}, settings.saveError);
     }
-    text(target, assets.body, "Up/Down: choose  ·  Left/Right: volume  ·  Enter: change  ·  Esc: back",
+    text(target, assets.body, "Up/Down: choose  ·  Left/Right: adjust  ·  Enter: change  ·  Esc: back",
         15, theme::Muted, {372.0F, 642.0F});
 }
 
-void drawGameOver(sf::RenderTarget& target, const Assets& assets, const Session& session)
+void drawGameOver(
+    sf::RenderTarget& target, const Assets& assets, ColourMode mode, const Session& session)
 {
     drawLightBackground(target);
     const float titleWidth = textWidth(assets.display, "GAME OVER", 150);
     title(target, assets, "GAME OVER", 150, {(theme::UiWidth - titleWidth) / 2.0F, 60.0F});
 
     const std::string score = formatScore(session.score);
-    const float boxWidth = std::max(textWidth(assets.display, score, 72), 160.0F) + 72.0F;
+    const float boxWidth = std::max(textWidth(assets.bodyBold, score, 72), 160.0F) + 72.0F;
     const sf::FloatRect scoreBox{{(theme::UiWidth - boxWidth) / 2.0F, 248.0F}, {boxWidth, 130.0F}};
     box(target, scoreBox, theme::Surface, theme::Hull, 4.0F, true);
     centredText(target, assets.bodyBold, "TEAM SCORE", 13, theme::Muted,
         {scoreBox.position + sf::Vector2f{0.0F, 18.0F}, {boxWidth, 16.0F}});
-    centredText(target, assets.display, score, 72, theme::Blue,
+    centredText(target, assets.bodyBold, score, 72, theme::Blue,
         {scoreBox.position + sf::Vector2f{0.0F, 42.0F}, {boxWidth, 72.0F}});
     centredText(target, assets.bodyBold, "Level " + std::to_string(session.level) + " reached", 17,
         theme::Text, {{0.0F, 384.0F}, {theme::UiWidth, 22.0F}});
@@ -436,8 +446,8 @@ void drawGameOver(sf::RenderTarget& target, const Assets& assets, const Session&
         const sf::FloatRect card{
             {270.0F + (static_cast<float>(n) * (width + Gap)), 412.0F}, {width, 160.0F}};
         box(target, card, theme::Surface, theme::Hull, 4.0F, true);
-        cardHead(target, assets, {card.position, {width, 52.0F}}, i, true, false);
-        widgets::ship(target, assets,
+        cardHead(target, assets, mode, {card.position, {width, 52.0F}}, i, true, false);
+        widgets::ship(target, assets, mode,
             {{card.getCenter().x - 48.0F, card.position.y + 68.0F}, {96.0F, 36.0F}},
             static_cast<std::uint8_t>(i));
         centredText(target, assets.bodyBold, session.players.at(i).name, 15, theme::Text,
@@ -460,13 +470,14 @@ InterfaceSystem::InterfaceSystem(sf::RenderWindow& window, const Assets& assets)
 void InterfaceSystem::update(ecs::World& world, const ecs::Time& time)
 {
     const Session& session = singleton<Session>(world);
+    const ColourMode mode = singleton<Settings>(world).colourMode;
     _window.setView(letterboxed({theme::UiWidth, theme::UiHeight}, _window.getSize()));
     switch (session.screen) {
     case Screen::Connect:
-        drawConnect(_window, _assets, session);
+        drawConnect(_window, _assets, mode, session);
         break;
     case Screen::WaitingRoom:
-        drawWaitingRoom(_window, _assets, session);
+        drawWaitingRoom(_window, _assets, mode, session);
         break;
     case Screen::Game:
         drawHud(_window, _assets, world, session, time.elapsedSeconds());
@@ -475,7 +486,7 @@ void InterfaceSystem::update(ecs::World& world, const ecs::Time& time)
         }
         break;
     case Screen::GameOver:
-        drawGameOver(_window, _assets, session);
+        drawGameOver(_window, _assets, mode, session);
         break;
     }
     if (session.settingsOpen) {
