@@ -4,6 +4,7 @@
 #include "client/Settings.hpp"
 #include "client/Singleton.hpp"
 #include "client/Systems/SettingsSystem.hpp"
+#include "client/Ui/Layout.hpp"
 #include "client/Ui/Theme.hpp"
 #include "ecs/Time/Time.hpp"
 #include "ecs/World/World.hpp"
@@ -130,6 +131,24 @@ TEST(Settings, GarbageGivesTheDefaults)
 
     EXPECT_EQ(settings.volume, Settings{}.volume);
     EXPECT_EQ(settings.keys, Settings::DefaultKeys);
+}
+
+TEST(Settings, InterfaceSizeIsReadBack)
+{
+    Settings settings;
+    settings.interfaceSize = 150;
+
+    const std::string text = client::formatSettings(settings);
+
+    EXPECT_NE(text.find("interface = 150"), std::string::npos);
+    EXPECT_EQ(client::parseSettings(text).interfaceSize, 150);
+}
+
+TEST(Settings, UnknownInterfaceSizeKeepsTheDefault)
+{
+    for (const char* text : {"interface = 110", "interface = 0", "interface = big", "interface = -75"}) {
+        EXPECT_EQ(client::parseSettings(text).interfaceSize, Settings{}.interfaceSize) << text;
+    }
 }
 
 TEST(Settings, ColourModeIsReadBack)
@@ -287,6 +306,82 @@ TEST(ColourModes, TintKeepsTheDetailsOfASprite)
     expectDarkToLight({{0xFF, 0xBD, 0x00}, {0xFF, 0xDE, 0x00}, {0xFF, 0xFF, 0x7B}}, {0xFF, 0xBD, 0x00});
     // The body of the Bydo
     expectDarkToLight({{0x52, 0x00, 0x00}, {0x6B, 0x08, 0x00}, {0xCE, 0x08, 0x00}, {0xFF, 0x63, 0x5A}, {0xFF, 0xA5, 0x9C}}, {0xCE, 0x08, 0x00});
+}
+
+// --- Interface size ---------------------------------------------------------------
+
+namespace {
+
+bool contains(sf::FloatRect outer, sf::FloatRect inner)
+{
+    return inner.position.x >= outer.position.x && inner.position.y >= outer.position.y
+        && inner.position.x + inner.size.x <= outer.position.x + outer.size.x
+        && inner.position.y + inner.size.y <= outer.position.y + outer.size.y;
+}
+
+} // namespace
+
+TEST(InterfaceSize, DefaultShowsTheWholeCanvas)
+{
+    const sf::FloatRect area = client::layout::visibleArea(client::Session{}, 100);
+
+    EXPECT_EQ(area.position, (sf::Vector2f{0.0F, 0.0F}));
+    EXPECT_EQ(area.size, (sf::Vector2f{1280.0F, 720.0F}));
+}
+
+TEST(InterfaceSize, EverySizeKeepsTheCanvasRatio)
+{
+    for (const int size : Settings::InterfaceSizes) {
+        const sf::FloatRect area = client::layout::visibleArea(client::Session{}, size);
+        EXPECT_NEAR(area.size.x / area.size.y, 16.0F / 9.0F, 0.001F) << size;
+    }
+}
+
+TEST(InterfaceSize, EveryControlStaysVisibleAtEverySize)
+{
+    using client::Screen;
+    using client::Session;
+    for (const int size : Settings::InterfaceSizes) {
+        for (const Screen screen : {Screen::Connect, Screen::WaitingRoom, Screen::Game, Screen::GameOver}) {
+            for (const bool menu : {false, true}) {
+                for (const bool settings : {false, true}) {
+                    Session session;
+                    session.screen = screen;
+                    session.menuOpen = menu;
+                    session.settingsOpen = settings;
+                    const sf::FloatRect area = client::layout::visibleArea(session, size);
+                    for (const sf::FloatRect control : client::layout::focusables(session, size)) {
+                        EXPECT_TRUE(contains(area, control))
+                            << "size " << size << ", screen " << static_cast<int>(screen);
+                    }
+                }
+            }
+        }
+    }
+}
+
+TEST(InterfaceSize, PanelsStayVisibleAtEverySize)
+{
+    using namespace client::layout;
+    for (const int size : Settings::InterfaceSizes) {
+        client::Session session;
+        EXPECT_TRUE(contains(visibleArea(session, size), ConnectPanel)) << size;
+        session.screen = client::Screen::Game;
+        EXPECT_TRUE(contains(visibleArea(session, size), MenuPanel)) << size;
+        session.settingsOpen = true;
+        EXPECT_TRUE(contains(visibleArea(session, size), SettingsPanel)) << size;
+    }
+}
+
+TEST(InterfaceSize, SettingsRowsNeverOverlapAndStayInThePanel)
+{
+    using namespace client::layout;
+    for (int a = 0; a <= BackRow; ++a) {
+        EXPECT_TRUE(contains(SettingsPanel, settingsRow(a))) << a;
+        for (int b = a + 1; b <= BackRow; ++b) {
+            EXPECT_FALSE(settingsRow(a).findIntersection(settingsRow(b)).has_value()) << a << " " << b;
+        }
+    }
 }
 
 // --- Key bindings -----------------------------------------------------------------
