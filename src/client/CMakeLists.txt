@@ -65,6 +65,7 @@ add_library(rtype_client
     Ui/Theme.hpp
     Ui/Layout.hpp
     Ui/View.hpp
+    Ui/Animation.hpp
     Ui/Widgets.hpp
     Ui/Widgets.cpp
 )

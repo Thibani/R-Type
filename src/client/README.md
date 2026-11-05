@@ -34,7 +34,7 @@ Technology choices: [`docs/technical-study/client.md`](../../docs/technical-stud
 | `Components/Controls.hpp`          | `PlayerControls` (keys held), `InputHistory` (last 8 ticks)|
 | `Components/SoundEvent.hpp`        | A sound to play this frame                                 |
 | `Components/Settings.hpp`          | `Settings` (volume, colour mode, key bindings), `Action`                |
-| `Ui/`                              | Hangar theme, screen layout, drawing helpers, letterboxing |
+| `Ui/`                              | Hangar theme, screen layout, drawing helpers, letterboxing, sprite animation |
 
 Everything except `main.cpp` is the `rtype_client` library, so the tests can
 use it directly (`tests/client/`, no window needed).
@@ -67,7 +67,7 @@ other, they share components. `RenderSystem` only reads `Position` and
 | Screen        | When                                                              |
 |---------------|-------------------------------------------------------------------|
 | Connect       | At start, and after any failure (with its reason)                 |
-| Game          | After CONNECT_ACCEPT: a single player can play at once. HUD: team score, level, lives (small ships), each player's hearts; top centre, the distance to the next boss, then the boss's health |
+| Game          | After CONNECT_ACCEPT: a single player can play at once. HUD: team score and level top left; the team's lives (small ships) and each player's hearts top right; centred at the top, the distance to the next boss, then the boss's health |
 | Waiting room  | Only if the server sends GAME_STATE = WAITING_FOR_PLAYERS         |
 | Game over     | GAME_STATE = GAME_OVER: team score, level reached, crew; **Play again** (RESTART ×3) or Back to menu |
 
@@ -134,9 +134,14 @@ key.fire = Space
 
 1. Add a value to `Look` and a case to `lookOf()` in `Components/Appearance.hpp`.
 2. Give it a frame in `spriteFrame()` (`Assets.cpp`): texture, rectangle in
-   the sheet, scale. A new sheet goes in `assets/sprites/` and in `Assets`.
+   the sheet, scale. A new sheet goes in `assets/sprites/`, in `Skin` and in
+   `EnemySheets` (`Assets.cpp`) so that every colour mode loads it.
 3. Until then, the kind is drawn as a "?": nothing else to change, the
    network code already creates the entity.
+
+To animate it, pick the frame from the time `spriteFrame()` receives, as the
+boss does (`bossFrame()`: 32 frames of its sheet played back and forth with
+`pingPongFrame()` of `Ui/Animation.hpp`, 10 per second).
 
 ### Add a sound
 

@@ -63,11 +63,12 @@ struct SpriteFrame {
     bool mirrored{false};
 };
 
-/// The frame of `look` (for a ship, `player` selects the colour row).
+/// The frame of `look` (for a ship, `player` selects the colour row; for the
+/// boss, `seconds` since the start picks its animation frame).
 /// Unknown looks have no frame: they are drawn as a "?" placeholder.
 [[nodiscard]]
 std::optional<SpriteFrame> spriteFrame(
-    const Assets& assets, ColourMode mode, Look look, std::uint8_t player);
+    const Assets& assets, ColourMode mode, Look look, std::uint8_t player, float seconds = 0.0F);
 
 /// The `assets/` folder: next to the executable, else in the current folder.
 [[nodiscard]]

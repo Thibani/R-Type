@@ -8,6 +8,7 @@
 #include "client/Ui/Theme.hpp"
 #include "client/Ui/View.hpp"
 #include "client/Ui/Widgets.hpp"
+#include "ecs/Time/Time.hpp"
 #include "ecs/World/World.hpp"
 #include "game/Arena.hpp"
 #include "game/Components/Motion.hpp"
@@ -25,10 +26,10 @@ namespace {
 constexpr float PlaceholderSize = 56.0F;
 
 void drawEntity(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
-    const game::Position& position, const Appearance& appearance)
+    const game::Position& position, const Appearance& appearance, float seconds)
 {
     const sf::Vector2f centre{position.x, position.y};
-    const auto frame = spriteFrame(assets, mode, appearance.look, appearance.player);
+    const auto frame = spriteFrame(assets, mode, appearance.look, appearance.player, seconds);
     if (!frame) {
         // §5.2: a kind this client does not know is shown, never a crash
         const sf::Vector2f half{PlaceholderSize / 2.0F, PlaceholderSize / 2.0F};
@@ -58,7 +59,7 @@ RenderSystem::RenderSystem(sf::RenderWindow& window, const Assets& assets) noexc
 {
 }
 
-void RenderSystem::update(ecs::World& world, const ecs::Time& /*time*/)
+void RenderSystem::update(ecs::World& world, const ecs::Time& time)
 {
     _window.clear(theme::Letterbox);
     if (singleton<Session>(world).screen != Screen::Game) {
@@ -83,7 +84,7 @@ void RenderSystem::update(ecs::World& world, const ecs::Time& /*time*/)
     const ColourMode mode = singleton<Settings>(world).colourMode;
     world.query<game::Position, Appearance>(
         [&](ecs::Entity /*entity*/, game::Position& position, Appearance& appearance) {
-            drawEntity(_window, _assets, mode, position, appearance);
+            drawEntity(_window, _assets, mode, position, appearance, time.elapsedSeconds());
         });
 }
 
