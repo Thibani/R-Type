@@ -1,8 +1,8 @@
 # rtype_network — binary protocol, UDP transport and reliability.
 #
-# Depends only on the C++ standard library and Asio (Transport/). It knows
-# nothing about the ECS: the server and client translate between packets and
-# game state.
+# Depends only on the C++ standard library, Asio (Transport/) and Monocypher
+# (Crypto/). It knows nothing about the ECS: the server and client translate
+# between packets and game state.
 #
 # Headers are included from the src/ root, e.g. "network/Protocol/Packets.hpp".
 
@@ -22,10 +22,16 @@ add_library(rtype_network
 
     Reliability/ReliableChannel.hpp
     Reliability/ReliableChannel.cpp
+
+    Crypto/Crypto.hpp
+    Crypto/Crypto.cpp
+    Crypto/SealedDatagram.hpp
+    Crypto/SealedDatagram.cpp
 )
 add_library(rtype::network ALIAS rtype_network)
 
 target_include_directories(rtype_network PUBLIC "${PROJECT_SOURCE_DIR}/src")
 target_compile_features(rtype_network PUBLIC cxx_std_23)
 target_link_libraries(rtype_network PUBLIC asio::asio) # Public: Endpoint is an Asio type
+target_link_libraries(rtype_network PRIVATE monocypher) # Only Crypto.cpp uses it
 rtype_set_warnings(rtype_network)

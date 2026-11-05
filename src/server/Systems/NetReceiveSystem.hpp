@@ -12,6 +12,9 @@ namespace server {
 /// turns every valid one into a `ReceivedPacket` entity. Runs first in
 /// `frameStart()`. It never waits: with nothing received, it does nothing.
 ///
+/// A datagram of an existing session is opened first with the session's key: if
+/// that fails (forged, modified, replayed or sent in clear) it is dropped.
+///
 /// Malformed datagrams are dropped and counted, never logged one by one: a
 /// flood of garbage must not flood the logs too. A CONNECT_REQUEST of another
 /// protocol version becomes an `IncompatibleClient` entity, to be rejected.
@@ -24,7 +27,7 @@ public:
 
     void update(ecs::World& world, const ecs::Time& time) override;
 
-    /// Datagrams rejected by `decode()` since the start.
+    /// Datagrams rejected by `decode()` or by encryption since the start.
     [[nodiscard]]
     std::size_t droppedCount() const noexcept;
 

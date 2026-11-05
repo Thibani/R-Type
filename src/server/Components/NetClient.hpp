@@ -1,5 +1,6 @@
 #pragma once
 
+#include "network/Crypto/Crypto.hpp"
 #include "network/Protocol/Protocol.hpp"
 #include "network/Reliability/ReliableChannel.hpp"
 #include "network/Transport/UdpSocket.hpp"
@@ -21,6 +22,9 @@ struct NetClient {
     std::uint8_t playerId{}; // 0..3, also the ship colour
     std::string name;
     network::ReliableChannel channel;
+    network::crypto::SessionCipher cipher; // Seals and opens every packet of the session
+    network::crypto::PublicKey clientPublicKey; // A request with another key is not this client
+    network::crypto::PublicKey serverPublicKey; // Repeated in every CONNECT_ACCEPT
     network::ReliableChannel::Clock::time_point lastReceived; // For the 5 s timeout
     network::ReliableChannel::Clock::time_point lastSent; // For the 250 ms heartbeat
     std::set<std::uint16_t> knownEntities; // netIds sent in ENTITY_SPAWN, not destroyed since

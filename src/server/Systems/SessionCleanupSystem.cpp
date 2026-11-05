@@ -46,7 +46,7 @@ void SessionCleanupSystem::update(ecs::World& world, const ecs::Time& time)
                 for (int i = 0; i < 3; ++i) { // No acknowledgement: repeat instead (§8.3)
                     const Packet packet
                         = client.channel.wrap(Disconnect{.reason = *disconnecting.notify}, now);
-                    sendPacket(_socket, packet, client.endpoint);
+                    sendToClient(_socket, client, packet);
                 }
             }
             std::cout << "r-type_server: player " << static_cast<int>(client.playerId) << " '"

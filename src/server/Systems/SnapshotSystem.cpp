@@ -80,7 +80,7 @@ void SnapshotSystem::update(ecs::World& world, const ecs::Time& time)
         const auto* input = world.tryGetComponent<PlayerInput>(entity);
         const std::uint32_t lastInputTick = input != nullptr ? input->lastTick : 0;
         for (Snapshot& part : snapshotParts(entities, tick, lastInputTick)) {
-            sendPacket(_socket, client.channel.wrap(std::move(part), now), client.endpoint);
+            sendToClient(_socket, client, client.channel.wrap(std::move(part), now));
         }
         client.lastSent = now;
     });
