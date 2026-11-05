@@ -190,7 +190,7 @@ peer. The rule is now part of the protocol (§6.2).
 |---------------------------|--------------------|---------------------|-------------------|------------------|
 | Lockstep (send inputs only, everyone simulates) | Lowest | Hard to cheat | Hard: a slow or crashed peer stalls everyone | Waits for the slowest |
 | Client authority (each client sends its state) | Low | Trivial to cheat | Easy | Best |
-| **Authoritative server** (inputs up, state down) | Medium | Server decides | Easy: the server just keeps going | Needs prediction (#80) |
+| **Authoritative server** (inputs up, state down) | Medium | Server decides | Easy: the server just keeps going | Own ship reacts one round trip late without prediction |
 
 The subject requires the server to "have authority on what happens in the
 end", to keep running when a client crashes, and to notify the others. That
@@ -200,8 +200,8 @@ rules out lockstep (one crashed client stalls the game) and client authority.
   inputs, so a lost datagram costs nothing.
 - The server simulates and sends **snapshots** (continuous state, 30 Hz,
   unreliable) and **events** (discrete facts, reliable).
-- Snapshots at 30 Hz instead of 60 halve the bandwidth; clients interpolate
-  between them (#81).
+- Snapshots at 30 Hz instead of 60 halve the bandwidth; clients extrapolate
+  with each entity's velocity between them.
 
 ---
 
@@ -209,9 +209,8 @@ rules out lockstep (one crashed client stalls the game) and client authority.
 
 A simulation that advances by the real frame duration gives different results
 on different machines (a fast bullet can skip a thin enemy at 30 FPS but not
-at 144 FPS). Since the server is authoritative and clients will predict it
-(#80), both must compute the same thing: the simulation advances by a **fixed
-1/60 s step** (`ecs::FixedTimestep`, `ecs::GameLoop`).
+at 144 FPS). So that the game does not depend on the machine, the simulation
+advances by a **fixed 1/60 s step** (`ecs::FixedTimestep`, `ecs::GameLoop`).
 
 - An accumulator converts irregular frames into whole steps; leftover time is
   kept, so no time is lost.
@@ -313,7 +312,7 @@ bounds**, because an attacker controls what we receive:
 | Receive buffer                 | One 1200-byte array, reused, no allocation |
 | Decoded packet                 | Allocation checked against the datagram size first |
 | Datagrams read per frame       | 1024; the rest waits in the OS buffer     |
-| Packets per address            | 120 per second (protocol §7.1, with sessions #46) |
+| Packets per address            | 120 per second (protocol §7.1) |
 | Reliability state per client   | 1024 sent records + 64 early messages     |
 | Sessions                       | 4 players                                 |
 
@@ -330,9 +329,9 @@ studied there.
 | Huge counts trigger huge allocations | Counts checked against the bytes received before allocating | Done |
 | Flood of garbage stalls the game    | At most 1024 datagrams per frame; drops counted, not logged one by one | Done |
 | Flood fills the logs / disk         | Malformed packets are counted, never logged individually | Done |
-| Packet injection into another session (spoofed address) | Random 32-bit session token from a secure source, checked with the address | With #46 |
-| Reflection / amplification attacks  | Replies to unknown addresses are never larger than the request | Specified (§7.1), with #46 |
-| One client floods the server        | 120 packets/s per address                          | With #46 |
+| Packet injection into another session (spoofed address) | Random 32-bit session token from a secure source, checked with the address | Done |
+| Reflection / amplification attacks  | Replies to unknown addresses are never larger than the request | Done |
+| One client floods the server        | 120 packets/s per address                          | Done |
 | Reliable-buffer exhaustion          | 64 early messages, then disconnect (`PROTOCOL_ERROR`) | Done |
 | Eavesdropping, tampering            | Authenticated encryption per session (#97)         | Planned |
 
@@ -352,7 +351,7 @@ Main weaknesses of the technologies themselves:
 - the CI builds with warnings as errors and runs every test on each pull
   request (#7, PR #101), so a regression in validation cannot be merged unnoticed;
 - the server counts dropped datagrams (`NetReceiveSystem::droppedCount()`): a
-  sudden rise means an attack or a broken client, and will be exposed in the
-  metrics and the admin console (#69, #92);
+  sudden rise means an attack or a broken client. Nothing displays the count
+  yet, because metrics (#69) were closed as not planned;
 - dependency versions are pinned; their release notes and security advisories
   are checked when bumping them.

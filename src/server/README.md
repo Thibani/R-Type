@@ -141,8 +141,7 @@ ship entity     PlayerShip, Position, Velocity,   what is in the game: can die (
 **Inputs (§4.2, §7.1).** Each INPUT repeats the client's last masks, so a lost
 datagram costs nothing. For each player, only ticks newer than the last one
 applied count; ticks more than 120 ahead are ignored, so a client cannot jump
-its input clock. The newest mask wins (replaying every tick comes with
-client-side prediction, #80).
+its input clock. The newest mask wins: ticks are not replayed one by one.
 
 **Network ids (§5.1).** Every networked entity gets a `netId`, distinct from
 its ECS handle. Ids are taken in a cycle, skipping those in use and `0xFFFF`
