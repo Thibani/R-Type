@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <monocypher.h>
 #include <random>
+#include <vector>
 
 namespace network::crypto {
 
@@ -175,6 +176,44 @@ std::expected<std::size_t, OpenError> SessionCipher::open(std::span<const std::b
     // Only now: until the tag is checked, the counter may be an attacker's
     _received.markSeen(counter);
     return payloadSize;
+}
+
+PasswordSalt generatePasswordSalt()
+{
+    PasswordSalt salt{};
+    std::random_device random;
+    for (std::byte& byte : salt) {
+        byte = static_cast<std::byte>(random() & 0xFFU);
+    }
+    return salt;
+}
+
+PasswordHash hashPassword(std::string_view password, const PasswordSalt& salt, PasswordCost cost)
+{
+    // uint64_t: Monocypher needs a work area aligned on 8 bytes
+    std::vector<std::uint64_t> workArea(
+        std::size_t{cost.kibibytes} * 1024U / sizeof(std::uint64_t));
+    const crypto_argon2_config config{
+        .algorithm = CRYPTO_ARGON2_ID,
+        .nb_blocks = cost.kibibytes,
+        .nb_passes = cost.passes,
+        .nb_lanes = 1,
+    };
+    const crypto_argon2_inputs inputs{
+        .pass = rawIn(std::as_bytes(std::span(password))),
+        .salt = rawIn(salt),
+        .pass_size = static_cast<std::uint32_t>(password.size()),
+        .salt_size = static_cast<std::uint32_t>(salt.size()),
+    };
+    PasswordHash hash{};
+    crypto_argon2(rawOut(hash), static_cast<std::uint32_t>(hash.size()), workArea.data(), config,
+        inputs, crypto_argon2_no_extras);
+    return hash;
+}
+
+bool samePasswordHash(const PasswordHash& first, const PasswordHash& second) noexcept
+{
+    return crypto_verify32(rawIn(first), rawIn(second)) == 0;
 }
 
 } // namespace network::crypto

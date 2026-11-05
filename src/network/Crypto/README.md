@@ -60,3 +60,11 @@ forged packet cannot block real ones.
 
 The key exchange alone does not prove who the peer is: an active attacker placed
 between the client and the server could run one exchange with each of them.
+
+---
+
+## Passwords
+
+`hashPassword()` is Argon2id, from Monocypher as well. `AccountStore` and `LoginSystem`
+(`src/server/`) use it: see `docs/technical-study/network.md` §10 for the comparison
+and the cost. It is slow on purpose: never call it on the game thread.

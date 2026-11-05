@@ -6,6 +6,7 @@
 #include <expected>
 #include <optional>
 #include <span>
+#include <string_view>
 
 /// Encryption of a session between one client and the server (issue #97).
 ///
@@ -108,5 +109,37 @@ private:
     std::uint64_t _nextCounter{0}; // Never goes back: a counter is used only once
     ReplayWindow _received;
 };
+
+// --- Passwords (issue #73) ----------------------------------------------------
+
+inline constexpr std::size_t PasswordSaltSize = 16;
+inline constexpr std::size_t PasswordHashSize = 32;
+
+using PasswordSalt = std::array<std::byte, PasswordSaltSize>; // Random, one per account
+using PasswordHash = std::array<std::byte, PasswordHashSize>;
+
+/// How expensive hashing a password is. Kept with each account, so raising the
+/// default later does not lock out the accounts that already exist.
+struct PasswordCost {
+    std::uint32_t kibibytes{}; // Memory used, at least 8
+    std::uint32_t passes{}; // At least 1
+
+    friend bool operator==(const PasswordCost&, const PasswordCost&) = default;
+};
+
+inline constexpr PasswordCost DefaultPasswordCost{.kibibytes = 65536, .passes = 3}; // 64 MiB
+
+/// A new salt from the operating system's secure random source.
+[[nodiscard]]
+PasswordSalt generatePasswordSalt();
+
+/// Argon2id. Deliberately slow: never call it on the game thread.
+/// Throws std::bad_alloc if the memory it needs is not available.
+[[nodiscard]]
+PasswordHash hashPassword(std::string_view password, const PasswordSalt& salt, PasswordCost cost);
+
+/// Compares in constant time: the time taken reveals nothing about the hashes.
+[[nodiscard]]
+bool samePasswordHash(const PasswordHash& first, const PasswordHash& second) noexcept;
 
 } // namespace network::crypto

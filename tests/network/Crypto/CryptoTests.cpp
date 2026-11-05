@@ -441,3 +441,48 @@ TEST(CrossPlatform, APacketFromAnotherImplementationOpens)
 
     EXPECT_EQ(open(server, sealed).value(), Payload);
 }
+
+// --- Passwords ------------------------------------------------------------------
+
+namespace {
+constexpr network::crypto::PasswordCost CheapCost{.kibibytes = 8, .passes = 1};
+} // namespace
+
+TEST(PasswordHash, SameInputsGiveTheSameHash)
+{
+    const auto salt = network::crypto::generatePasswordSalt();
+    EXPECT_TRUE(network::crypto::samePasswordHash(
+        network::crypto::hashPassword("correct horse", salt, CheapCost),
+        network::crypto::hashPassword("correct horse", salt, CheapCost)));
+}
+
+TEST(PasswordHash, EveryInputChangesTheHash)
+{
+    const auto salt = network::crypto::generatePasswordSalt();
+    const auto hash = network::crypto::hashPassword("correct horse", salt, CheapCost);
+
+    EXPECT_FALSE(network::crypto::samePasswordHash(
+        hash, network::crypto::hashPassword("correct horsf", salt, CheapCost)));
+    EXPECT_FALSE(network::crypto::samePasswordHash(hash,
+        network::crypto::hashPassword(
+            "correct horse", network::crypto::generatePasswordSalt(), CheapCost)));
+    EXPECT_FALSE(network::crypto::samePasswordHash(hash,
+        network::crypto::hashPassword("correct horse", salt, {.kibibytes = 16, .passes = 1})));
+    EXPECT_FALSE(network::crypto::samePasswordHash(
+        hash, network::crypto::hashPassword("correct horse", salt, {.kibibytes = 8, .passes = 2})));
+}
+
+TEST(PasswordHash, MatchesTheReferenceImplementation)
+{
+    // From libsodium, another implementation: nacl.pwhash.argon2id.kdf(32, b"password",
+    // bytes([1]) * 16, opslimit=1, memlimit=8192)
+    network::crypto::PasswordSalt salt{};
+    salt.fill(std::byte{0x01});
+    const auto hash = network::crypto::hashPassword("password", salt, CheapCost);
+    constexpr std::array<std::uint8_t, PasswordHashSize> expected{0x55, 0xDB, 0xCE, 0xC5, 0x36,
+        0xA7, 0xEA, 0x87, 0x2C, 0xBE, 0x52, 0x8D, 0xFB, 0xBD, 0xB7, 0x77, 0xEF, 0xD2, 0xD1, 0x3A,
+        0x7C, 0x8E, 0xA4, 0x51, 0x33, 0xD0, 0xF5, 0x86, 0x84, 0xCA, 0x1F, 0xE7};
+    for (std::size_t i = 0; i < expected.size(); ++i) {
+        EXPECT_EQ(std::to_integer<std::uint8_t>(hash.at(i)), expected.at(i)) << i;
+    }
+}
