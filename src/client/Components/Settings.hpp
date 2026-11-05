@@ -21,6 +21,15 @@ enum class Action : std::uint8_t {
 };
 inline constexpr std::size_t ActionCount = 5;
 
+/// The colours of the game, for each type of colour blindness (`theme::Palettes`).
+enum class ColourMode : std::uint8_t {
+    Off,
+    Protanopia,
+    Deuteranopia,
+    Tritanopia,
+};
+inline constexpr std::size_t ColourModeCount = 4;
+
 /// Singleton: the player's settings, loaded at start and saved to a file
 /// (`Settings.hpp`) whenever they change.
 struct Settings {
@@ -36,6 +45,7 @@ struct Settings {
 
     int volume{80}; // Sound effects, 0 (muted) to 100 %
     std::array<sf::Keyboard::Key, ActionCount> keys{DefaultKeys}; // Indexed by Action
+    ColourMode colourMode{ColourMode::Off};
 
     bool dirty{false}; // Changed since the last save: SettingsSystem saves it
     std::string saveError; // Why the last save failed, shown on the settings screen

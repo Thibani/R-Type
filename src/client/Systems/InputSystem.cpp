@@ -122,6 +122,23 @@ void changeVolume(Settings& settings, int step)
     settings.dirty = true;
 }
 
+void changeColourMode(Settings& settings, int step)
+{
+    constexpr int count = static_cast<int>(ColourModeCount);
+    settings.colourMode = static_cast<ColourMode>((static_cast<int>(settings.colourMode) + step + count) % count);
+    settings.dirty = true;
+}
+
+/// Left or Right (`direction` -1 or 1) on the focused row of the settings.
+void adjustSettings(const Session& session, Settings& settings, int direction)
+{
+    if (session.focus == layout::VolumeRow) {
+        changeVolume(settings, direction * Settings::VolumeStep);
+    } else if (session.focus == layout::ColourRow) {
+        changeColourMode(settings, direction);
+    }
+}
+ 
 /// Does what the focused (or clicked) row of the settings does.
 void activateSettings(Session& session, Settings& settings, int index)
 {
@@ -129,6 +146,8 @@ void activateSettings(Session& session, Settings& settings, int index)
         // A click or Enter raises it and wraps to muted; ← → step both ways
         settings.volume = settings.volume >= Settings::MaxVolume ? 0 : settings.volume + Settings::VolumeStep;
         settings.dirty = true;
+    } else if (index == layout::ColourRow) {
+        changeColourMode(settings, 1);
     } else if (index < layout::ResetRow) {
         session.capturing = static_cast<Action>(index - layout::FirstKeyRow); // Next key pressed is bound
     } else if (index == layout::ResetRow) {
@@ -234,8 +253,8 @@ void onKey(Session& session, Settings& settings, const sf::Event::KeyPressed& ke
         break;
     case Key::Left:
     case Key::Right:
-        if (session.settingsOpen && session.focus == layout::VolumeRow) {
-            changeVolume(settings, key.code == Key::Right ? Settings::VolumeStep : -Settings::VolumeStep);
+        if (session.settingsOpen) {
+            adjustSettings(session, settings, key.code == Key::Right ? 1 : -1);
         }
         break;
     case Key::Enter:

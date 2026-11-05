@@ -33,7 +33,7 @@ Technology choices: [`docs/technical-study/client.md`](../../docs/technical-stud
 | `Components/Session.hpp`           | Current screen, form, players, score, notices              |
 | `Components/Controls.hpp`          | `PlayerControls` (keys held), `InputHistory` (last 8 ticks)|
 | `Components/SoundEvent.hpp`        | A sound to play this frame                                 |
-| `Components/Settings.hpp`          | `Settings` (volume, key bindings), `Action`                |
+| `Components/Settings.hpp`          | `Settings` (volume, colour mode, key bindings), `Action`                |
 | `Ui/`                              | Hangar theme, screen layout, drawing helpers, letterboxing |
 
 Everything except `main.cpp` is the `rtype_client` library, so the tests can
@@ -72,7 +72,8 @@ other, they share components. `RenderSystem` only reads `Position` and
 | Game over     | GAME_STATE = GAME_OVER: team score and crew                       |
 
 Esc opens the in-game menu (the game keeps running) or leaves the other
-screens. Players are told apart by colour, pattern and P1-P4 tag.
+screens. Players are told apart by colour, pattern and P1-P4 tag. Each colour mode has
+its own copy of the sprites, repainted at startup (`Assets.cpp`, `theme::Palettes`).
 
 **Settings** open over the connection form (Settings button) or over the game
 (Esc menu → Settings; the game keeps running). Up/Down choose a row,
@@ -89,6 +90,7 @@ Plain `key = value` text, saved whenever a setting changes:
 ```ini
 # R-Type client settings
 volume = 80
+colour = Off
 key.up = Up
 key.down = Down
 key.left = Left

@@ -3,6 +3,7 @@
 #include "client/Assets.hpp"
 #include "client/Components/Appearance.hpp"
 #include "client/Components/Session.hpp"
+#include "client/Components/Settings.hpp"
 #include "client/Singleton.hpp"
 #include "client/Ui/Theme.hpp"
 #include "client/Ui/View.hpp"
@@ -23,11 +24,11 @@ namespace {
 
 constexpr float PlaceholderSize = 56.0F;
 
-void drawEntity(sf::RenderTarget& target, const Assets& assets, const game::Position& position,
-    const Appearance& appearance)
+void drawEntity(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
+    const game::Position& position, const Appearance& appearance)
 {
     const sf::Vector2f centre{position.x, position.y};
-    const auto frame = spriteFrame(assets, appearance.look, appearance.player);
+    const auto frame = spriteFrame(assets, mode, appearance.look, appearance.player);
     if (!frame) {
         // §5.2: a kind this client does not know is shown, never a crash
         const sf::Vector2f half{PlaceholderSize / 2.0F, PlaceholderSize / 2.0F};
@@ -79,9 +80,10 @@ void RenderSystem::update(ecs::World& world, const ecs::Time& /*time*/)
             _window.draw(dot);
         });
 
+    const ColourMode mode = singleton<Settings>(world).colourMode;
     world.query<game::Position, Appearance>(
         [&](ecs::Entity /*entity*/, game::Position& position, Appearance& appearance) {
-            drawEntity(_window, _assets, position, appearance);
+            drawEntity(_window, _assets, mode, position, appearance);
         });
 }
 
