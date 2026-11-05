@@ -125,7 +125,7 @@ several ways to turn a C++ value into bytes.
   units, which is exact, compact and identical everywhere (floats would need
   a portable encoding);
 - **fixed sizes and bounded counts**: names are 16 bytes, a snapshot holds at
-  most 89 entities, so every datagram fits in **1200 bytes**, below the usual
+  most 88 entities, so every datagram fits in **1200 bytes**, below the usual
   internet MTU (≈ 1500) with room for VPN/tunnel headers;
 - the reader is a **bounded, "sticky" `ByteReader`**: any read past the end
   fails, and the decoder checks every rule of protocol §7 before building a
@@ -136,10 +136,10 @@ several ways to turn a C++ value into bytes.
 
 | Traffic                              | Size per packet | Rate  | Per client     |
 |--------------------------------------|-----------------|-------|----------------|
-| Snapshot, 30 entities (server → client) | 449 bytes    | 30 Hz | ≈ 13.5 KB/s    |
-| Input, 8 masks (client → server)     | 61 bytes        | 60 Hz | ≈ 3.7 KB/s     |
+| Snapshot, 30 entities (server → client) | 473 bytes    | 30 Hz | ≈ 14.2 KB/s    |
+| Input, 8 masks (client → server)     | 85 bytes        | 60 Hz | ≈ 5.1 KB/s     |
 
-Four players need ≈ 54 KB/s of upload on the server: any home connection can
+Encryption is included (24 bytes per packet). Four players need ≈ 57 KB/s of upload on the server: any home connection can
 host a game.
 
 ---
@@ -333,7 +333,7 @@ studied there.
 | Reflection / amplification attacks  | Replies to unknown addresses are never larger than the request | Done |
 | One client floods the server        | 120 packets/s per address                          | Done |
 | Reliable-buffer exhaustion          | 64 early messages, then disconnect (`PROTOCOL_ERROR`) | Done |
-| Eavesdropping, tampering            | Authenticated encryption per session (#97)         | Planned |
+| Eavesdropping, tampering, replay    | Authenticated encryption per session (#97)         | Done (active attacker during the connection: not covered, protocol §3.3) |
 
 Main weaknesses of the technologies themselves:
 
