@@ -1,5 +1,6 @@
 #pragma once
 
+#include "network/Crypto/Crypto.hpp"
 #include "network/Protocol/Packets.hpp"
 #include "network/Reliability/ReliableChannel.hpp"
 #include "network/Transport/UdpSocket.hpp"
@@ -119,6 +120,8 @@ private:
     int _attempts{0};
     std::optional<network::protocol::ConnectAccept> _accepted;
     std::uint32_t _token{0};
+    network::crypto::KeyPair _keys{}; // Same for all the retries of one connection
+    std::optional<network::crypto::SessionCipher> _cipher; // Set once connected
     Failure _failure;
     Clock::time_point _lastSent;
     Clock::time_point _lastReceived;

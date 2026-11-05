@@ -1,4 +1,5 @@
 #include "client/Network/ServerConnection.hpp"
+#include "network/Crypto/SealedDatagram.hpp"
 #include "network/Protocol/PacketCodec.hpp"
 #include "network/Reliability/ReliableChannel.hpp"
 #include "network/Transport/UdpSocket.hpp"
@@ -6,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <cstddef>
 #include <optional>
 #include <span>
 #include <thread>
@@ -25,6 +27,9 @@ struct FakeServer {
     network::UdpSocket socket{*network::UdpSocket::open(0)};
     network::ReliableChannel channel{0x1234ABCD};
     network::Endpoint client;
+    network::crypto::KeyPair keys = network::crypto::generateKeyPair();
+    std::optional<network::crypto::SessionCipher> cipher; // Set by accept()
+    std::vector<std::byte> lastSent; // The last datagram, as it went on the network
 
     [[nodiscard]]
     std::uint16_t port() const
@@ -40,8 +45,16 @@ struct FakeServer {
             auto received = socket.receive(buffer);
             if (received && *received) {
                 client = (*received)->from;
-                auto packet
-                    = decode(std::span(buffer).first((*received)->size), Direction::ClientToServer);
+                std::span<const std::byte> datagram = std::span(buffer).first((*received)->size);
+                DatagramBuffer opened{};
+                if (cipher) {
+                    const auto size = network::crypto::openDatagram(*cipher, datagram, opened);
+                    if (!size) {
+                        continue;
+                    }
+                    datagram = std::span(opened).first(*size);
+                }
+                auto packet = decode(datagram, Direction::ClientToServer);
                 if (packet) {
                     return *packet;
                 }
@@ -56,7 +69,20 @@ struct FakeServer {
         DatagramBuffer buffer{};
         const auto size = encode(packet, buffer);
         ASSERT_TRUE(size.has_value());
-        ASSERT_TRUE(socket.sendTo(std::span(buffer).first(*size), client).has_value());
+        std::span<const std::byte> datagram = std::span(buffer).first(*size);
+        DatagramBuffer sealed{};
+        if (cipher) {
+            const auto sealedSize = network::crypto::sealDatagram(*cipher, datagram, sealed);
+            ASSERT_TRUE(sealedSize.has_value());
+            datagram = std::span(sealed).first(*sealedSize);
+        }
+        sendBytes(datagram);
+    }
+
+    void sendBytes(std::span<const std::byte> datagram)
+    {
+        lastSent.assign(datagram.begin(), datagram.end());
+        ASSERT_TRUE(socket.sendTo(datagram, client).has_value());
     }
 
     /// Answers the first CONNECT_REQUEST with CONNECT_ACCEPT (player 2).
@@ -65,9 +91,16 @@ struct FakeServer {
         const auto request = receive();
         ASSERT_TRUE(request.has_value());
         [[maybe_unused]] const auto delivered = channel.receive(*request, now);
-        send(channel.wrap(
-            ConnectAccept{.playerId = 2, .tickRate = 60, .snapshotRate = 30, .maxPlayers = 4},
+        send(channel.wrap(ConnectAccept{.playerId = 2,
+                              .tickRate = 60,
+                              .snapshotRate = 30,
+                              .maxPlayers = 4,
+                              .publicKey = keys.publicKey},
             now));
+        const auto key = network::crypto::deriveSessionKey(keys,
+            std::get<ConnectRequest>(request->payload).publicKey, network::crypto::Role::Server);
+        ASSERT_TRUE(key.has_value());
+        cipher.emplace(*key, network::crypto::Role::Server); // Everything else is sealed
     }
 };
 
@@ -197,6 +230,95 @@ TEST_F(ServerConnectionTest, IgnoresAnotherSessionToken)
     server.send(forged);
     EXPECT_TRUE(receiveSoon(connection, now).empty());
     EXPECT_EQ(connection.status(), Status::Connected);
+}
+
+TEST_F(ServerConnectionTest, RetriesKeepTheSameKeyAndANewConnectionGetsANewOne)
+{
+    connection.connect("127.0.0.1", server.port(), "Thibani", now);
+    const auto first = server.receive();
+    connection.update(now + client::ServerConnection::RetryDelay);
+    const auto retry = server.receive();
+    connection.connect("127.0.0.1", server.port(), "Thibani", now);
+    const auto second = server.receive();
+    ASSERT_TRUE(first.has_value() && retry.has_value() && second.has_value());
+
+    const auto keyOf
+        = [](const Packet& packet) { return std::get<ConnectRequest>(packet.payload).publicKey; };
+    EXPECT_EQ(keyOf(*first), keyOf(*retry));
+    EXPECT_NE(keyOf(*first), keyOf(*second));
+}
+
+TEST_F(ServerConnectionTest, InvalidServerKeyFailsTheConnection)
+{
+    connection.connect("127.0.0.1", server.port(), "Thibani", now);
+    ASSERT_TRUE(server.receive().has_value());
+
+    server.send(server.channel.wrap(
+        ConnectAccept{.playerId = 2, .tickRate = 60, .snapshotRate = 30, .maxPlayers = 4}, now));
+    static_cast<void>(receiveSoon(connection, now));
+
+    EXPECT_EQ(connection.status(), Status::Failed);
+    EXPECT_EQ(connection.failure().kind, Kind::ProtocolError);
+}
+
+TEST_F(ServerConnectionTest, PacketInClearIsIgnoredOnceConnected)
+{
+    connected();
+    DatagramBuffer buffer{};
+    const auto size = encode( // The right token, but not sealed
+        server.channel.wrap(Disconnect{.reason = DisconnectReason::Kicked}, now), buffer);
+    ASSERT_TRUE(size.has_value());
+    server.sendBytes(std::span(buffer).first(*size));
+
+    EXPECT_TRUE(receiveSoon(connection, now).empty());
+    EXPECT_EQ(connection.status(), Status::Connected);
+}
+
+TEST_F(ServerConnectionTest, ModifiedPacketIsIgnored)
+{
+    connected();
+    DatagramBuffer plain{};
+    const auto size
+        = encode(server.channel.wrap(Disconnect{.reason = DisconnectReason::Kicked}, now), plain);
+    ASSERT_TRUE(size.has_value());
+    DatagramBuffer sealed{};
+    const auto sealedSize
+        = network::crypto::sealDatagram(*server.cipher, std::span(plain).first(*size), sealed);
+    ASSERT_TRUE(sealedSize.has_value());
+    sealed.at(*sealedSize - 1) ^= std::byte{0x01};
+
+    server.sendBytes(std::span(sealed).first(*sealedSize));
+
+    EXPECT_TRUE(receiveSoon(connection, now).empty());
+    EXPECT_EQ(connection.status(), Status::Connected) << "a forged DISCONNECT kicked the player";
+}
+
+TEST_F(ServerConnectionTest, ReplayedPacketIsIgnored)
+{
+    connected();
+    server.send(server.channel.wrap(
+        Snapshot{
+            .serverTick = 1, .lastInputTick = 0, .partIndex = 0, .partCount = 1, .entities = {}},
+        now));
+    const auto datagram = server.lastSent;
+    EXPECT_EQ(receiveSoon(connection, now).size(), 1U);
+
+    // Sent again: exactly the same bytes, so the same counter
+    server.sendBytes(datagram);
+    EXPECT_TRUE(receiveSoon(connection, now).empty());
+}
+
+TEST_F(ServerConnectionTest, InputIsNotReadableOnTheNetwork)
+{
+    connected();
+    while (server.receive()) { }
+    const auto cipher = server.cipher;
+    server.cipher.reset(); // As an attacker: no key
+
+    connection.sendInput(Input{.firstTick = 7, .count = 1, .masks = {}}, now);
+
+    EXPECT_FALSE(server.receive().has_value()) << "an input can be decoded without the key";
+    server.cipher = cipher;
 }
 
 TEST_F(ServerConnectionTest, HeartbeatAfter250msOfSilenceThenTimeoutAfter5s)

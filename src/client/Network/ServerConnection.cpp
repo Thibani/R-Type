@@ -1,5 +1,6 @@
 #include "client/Network/ServerConnection.hpp"
 
+#include "network/Crypto/SealedDatagram.hpp"
 #include "network/Protocol/PacketCodec.hpp"
 
 #include <asio/io_context.hpp>
@@ -34,6 +35,8 @@ void ServerConnection::connect(
     _channel = network::ReliableChannel(0); // A new session starts from sequence 0
     _accepted.reset();
     _token = 0;
+    _cipher.reset();
+    _keys = network::crypto::generateKeyPair(); // A new key for each session
     _attempts = 0;
     _name = std::move(name);
 
@@ -67,8 +70,16 @@ std::vector<Payload> ServerConnection::receive(Clock::time_point now)
         if ((*received)->from != _server) {
             continue; // Only the server we talk to may speak
         }
-        const auto packet
-            = decode(std::span(buffer).first((*received)->size), Direction::ServerToClient);
+        std::span<const std::byte> datagram = std::span(buffer).first((*received)->size);
+        DatagramBuffer opened{};
+        if (_cipher) { // Connected: whatever is not sealed with our key is not the server
+            const auto size = network::crypto::openDatagram(*_cipher, datagram, opened);
+            if (!size) {
+                continue;
+            }
+            datagram = std::span(opened).first(*size);
+        }
+        const auto packet = decode(datagram, Direction::ServerToClient);
         if (!packet) {
             continue; // §7: a malformed datagram changes nothing
         }
@@ -93,6 +104,14 @@ void ServerConnection::handle(
         if (accept == nullptr || packet.sessionToken == 0) {
             return; // Anything else waits: the server resends it until acknowledged
         }
+        const auto sessionKey = network::crypto::deriveSessionKey(
+            _keys, accept->publicKey, network::crypto::Role::Client);
+        if (!sessionKey) {
+            fail(Failure::Kind::ProtocolError);
+            return;
+        }
+        _cipher.emplace(*sessionKey, network::crypto::Role::Client);
+        _keys = {}; // The secret key has done its job
         _token = packet.sessionToken;
         _channel.setSessionToken(_token);
         _accepted = *accept;
@@ -120,9 +139,8 @@ void ServerConnection::handle(
             fail(Failure::Kind::Disconnected);
             return;
         }
-        if (std::holds_alternative<Heartbeat>(payload)
-            || std::holds_alternative<ConnectAccept>(payload)) {
-            continue; // Keep-alive, or a repeated ACCEPT: nothing for the game
+        if (std::holds_alternative<Heartbeat>(payload)) {
+            continue; // Keep-alive: nothing for the game
         }
         payloads.push_back(std::move(payload));
     }
@@ -157,6 +175,7 @@ void ServerConnection::disconnect(Clock::time_point now)
     sendDisconnect(DisconnectReason::Quit, now);
     _status = Status::Idle;
     _accepted.reset();
+    _cipher.reset();
 }
 
 void ServerConnection::sendDisconnect(DisconnectReason reason, Clock::time_point now)
@@ -202,7 +221,16 @@ void ServerConnection::send(const Packet& packet, Clock::time_point now)
     if (!size) {
         return; // Our own payload is invalid: nothing sensible to send
     }
-    if (!_socket.sendTo(std::span(buffer).first(*size), _server)) {
+    std::span<const std::byte> datagram = std::span(buffer).first(*size);
+    DatagramBuffer sealed{};
+    if (_cipher) {
+        const auto sealedSize = network::crypto::sealDatagram(*_cipher, datagram, sealed);
+        if (!sealedSize) {
+            return; // Our own packet is too large: nothing sensible to send
+        }
+        datagram = std::span(sealed).first(*sealedSize);
+    }
+    if (!_socket.sendTo(datagram, _server)) {
         return; // Lost, as UDP allows: the next packet or retry makes up for it
     }
     _lastSent = now;
@@ -210,7 +238,7 @@ void ServerConnection::send(const Packet& packet, Clock::time_point now)
 
 void ServerConnection::sendRequest(Clock::time_point now)
 {
-    send(_channel.wrap(ConnectRequest{.name = _name}, now), now);
+    send(_channel.wrap(ConnectRequest{.name = _name, .publicKey = _keys.publicKey}, now), now);
     _lastSent = now; // Even if the OS refused it: retry in 500 ms, not at once
     ++_attempts;
 }
@@ -220,6 +248,7 @@ void ServerConnection::fail(Failure::Kind kind)
     _status = Status::Failed;
     _failure.kind = kind;
     _accepted.reset();
+    _cipher.reset();
 }
 
 std::string describe(const ServerConnection::Failure& failure)
