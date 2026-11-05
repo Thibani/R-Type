@@ -261,7 +261,8 @@ instantly.
 | Packet only servers may send | Rejected by `decode(…, ClientToServer)`                    |
 | Flood from one address      | 120 datagrams per second and per address, the rest dropped  |
 | Flood from everywhere       | The network thread queues 1024 datagrams at most; the rest is dropped, counted |
-| Injection into a session    | Address *and* random 32-bit token must match                |
+| Injection into a session    | Address, token *and* session key must match: anything not sealed with the key is dropped |
+| Reading, modifying or replaying packets | Every packet of a session is encrypted (protocol §3.3) |
 | Reflection / amplification  | A REJECT (21 bytes) only answers a request at least as large |
 | Guessable tokens            | `std::random_device`, backed by the OS secure generator     |
 

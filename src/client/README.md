@@ -24,7 +24,7 @@ Technology choices: [`docs/technical-study/client.md`](../../docs/technical-stud
 | `ClientOptions.hpp`                | Command line parsing (`-s`, `-p`, `-n`, `-h`)               |
 | `Settings.hpp`                     | Settings file (read, write, where it lives), key names, `bindKey()` |
 | `ClientSystems.hpp`                | `installSystems()`: every system, in order                 |
-| `Network/ServerConnection.hpp`     | Session with the server: connect, retries, heartbeat, timeout |
+| `Network/ServerConnection.hpp`     | Session with the server: connect, key exchange, encryption, retries, heartbeat, timeout |
 | `Replication.hpp`                  | Server payloads → entities and `Session` (no window, testable) |
 | `Assets.hpp`                       | Textures, fonts, sounds; sprite frame of each `Look`       |
 | `Singleton.hpp`                    | `singleton<T>(world)`: state shared by several systems     |

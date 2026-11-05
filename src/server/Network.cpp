@@ -1,6 +1,7 @@
 #include "server/Network.hpp"
 
 #include "ecs/World/World.hpp"
+#include "network/Crypto/SealedDatagram.hpp"
 #include "network/Protocol/PacketCodec.hpp"
 #include "server/Components/NetClient.hpp"
 
@@ -30,13 +31,32 @@ void sendPacket(network::NetworkThread& socket, const Packet& packet, const netw
     socket.send(std::span(buffer).first(*size), to); // Sent by the network thread
 }
 
+void sendToClient(network::NetworkThread& socket, NetClient& client, const Packet& packet)
+{
+    DatagramBuffer plain{};
+    const auto size = encode(packet, plain);
+    if (!size) {
+        std::cerr << "r-type_server: cannot encode packet: " << toString(size.error()) << '\n';
+        return;
+    }
+    DatagramBuffer sealed{};
+    const auto sealedSize
+        = network::crypto::sealDatagram(client.cipher, std::span(plain).first(*size), sealed);
+    if (!sealedSize) {
+        // A bug in the server: MaxSnapshotEntities leaves room for the overhead
+        std::cerr << "r-type_server: cannot seal packet\n";
+        return;
+    }
+    socket.send(std::span(sealed).first(*sealedSize), client.endpoint);
+}
+
 void notifyShutdown(ecs::World& world, network::NetworkThread& socket, TimePoint now)
 {
     world.query<NetClient>([&](ecs::Entity /*entity*/, NetClient& client) {
         for (int i = 0; i < 3; ++i) { // No acknowledgement: repeat instead (§8.3)
             const Packet packet
                 = client.channel.wrap(Disconnect{.reason = DisconnectReason::ServerShutdown}, now);
-            sendPacket(socket, packet, client.endpoint);
+            sendToClient(socket, client, packet);
         }
     });
 }

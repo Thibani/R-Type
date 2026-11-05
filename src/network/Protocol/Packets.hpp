@@ -1,5 +1,6 @@
 #pragma once
 
+#include "network/Crypto/Crypto.hpp"
 #include "network/Protocol/Protocol.hpp"
 
 #include <array>
@@ -29,6 +30,7 @@ struct ConnectRequest {
     static constexpr bool Reliable = false;
 
     std::string name; // At most 16 bytes of valid UTF-8, no '\0'
+    crypto::PublicKey publicKey{}; // The client's half of the key exchange (§3.3)
 
     friend bool operator==(const ConnectRequest&, const ConnectRequest&) = default;
 };
@@ -42,6 +44,7 @@ struct ConnectAccept {
     std::uint8_t tickRate{};
     std::uint8_t snapshotRate{};
     std::uint8_t maxPlayers{};
+    crypto::PublicKey publicKey{}; // The server's half of the key exchange (§3.3)
 
     friend bool operator==(const ConnectAccept&, const ConnectAccept&) = default;
 };

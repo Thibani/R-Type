@@ -7,6 +7,7 @@
 #include "ecs/World/World.hpp"
 #include "game/Components/Motion.hpp"
 #include "game/Ship.hpp"
+#include "network/Crypto/SealedDatagram.hpp"
 #include "network/Protocol/PacketCodec.hpp"
 #include "network/Reliability/ReliableChannel.hpp"
 #include "network/Transport/NetworkThread.hpp"
@@ -32,6 +33,7 @@
 #include <set>
 #include <span>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <variant>
@@ -186,12 +188,39 @@ public:
         sendRaw(_channel.wrap(std::move(payload), ReliableChannel::Clock::now()));
     }
 
+    /// Sends `packet` as a real client would: sealed if it belongs to a session.
     void sendRaw(const Packet& packet)
+    {
+        const auto datagram = packet.sessionToken != 0 ? sealed(packet) : inClear(packet);
+        sendBytes(datagram);
+    }
+
+    /// The datagram of `packet`, without encryption.
+    [[nodiscard]]
+    static std::vector<std::byte> inClear(const Packet& packet)
     {
         DatagramBuffer buffer{};
         const auto size = encode(packet, buffer);
-        ASSERT_TRUE(size.has_value());
-        sendBytes(std::span(buffer).first(*size));
+        EXPECT_TRUE(size.has_value());
+        return {buffer.begin(), buffer.begin() + static_cast<std::ptrdiff_t>(size.value_or(0))};
+    }
+
+    /// The datagram of `packet`, sealed with this client's key (connected only).
+    [[nodiscard]]
+    std::vector<std::byte> sealed(const Packet& packet)
+    {
+        const auto plain = inClear(packet);
+        DatagramBuffer buffer{};
+        const auto size = network::crypto::sealDatagram(*_cipher, plain, buffer);
+        EXPECT_TRUE(size.has_value());
+        return {buffer.begin(), buffer.begin() + static_cast<std::ptrdiff_t>(size.value_or(0))};
+    }
+
+    /// The next packet of this session, not sent yet.
+    [[nodiscard]]
+    Packet wrap(Payload payload)
+    {
+        return _channel.wrap(std::move(payload), ReliableChannel::Clock::now());
     }
 
     void sendBytes(std::span<const std::byte> bytes)
@@ -201,7 +230,7 @@ public:
 
     void connect(const std::string& name)
     {
-        send(ConnectRequest{.name = name});
+        send(ConnectRequest{.name = name, .publicKey = keys.publicKey});
     }
 
     /// Reads every datagram waiting, in delivery order.
@@ -213,12 +242,34 @@ public:
             if (!received || !*received) {
                 return;
             }
-            const auto packet
-                = decode(std::span(buffer).first((*received)->size), Direction::ServerToClient);
+            std::span<const std::byte> datagram = std::span(buffer).first((*received)->size);
+            rawDatagrams.emplace_back(datagram.begin(), datagram.end());
+
+            // Only the connection answers travel in clear (§3.3)
+            const auto header = decodeHeader(datagram);
+            ASSERT_TRUE(header.has_value());
+            const bool connectionAnswer
+                = header->type == std::to_underlying(PacketType::ConnectAccept)
+                || header->type == std::to_underlying(PacketType::ConnectReject);
+            DatagramBuffer opened{};
+            if (!connectionAnswer) {
+                ASSERT_TRUE(_cipher.has_value()) << "sealed packet before CONNECT_ACCEPT";
+                const auto size = network::crypto::openDatagram(*_cipher, datagram, opened);
+                ASSERT_TRUE(size.has_value()) << "the server's packet cannot be opened";
+                datagram = std::span(opened).first(*size);
+            }
+
+            const auto packet = decode(datagram, Direction::ServerToClient);
             ASSERT_TRUE(packet.has_value()) << "the server sent an invalid packet";
-            if (std::holds_alternative<ConnectAccept>(packet->payload)) {
+            if (const auto* accept = std::get_if<ConnectAccept>(&packet->payload)) {
                 token = packet->sessionToken;
                 _channel.setSessionToken(token);
+                if (!_cipher) {
+                    const auto key = network::crypto::deriveSessionKey(
+                        keys, accept->publicKey, network::crypto::Role::Client);
+                    ASSERT_TRUE(key.has_value());
+                    _cipher.emplace(*key, network::crypto::Role::Client);
+                }
             }
             const auto payloads = _channel.receive(*packet, ReliableChannel::Clock::now());
             ASSERT_TRUE(payloads.has_value());
@@ -242,11 +293,14 @@ public:
 
     std::uint32_t token{0};
     std::vector<Payload> inbox;
+    std::vector<std::vector<std::byte>> rawDatagrams; // As they came off the network
+    network::crypto::KeyPair keys = network::crypto::generateKeyPair();
 
 private:
     UdpSocket _socket = openOrFail();
     Endpoint _server;
     ReliableChannel _channel;
+    std::optional<network::crypto::SessionCipher> _cipher;
 };
 
 /// Runs short server frames until `client` received a T (for up to a second).
@@ -372,7 +426,7 @@ TEST(Session, OtherProtocolVersionIsRejected)
     };
     const auto size = encode(request, buffer);
     ASSERT_TRUE(size.has_value());
-    buffer[2] = std::byte{2}; // version byte: a version 2 client
+    buffer[2] = static_cast<std::byte>(Version + 1); // version byte: a future client
 
     client.sendBytes(std::span(buffer).first(*size));
     const auto rejected = waitFor<ConnectReject>(server, client);
@@ -395,7 +449,7 @@ TEST(Session, RepeatedRequestGetsTheSameAccept)
         .sequence = 1,
         .ack = std::nullopt,
         .reliableId = 0,
-        .payload = ConnectRequest{.name = "Thibani"},
+        .payload = ConnectRequest{.name = "Thibani", .publicKey = client.keys.publicKey},
     });
     const auto second = waitFor<ConnectAccept>(server, client);
     ASSERT_TRUE(second.has_value());
@@ -403,6 +457,145 @@ TEST(Session, RepeatedRequestGetsTheSameAccept)
     EXPECT_EQ(*second, first);
     EXPECT_EQ(client.token, firstToken);
     EXPECT_EQ(server.sessionCount(), 1U);
+}
+
+// --- Encryption (§3.3) -----------------------------------------------------------
+
+TEST(SessionEncryption, EachSessionGetsItsOwnServerKey)
+{
+    TestServer server;
+    TestClient first(server.address());
+    TestClient second(server.address());
+
+    const ConnectAccept firstAccept = connectOrFail(server, first, "First");
+    const ConnectAccept secondAccept = connectOrFail(server, second, "Second");
+
+    EXPECT_NE(firstAccept.publicKey, secondAccept.publicKey);
+}
+
+TEST(SessionEncryption, InvalidClientKeyGetsNoSession)
+{
+    TestServer server;
+    TestClient client(server.address());
+    client.keys.publicKey = {}; // All zeros: the exchange would give a key anybody can compute
+
+    client.connect("Mallory");
+    deliver(server);
+    client.poll();
+
+    EXPECT_EQ(server.sessionCount(), 0U);
+    EXPECT_TRUE(client.inbox.empty());
+}
+
+TEST(SessionEncryption, RequestWithAnotherKeyDoesNotTakeOverTheSession)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)connectOrFail(server, client, "Thibani");
+    client.inbox.clear();
+
+    // Same address (anybody can fake it) but not the same key
+    const network::crypto::KeyPair attacker = network::crypto::generateKeyPair();
+    client.sendRaw(Packet{
+        .sessionToken = 0,
+        .sequence = 1,
+        .ack = std::nullopt,
+        .reliableId = 0,
+        .payload = ConnectRequest{.name = "Thibani", .publicKey = attacker.publicKey},
+    });
+    deliver(server);
+    client.poll();
+    EXPECT_FALSE(client.take<ConnectAccept>().has_value()) << "the attacker must not get an answer";
+
+    // The real client's key still works
+    client.send(Input{.firstTick = 1, .count = 1, .masks = {input::Right}});
+    deliver(server);
+    const server::PlayerInput* player = server.playerInput(0);
+    ASSERT_NE(player, nullptr);
+    EXPECT_EQ(player->lastTick, 1U);
+}
+
+TEST(SessionEncryption, PacketInClearIsDroppedEvenWithTheRightToken)
+{
+    // The token travels in clear, so an attacker knows it
+    TestServer server;
+    TestClient client(server.address());
+    (void)connectOrFail(server, client, "Thibani");
+
+    client.sendBytes(TestClient::inClear(
+        client.wrap(Input{.firstTick = 1, .count = 1, .masks = {input::Right}})));
+    deliver(server);
+
+    EXPECT_EQ(server.playerInput(0), nullptr) << "the input reached the player";
+    EXPECT_EQ(server.system<server::NetReceiveSystem>().droppedCount(), 1U);
+}
+
+TEST(SessionEncryption, ModifiedPacketIsDropped)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)connectOrFail(server, client, "Thibani");
+
+    auto datagram
+        = client.sealed(client.wrap(Input{.firstTick = 1, .count = 1, .masks = {input::Right}}));
+    datagram.back() ^= std::byte{0x01};
+    client.sendBytes(datagram);
+    deliver(server);
+
+    EXPECT_EQ(server.playerInput(0), nullptr) << "the input reached the player";
+    EXPECT_EQ(server.system<server::NetReceiveSystem>().droppedCount(), 1U);
+}
+
+TEST(SessionEncryption, ReplayedPacketIsDropped)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)connectOrFail(server, client, "Thibani");
+
+    const auto datagram
+        = client.sealed(client.wrap(Input{.firstTick = 1, .count = 1, .masks = {input::Right}}));
+    client.sendBytes(datagram);
+    client.sendBytes(datagram);
+    deliver(server);
+
+    const server::PlayerInput* player = server.playerInput(0);
+    ASSERT_NE(player, nullptr);
+    EXPECT_EQ(player->lastTick, 1U); // The first copy did arrive
+    EXPECT_EQ(server.system<server::NetReceiveSystem>().droppedCount(), 1U);
+}
+
+TEST(SessionEncryption, ForgedPacketsDoNotKeepASessionAlive)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)connectOrFail(server, client, "Thibani");
+
+    client.sendBytes(TestClient::inClear(client.wrap(Heartbeat{})));
+    deliver(server, 3.0F);
+    client.sendBytes(TestClient::inClear(client.wrap(Heartbeat{})));
+    deliver(server, 3.0F); // 6 seconds with only forged packets: more than the 5 s timeout
+    server.frame();
+
+    EXPECT_EQ(server.sessionCount(), 0U);
+}
+
+TEST(SessionEncryption, NothingOfTheGameIsReadableOnTheNetwork)
+{
+    TestServer server;
+    TestClient watcher(server.address());
+    (void)connectOrFail(server, watcher, "Watcher");
+    TestClient newcomer(server.address());
+    (void)connectOrFail(server, newcomer, "SecretName");
+
+    (void)waitFor<PlayerJoined>(server, watcher); // Carries the name "SecretName"
+    ASSERT_FALSE(watcher.rawDatagrams.empty());
+
+    const std::string_view name = "SecretName";
+    for (const auto& datagram : watcher.rawDatagrams) {
+        const std::string_view text(
+            reinterpret_cast<const char*>(datagram.data()), datagram.size());
+        EXPECT_EQ(text.find(name), std::string_view::npos);
+    }
 }
 
 // --- Inside a session -----------------------------------------------------------
@@ -476,13 +669,13 @@ TEST(Session, PacketWithAWrongTokenIsIgnored)
     TestClient client(server.address());
     (void)connectOrFail(server, client, "Thibani");
 
-    client.sendRaw(Packet{
+    client.sendBytes(TestClient::inClear(Packet{
         .sessionToken = client.token + 1,
         .sequence = 100,
         .ack = std::nullopt,
         .reliableId = 0,
         .payload = Input{.firstTick = 1, .count = 1, .masks = {}},
-    });
+    }));
     deliver(server);
 
     EXPECT_TRUE(server.messages.empty());

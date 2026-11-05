@@ -205,6 +205,7 @@ namespace {
     void writePayload(ByteWriter& writer, const ConnectRequest& packet) noexcept
     {
         writeName(writer, packet.name);
+        writer.writeBytes(packet.publicKey);
     }
 
     void writePayload(ByteWriter& writer, const ConnectAccept& packet) noexcept
@@ -213,6 +214,7 @@ namespace {
         writer.write(packet.tickRate);
         writer.write(packet.snapshotRate);
         writer.write(packet.maxPlayers);
+        writer.writeBytes(packet.publicKey);
     }
 
     void writePayload(ByteWriter& writer, const ConnectReject& packet) noexcept
@@ -312,7 +314,12 @@ namespace {
 
     ReadError readPayload(ByteReader& reader, ConnectRequest& packet)
     {
-        return readName(reader, packet.name) ? ReadError{} : DecodeError::InvalidName;
+        if (!readName(reader, packet.name)) {
+            return DecodeError::InvalidName;
+        }
+        // A failed read fails the reader: decodeAs() reports BadPayloadSize
+        static_cast<void>(reader.readBytes(packet.publicKey));
+        return {};
     }
 
     ReadError readPayload(ByteReader& reader, ConnectAccept& packet)
@@ -321,6 +328,7 @@ namespace {
         packet.tickRate = reader.read<std::uint8_t>();
         packet.snapshotRate = reader.read<std::uint8_t>();
         packet.maxPlayers = reader.read<std::uint8_t>();
+        static_cast<void>(reader.readBytes(packet.publicKey)); // As in CONNECT_REQUEST
         return {};
     }
 
