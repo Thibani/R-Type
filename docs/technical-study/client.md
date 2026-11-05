@@ -9,7 +9,7 @@ code lives in `src/client/` (see its [README](../../src/client/README.md)).
 | Graphics library    | SFML 3.1                                       | raylib 6, SDL 3                     |
 | Architecture        | The team's ECS, with singleton components      | Object-oriented scene (`Player`, `Enemy` classes) |
 | Smoothing           | Extrapolate with the last velocity, correct on each snapshot | Raw snapshots, interpolation, prediction |
-| Storage             | Nothing written to disk; read-only assets      | Settings file (INI, JSON)           |
+| Storage             | Read-only assets; a `key = value` settings file | INI or TOML library, JSON, binary  |
 
 ---
 
@@ -95,7 +95,8 @@ or more.
 Snapshots carry each entity's velocity, and R-Type movement is mostly
 straight. So `MotionSystem` moves every entity by `velocity × step` between
 snapshots, and the next snapshot sets the real position. Interpolation and
-prediction (#80, #81) belong to Part 2.
+prediction (#80, #81) were closed as not planned: for the final delivery, the
+team chose accessibility, accounts, social features and game modes instead.
 
 ---
 
@@ -115,20 +116,31 @@ prediction (#80, #81) belong to Part 2.
 
 ## 5. Storage
 
-The client **writes nothing to disk**. Server address, port and name come
-from the command line and fill the connection form. Sprites, fonts and sounds
-are read once at startup from `assets/` (next to the executable); a missing
-file stops the client with its path and exit code 84, instead of showing an
-incomplete game.
+Sprites, fonts and sounds are read once at startup from `assets/` (next to the
+executable); a missing file stops the client with its path and exit code 84,
+instead of showing an incomplete game. Server address, port and name come from
+the command line and fill the connection form; they are not saved.
 
-A settings file (key bindings, volume, accessibility options) is planned for
-Part 2, with these options; it will be studied then:
+The only file the client writes is the player's settings: volume and key
+bindings, in `settings.cfg` in the user's config folder
+(`src/client/README.md`).
 
-| Format     | Editable by hand | Dependency        |
-|------------|------------------|-------------------|
-| INI / TOML | Yes              | Small parser      |
-| JSON       | Yes              | JSON library      |
-| Binary     | No               | None              |
+| Format                | Editable by hand | Dependency   |
+|-----------------------|------------------|--------------|
+| **`key = value` text** | Yes             | None         |
+| INI / TOML            | Yes              | Small parser |
+| JSON                  | Yes              | JSON library |
+| Binary                | No               | None         |
+
+**Why plain text:** a handful of flat values needs no sections, nesting or new
+dependency, and a player can read or fix the file by hand.
+
+- **Reading never fails.** A missing file gives the defaults, unknown keys are
+  ignored, and a bad value keeps its default, so a broken file cannot stop the
+  game. Files over 64 KB are only read up to that size.
+- **Writing is atomic.** It goes to `settings.cfg.tmp`, then a rename, so a
+  crash never leaves a half-written file. A failed save is shown on the
+  settings screen.
 
 ---
 
@@ -144,6 +156,7 @@ Everything the client receives is untrusted.
 | Packet meant for a server                | Decoded as server-to-client only: client-to-server types are rejected |
 | Unknown entity kind or player id         | Kind drawn as a "?"; player ids above 3 ignored                  |
 | Replayed or out-of-order state           | Older snapshots and destroyed `netId`s ignored                   |
+| Corrupt or hand-edited settings file     | Read leniently: size capped, every value validated, bad values keep their default |
 | Vulnerable dependency                    | SFML pinned to 3.1.0 in CPM; its bundled codecs (freetype, vorbis, flac) come with it |
 
 **Monitoring:** the CI builds with warnings as errors and runs the client

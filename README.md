@@ -3,11 +3,12 @@
 A networked R-Type game written in modern C++ (C++23), built on top of a
 reusable Entity-Component-System (ECS) game engine.
 
-> **Status:** Part 1 prototype. Up to 4 players join an authoritative server
+> **Status:** Part 2 in progress. Up to 4 players join an authoritative server
 > with the graphical client, fly their ships, shoot the Bydos that come in
 > waves and shoot back, and share a team score. A client that crashes or
-> leaves does not stop the game. Next (Part 2): game phases (lobby, game
-> over), levels, bosses, and the advanced networking track.
+> leaves does not stop the game. Players can set the volume and their keys.
+> Next: more accessibility options, accounts, chat, friends and a lobby, then
+> game phases, levels, bosses and the endless, campaign and versus modes.
 
 ---
 
