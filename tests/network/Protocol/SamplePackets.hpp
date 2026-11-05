@@ -76,7 +76,10 @@ inline std::vector<Sample> all()
         .vy = 0,
     };
     const EntityDestroy destroy{.netId = 77, .reason = DestroyReason::Killed, .killerNetId = 12};
-    const ConnectAccept accept{.playerId = 2, .tickRate = 60, .snapshotRate = 30, .maxPlayers = 4};
+    network::crypto::PublicKey publicKey{};
+    publicKey.fill(std::byte{0x5A});
+    const ConnectAccept accept{
+        .playerId = 2, .tickRate = 60, .snapshotRate = 30, .maxPlayers = 4, .publicKey = publicKey};
     const Snapshot emptySnapshot{
         .serverTick = 1,
         .lastInputTick = 0,
@@ -93,7 +96,7 @@ inline std::vector<Sample> all()
     };
 
     return {
-        toServer(makePacket(ConnectRequest{.name = "Thibani"})),
+        toServer(makePacket(ConnectRequest{.name = "Thibani", .publicKey = publicKey})),
         toClient(makePacket(accept)),
         toClient(makePacket(ConnectReject{.reason = RejectReason::GameInProgress})),
         toServer(makePacket(Disconnect{.reason = DisconnectReason::Timeout})),

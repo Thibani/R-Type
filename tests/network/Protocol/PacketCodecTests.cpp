@@ -51,6 +51,13 @@ DecodeError decodeError(const std::vector<std::byte>& datagram, Direction direct
     return result ? DecodeError{} : result.error();
 }
 
+network::crypto::PublicKey filledKey(std::uint8_t value)
+{
+    network::crypto::PublicKey key{};
+    key.fill(static_cast<std::byte>(value));
+    return key;
+}
+
 } // namespace
 
 // --- Wire format --------------------------------------------------------------
@@ -63,19 +70,49 @@ TEST(PacketCodec, MatchesTheSpecificationExample)
         .sequence = 0,
         .ack = std::nullopt,
         .reliableId = 0,
-        .payload = ConnectRequest{.name = "Thibani"},
+        .payload = ConnectRequest{.name = "Thibani", .publicKey = filledKey(0xAB)},
     };
 
     const auto expected = bytes({
-        0x52, 0x54, 0x01, 0x01, 0x00, 0x00, 0x00, 0x10, // magic, version, type, flags, reserved, size
+        0x52, 0x54, 0x02, 0x01, 0x00, 0x00, 0x00, 0x30, // magic, version, type, flags, reserved, size
         0x00, 0x00, 0x00, 0x00, // sessionToken
         0x00, 0x00, 0x00, 0x00, // sequence, ack
         0x00, 0x00, 0x00, 0x00, // ackBits
         0x54, 0x68, 0x69, 0x62, 0x61, 0x6E, 0x69, 0x00, // "Thibani"
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // padding
+        0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, // publicKey
+        0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB,
+        0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB,
+        0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB,
     });
 
     EXPECT_EQ(encodeOrFail(packet), expected);
+}
+
+TEST(PacketCodec, ConnectPacketsKeepThePublicKey)
+{
+    const Packet request = makePacket(ConnectRequest{.name = "a", .publicKey = filledKey(0x11)});
+    const auto decodedRequest = decode(encodeOrFail(request), Direction::ClientToServer);
+    ASSERT_TRUE(decodedRequest.has_value());
+    EXPECT_EQ(std::get<ConnectRequest>(decodedRequest->payload).publicKey, filledKey(0x11));
+
+    const Packet accept = makePacket(ConnectAccept{.playerId = 0,
+        .tickRate = 60,
+        .snapshotRate = 30,
+        .maxPlayers = 4,
+        .publicKey = filledKey(0x22)});
+    const auto decodedAccept = decode(encodeOrFail(accept), Direction::ServerToClient);
+    ASSERT_TRUE(decodedAccept.has_value());
+    EXPECT_EQ(std::get<ConnectAccept>(decodedAccept->payload).publicKey, filledKey(0x22));
+}
+
+TEST(PacketCodecValidation, RejectsConnectRequestWithoutItsWholeKey)
+{
+    auto datagram = encodeOrFail(makePacket(ConnectRequest{.name = "a"}));
+    datagram.pop_back();
+    datagram[7] = static_cast<std::byte>(47); // payloadSize still matches the datagram
+
+    EXPECT_EQ(decodeError(datagram, Direction::ClientToServer), DecodeError::BadPayloadSize);
 }
 
 TEST(PacketCodec, EncodesHeaderFields)
@@ -85,7 +122,7 @@ TEST(PacketCodec, EncodesHeaderFields)
     const auto datagram = encodeOrFail(packet);
 
     const auto expected = bytes({
-        0x52, 0x54, 0x01, 0x25, // magic, version, PLAYER_DIED
+        0x52, 0x54, 0x02, 0x25, // magic, version, PLAYER_DIED
         0x03, 0x00, 0x00, 0x05, // RELIABLE | HAS_ACK, reserved, payloadSize 5
         0xCA, 0xFE, 0xBA, 0xBE, // sessionToken
         0x00, 0x2A, 0x00, 0x29, // sequence 42, ack 41
@@ -105,8 +142,8 @@ TEST(PacketCodec, PayloadSizesMatchTheSpecification)
     Input input{.firstTick = 0, .count = 8, .masks = {}};
 
     const std::vector<Expected> cases{
-        {.payload = ConnectRequest{.name = "a"}, .size = 16},
-        {.payload = ConnectAccept{.playerId = 0, .tickRate = 60, .snapshotRate = 30, .maxPlayers = 4}, .size = 4},
+        {.payload = ConnectRequest{.name = "a"}, .size = 48},
+        {.payload = ConnectAccept{.playerId = 0, .tickRate = 60, .snapshotRate = 30, .maxPlayers = 4}, .size = 36},
         {.payload = ConnectReject(), .size = 1},
         {.payload = Disconnect(), .size = 1},
         {.payload = Heartbeat(), .size = 0},
@@ -245,14 +282,14 @@ TEST(PacketCodecValidation, RejectsPayloadSizeMismatch)
 TEST(PacketCodecValidation, RejectsOtherVersionButHeaderStaysReadable)
 {
     auto datagram = encodeOrFail(makePacket(ConnectRequest{.name = "old"}));
-    datagram[2] = std::byte{2};
+    datagram[2] = std::byte{1};
 
     EXPECT_EQ(decodeError(datagram, Direction::ClientToServer), DecodeError::UnsupportedVersion);
 
     // The server can still tell it was a CONNECT_REQUEST and answer VERSION_MISMATCH.
     const auto header = decodeHeader(datagram);
     ASSERT_TRUE(header.has_value());
-    EXPECT_EQ(header->version, 2);
+    EXPECT_EQ(header->version, 1);
     EXPECT_EQ(header->type, std::to_underlying(PacketType::ConnectRequest));
 }
 

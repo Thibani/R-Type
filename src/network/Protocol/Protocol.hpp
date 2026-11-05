@@ -6,14 +6,14 @@
 #include <cstdint>
 #include <limits>
 
-/// Constants and enumerations of the R-Type network protocol, version 1.
+/// Constants and enumerations of the R-Type network protocol, version 2.
 /// The reference is docs/protocol.md: section numbers below point to it.
 namespace network::protocol {
 
 // --- Sizes and identification (§2, §3) ---------------------------------------
 
 inline constexpr std::uint16_t Magic = 0x5254; // "RT"
-inline constexpr std::uint8_t Version = 1;
+inline constexpr std::uint8_t Version = 2;
 
 inline constexpr std::size_t HeaderSize = 20;
 inline constexpr std::size_t MaxDatagramSize = 1200;
