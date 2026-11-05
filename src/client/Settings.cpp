@@ -185,9 +185,13 @@ std::optional<std::filesystem::path> settingsPath()
 {
     const auto variable = [](const char* name) -> std::string {
 #ifdef _MSC_VER
-#pragma warning(suppress : 4996) // Read once at start, never written: getenv is fine
+#pragma warning(push)
+#pragma warning(disable : 4996) // Read once at start, never written: getenv is fine
 #endif
         const char* value = std::getenv(name); // NOLINT(concurrency-mt-unsafe)
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
         return value != nullptr ? value : "";
     };
 #ifdef _WIN32
