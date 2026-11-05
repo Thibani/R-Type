@@ -2,10 +2,13 @@
 
 #include "ecs/Time/Time.hpp"
 #include "ecs/World/World.hpp"
+#include "network/Crypto/SealedDatagram.hpp"
 #include "network/Protocol/PacketCodec.hpp"
+#include "server/Components/NetClient.hpp"
 #include "server/Components/ReceivedPacket.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <utility>
 
@@ -18,6 +21,19 @@ namespace {
 /// Size of the CONNECT_REJECT answer: replying to a smaller datagram would
 /// let a spoofed request amplify traffic toward its victim (§7.1).
 constexpr std::size_t RejectDatagramSize = HeaderSize + 1;
+
+/// The session this datagram claims to belong to. Tokens are never 0, so a
+/// CONNECT_REQUEST never has one.
+NetClient* findSession(ecs::World& world, const network::Endpoint& from, std::uint32_t token)
+{
+    NetClient* found = nullptr;
+    world.query<NetClient>([&](ecs::Entity /*entity*/, NetClient& client) {
+        if (client.endpoint == from && client.token == token) {
+            found = &client;
+        }
+    });
+    return found;
+}
 
 } // namespace
 
@@ -36,7 +52,20 @@ void NetReceiveSystem::update(ecs::World& world, const ecs::Time& time)
             continue;
         }
 
-        const std::span<const std::byte> datagram = received.bytes;
+        std::span<const std::byte> datagram = received.bytes;
+        const auto sealedHeader = decodeHeader(datagram);
+        NetClient* session
+            = sealedHeader ? findSession(world, from, sealedHeader->sessionToken) : nullptr;
+        DatagramBuffer opened{};
+        if (session != nullptr) {
+            const auto size = network::crypto::openDatagram(session->cipher, datagram, opened);
+            if (!size) {
+                ++_dropped;
+                continue;
+            }
+            datagram = std::span(opened).first(*size);
+        }
+
         auto packet = decode(datagram, Direction::ClientToServer);
         if (!packet) {
             ++_dropped;
