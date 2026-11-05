@@ -18,13 +18,14 @@ inline constexpr std::uint8_t Version = 1;
 inline constexpr std::size_t HeaderSize = 20;
 inline constexpr std::size_t MaxDatagramSize = 1200;
 inline constexpr std::size_t MaxPayloadSize = MaxDatagramSize - HeaderSize;
+inline constexpr std::size_t SealOverhead = 24; // Added by encryption (§3.3): counter + tag
 
 inline constexpr std::size_t NameSize = 16;
 inline constexpr std::size_t MaxInputMasks = 8;
 inline constexpr std::size_t SnapshotHeaderSize = 11;
 inline constexpr std::size_t EntityStateSize = 13;
 inline constexpr std::size_t MaxSnapshotEntities
-    = (MaxPayloadSize - SnapshotHeaderSize) / EntityStateSize; // 89
+    = (MaxPayloadSize - SealOverhead - SnapshotHeaderSize) / EntityStateSize; // 88
 
 inline constexpr std::uint8_t MaxPlayers = 4;
 inline constexpr std::uint8_t NoPlayer = 0xFF;

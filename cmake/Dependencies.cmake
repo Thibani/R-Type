@@ -56,3 +56,17 @@ if(WIN32)
     target_compile_definitions(asio INTERFACE _WIN32_WINNT=0x0A00) # Windows 10
     target_link_libraries(asio INTERFACE ws2_32 mswsock)
 endif()
+
+# Monocypher: key exchange, authenticated encryption and password hashing, in
+# one C file. It ships no CMakeLists, so the target is declared here.
+CPMAddPackage(
+    NAME monocypher
+    GITHUB_REPOSITORY LoupVaillant/Monocypher
+    GIT_TAG 4.0.3
+    DOWNLOAD_ONLY YES)
+
+enable_language(C) # The project is C++ only, except for this file
+
+add_library(monocypher STATIC "${monocypher_SOURCE_DIR}/src/monocypher.c")
+# SYSTEM: our warning flags and clang-tidy must not apply to Monocypher's header
+target_include_directories(monocypher SYSTEM PUBLIC "${monocypher_SOURCE_DIR}/src")
