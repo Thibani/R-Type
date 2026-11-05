@@ -73,3 +73,8 @@ Testing/
 .vscode/
 .idea/
 out/
+
+# Players' accounts, created by r-type_server where it runs
+accounts.txt
+accounts.txt.tmp
+accounts.txt.damaged
