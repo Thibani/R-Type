@@ -76,7 +76,7 @@ void SnapshotSystem::update(ecs::World& world, const ecs::Time& time)
     });
 
     const TimePoint now = toTimePoint(time);
-    world.query<NetClient>([&](ecs::Entity entity, NetClient& client) {
+    world.query<NetClient, LoggedIn>([&](ecs::Entity entity, NetClient& client, LoggedIn&) {
         const auto* input = world.tryGetComponent<PlayerInput>(entity);
         const std::uint32_t lastInputTick = input != nullptr ? input->lastTick : 0;
         for (Snapshot& part : snapshotParts(entities, tick, lastInputTick)) {

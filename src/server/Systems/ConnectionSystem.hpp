@@ -12,8 +12,8 @@ namespace server {
 /// right after `NetReceiveSystem`.
 ///
 ///  - other protocol version, empty name, or 4 players already: CONNECT_REJECT;
-///  - otherwise: a new player entity with a `NetClient`, a CONNECT_ACCEPT,
-///    and reliable PLAYER_JOINED messages so that everyone knows everyone;
+///  - otherwise: a new player entity with a `NetClient` and a CONNECT_ACCEPT.
+///    The player joins the game once logged in (`LoginSystem`);
 ///  - a request from an address that already has a session gets the same
 ///    CONNECT_ACCEPT again, since the first one may have been lost.
 ///

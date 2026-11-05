@@ -10,10 +10,11 @@
 #include "server/Systems/BydoAimSystem.hpp"
 #include "server/Systems/BydoMovementSystem.hpp"
 #include "server/Systems/BydoSpawnSystem.hpp"
-#include "server/Systems/DamageSystem.hpp"
 #include "server/Systems/ConnectionSystem.hpp"
+#include "server/Systems/DamageSystem.hpp"
 #include "server/Systems/DiscardPacketsSystem.hpp"
 #include "server/Systems/InputSystem.hpp"
+#include "server/Systems/LoginSystem.hpp"
 #include "server/Systems/NetReceiveSystem.hpp"
 #include "server/Systems/NetSendSystem.hpp"
 #include "server/Systems/PlayerControlSystem.hpp"
@@ -46,11 +47,13 @@ void installSimulation(ecs::World& world)
     world.systems().add<game::DespawnSystem>(world);
 }
 
-void installSystems(ecs::World& world, ecs::GameLoop& loop, network::NetworkThread& socket)
+void installSystems(
+    ecs::World& world, ecs::GameLoop& loop, network::NetworkThread& socket, AccountStore& accounts)
 {
     loop.frameStart().add<NetReceiveSystem>(socket);
     loop.frameStart().add<ConnectionSystem>(socket);
     loop.frameStart().add<SessionReceiveSystem>();
+    loop.frameStart().add<LoginSystem>(accounts);
     loop.frameStart().add<TimeoutSystem>();
     loop.frameStart().add<InputSystem>();
     loop.frameStart().add<PlayerShipSystem>();

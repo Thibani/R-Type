@@ -69,6 +69,10 @@ void SessionReceiveSystem::update(ecs::World& world, const ecs::Time& time)
                     *session, Disconnecting{.reason = LeaveReason::Quit, .notify = std::nullopt});
                 break;
             }
+            if (!world.hasComponent<LoggedIn>(*session)
+                && !std::holds_alternative<AuthRequest>(payload)) {
+                continue; // Nothing else counts before the login
+            }
             world.addComponent(world.createEntity(),
                 ClientMessage{.client = *session, .payload = std::move(payload)});
         }
