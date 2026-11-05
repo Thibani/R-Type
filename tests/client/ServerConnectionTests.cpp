@@ -104,6 +104,9 @@ struct FakeServer {
     }
 };
 
+const client::ServerConnection::Credentials Dave{
+    .name = "Thibani", .password = "correct horse", .mode = AuthMode::Login};
+
 /// Reads the client's socket until something changes (or 200 ms pass).
 std::vector<Payload> receiveSoon(
     client::ServerConnection& connection, client::ServerConnection::Clock::time_point now)
@@ -126,10 +129,26 @@ struct ServerConnectionTest : testing::Test {
 
     void connected()
     {
-        connection.connect("127.0.0.1", server.port(), "Thibani", now);
+        connection.connect("127.0.0.1", server.port(), Dave, now);
         server.accept(now);
         static_cast<void>(receiveSoon(connection, now));
+        ASSERT_EQ(connection.status(), Status::LoggingIn);
+        answerLogin(AuthCode::Ok);
         ASSERT_EQ(connection.status(), Status::Connected);
+    }
+
+    /// Reads the AUTH_REQUEST and answers it, reliably as the real server does.
+    void answerLogin(AuthCode code)
+    {
+        const auto request = server.receive();
+        ASSERT_TRUE(request.has_value());
+        ASSERT_TRUE(std::holds_alternative<AuthRequest>(request->payload));
+        [[maybe_unused]] const auto delivered = server.channel.receive(*request, now);
+        server.channel.queueReliable(AuthResult{.code = code});
+        for (const Packet& packet : server.channel.takeDue(now)) {
+            server.send(packet);
+        }
+        static_cast<void>(receiveSoon(connection, now));
     }
 };
 
@@ -137,7 +156,7 @@ struct ServerConnectionTest : testing::Test {
 
 TEST_F(ServerConnectionTest, SendsConnectRequestWithTheName)
 {
-    connection.connect("127.0.0.1", server.port(), "Thibani", now);
+    connection.connect("127.0.0.1", server.port(), Dave, now);
     EXPECT_EQ(connection.status(), Status::Connecting);
     EXPECT_EQ(connection.attempts(), 1);
 
@@ -164,7 +183,7 @@ TEST_F(ServerConnectionTest, AcceptConnectsAndGivesThePlayerId)
 
 TEST_F(ServerConnectionTest, RejectFailsWithTheReason)
 {
-    connection.connect("127.0.0.1", server.port(), "Thibani", now);
+    connection.connect("127.0.0.1", server.port(), Dave, now);
     ASSERT_TRUE(server.receive().has_value());
     server.send(Packet{.sessionToken = 0,
         .sequence = 0,
@@ -180,7 +199,7 @@ TEST_F(ServerConnectionTest, RejectFailsWithTheReason)
 
 TEST_F(ServerConnectionTest, RetriesEvery500msThenGivesUpAfter10)
 {
-    connection.connect("127.0.0.1", server.port(), "Thibani", now);
+    connection.connect("127.0.0.1", server.port(), Dave, now);
     connection.update(now + 499ms);
     EXPECT_EQ(connection.attempts(), 1); // Too early
     for (int attempt = 2; attempt <= client::ServerConnection::MaxAttempts; ++attempt) {
@@ -234,11 +253,11 @@ TEST_F(ServerConnectionTest, IgnoresAnotherSessionToken)
 
 TEST_F(ServerConnectionTest, RetriesKeepTheSameKeyAndANewConnectionGetsANewOne)
 {
-    connection.connect("127.0.0.1", server.port(), "Thibani", now);
+    connection.connect("127.0.0.1", server.port(), Dave, now);
     const auto first = server.receive();
     connection.update(now + client::ServerConnection::RetryDelay);
     const auto retry = server.receive();
-    connection.connect("127.0.0.1", server.port(), "Thibani", now);
+    connection.connect("127.0.0.1", server.port(), Dave, now);
     const auto second = server.receive();
     ASSERT_TRUE(first.has_value() && retry.has_value() && second.has_value());
 
@@ -250,7 +269,7 @@ TEST_F(ServerConnectionTest, RetriesKeepTheSameKeyAndANewConnectionGetsANewOne)
 
 TEST_F(ServerConnectionTest, InvalidServerKeyFailsTheConnection)
 {
-    connection.connect("127.0.0.1", server.port(), "Thibani", now);
+    connection.connect("127.0.0.1", server.port(), Dave, now);
     ASSERT_TRUE(server.receive().has_value());
 
     server.send(server.channel.wrap(
@@ -359,4 +378,101 @@ TEST_F(ServerConnectionTest, DisconnectSendsQuitThreeTimes)
         quits += disconnect != nullptr && disconnect->reason == DisconnectReason::Quit ? 1 : 0;
     }
     EXPECT_EQ(quits, client::ServerConnection::DisconnectRepeats);
+}
+
+// --- Login ----------------------------------------------------------------------
+
+TEST_F(ServerConnectionTest, LogsInWithTheCredentialsOnceEncrypted)
+{
+    connection.connect("127.0.0.1", server.port(), Dave, now);
+    server.accept(now);
+    static_cast<void>(receiveSoon(connection, now));
+    EXPECT_EQ(connection.status(), Status::LoggingIn);
+
+    const auto request = server.receive();
+
+    ASSERT_TRUE(request.has_value());
+    EXPECT_EQ(std::get<AuthRequest>(request->payload),
+        (AuthRequest{.mode = AuthMode::Login, .password = "correct horse"}));
+}
+
+TEST_F(ServerConnectionTest, RetriesTheLoginEvery500ms)
+{
+    connection.connect("127.0.0.1", server.port(), Dave, now);
+    server.accept(now);
+    static_cast<void>(receiveSoon(connection, now));
+    ASSERT_TRUE(server.receive().has_value());
+
+    connection.update(now + 499ms);
+    EXPECT_EQ(connection.attempts(), 1);
+    connection.update(now + client::ServerConnection::RetryDelay);
+    EXPECT_EQ(connection.attempts(), 2);
+
+    const auto retry = server.receive();
+    ASSERT_TRUE(retry.has_value());
+    EXPECT_TRUE(std::holds_alternative<AuthRequest>(retry->payload));
+}
+
+TEST_F(ServerConnectionTest, RefusedLoginReportsWhyAndFreesTheSlot)
+{
+    connection.connect("127.0.0.1", server.port(), Dave, now);
+    server.accept(now);
+    static_cast<void>(receiveSoon(connection, now));
+
+    answerLogin(AuthCode::WrongCredentials);
+
+    EXPECT_EQ(connection.status(), Status::Failed);
+    EXPECT_EQ(connection.failure().kind, Kind::AuthFailed);
+    EXPECT_EQ(client::describe(connection.failure()), "Wrong name or password.");
+    const auto bye = server.receive();
+    ASSERT_TRUE(bye.has_value());
+    EXPECT_TRUE(std::holds_alternative<Disconnect>(bye->payload));
+}
+
+TEST_F(ServerConnectionTest, EventsAfterTheLoginReachTheGameEvenInTheSameBatch)
+{
+    connection.connect("127.0.0.1", server.port(), Dave, now);
+    server.accept(now);
+    static_cast<void>(receiveSoon(connection, now));
+
+    server.channel.queueReliable(AuthResult{.code = AuthCode::Ok});
+    server.channel.queueReliable(PlayerJoined{.playerId = 0, .name = "A"});
+    const auto packets = server.channel.takeDue(now);
+    ASSERT_EQ(packets.size(), 2U);
+    server.send(packets.at(1)); // The event overtakes AUTH_RESULT on the network
+    server.send(packets.at(0));
+
+    std::vector<Payload> received;
+    for (int i = 0; i < 200 && received.empty(); ++i) {
+        received = connection.receive(now);
+        std::this_thread::sleep_for(1ms);
+    }
+
+    EXPECT_EQ(connection.status(), Status::Connected);
+    ASSERT_EQ(received.size(), 1U);
+    EXPECT_TRUE(std::holds_alternative<PlayerJoined>(received.at(0)));
+}
+
+TEST_F(ServerConnectionTest, SnapshotBeforeTheLoginResultIsIgnored)
+{
+    connection.connect("127.0.0.1", server.port(), Dave, now);
+    server.accept(now);
+    static_cast<void>(receiveSoon(connection, now));
+
+    server.send(server.channel.wrap(Snapshot{}, now));
+
+    EXPECT_TRUE(receiveSoon(connection, now).empty());
+    EXPECT_EQ(connection.status(), Status::LoggingIn);
+}
+
+TEST_F(ServerConnectionTest, NoInputBeforeTheLoginResult)
+{
+    connection.connect("127.0.0.1", server.port(), Dave, now);
+    server.accept(now);
+    static_cast<void>(receiveSoon(connection, now));
+    ASSERT_TRUE(server.receive().has_value());
+
+    connection.sendInput(Input{.firstTick = 1, .count = 1, .masks = {}}, now);
+
+    EXPECT_FALSE(server.receive().has_value());
 }

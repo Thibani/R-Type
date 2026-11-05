@@ -19,7 +19,7 @@ inline constexpr float NoticeSeconds = 4.0F;
 /// Applies one game payload. `now` is the client's elapsed time in seconds.
 void applyPayload(ecs::World& world, const network::protocol::Payload& payload, float now);
 
-/// CONNECT_ACCEPT received: we are player `accept.playerId`, called `name`.
+/// Logged in: we are player `accept.playerId`, called `name`.
 void startSession(
     ecs::World& world, const network::protocol::ConnectAccept& accept, const std::string& name);
 

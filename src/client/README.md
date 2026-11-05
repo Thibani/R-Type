@@ -8,7 +8,8 @@ server (`docs/protocol.md`).
 ./r-type_client [-s address] [-p port] [-n name]   # defaults: 127.0.0.1 4242 Player
 ```
 
-The options fill the connection form; Enter connects. Graphics, input and
+The options fill the connection form; type a password, then Enter logs in, or
+use Create account. Graphics, input and
 audio use **SFML 3.1** (fetched by CPM). Sprites, fonts and sounds are in
 `assets/`, copied next to the executable at build time.
 
@@ -67,7 +68,7 @@ other, they share components. `RenderSystem` only reads `Position` and
 | Screen        | When                                                              |
 |---------------|-------------------------------------------------------------------|
 | Connect       | At start, and after any failure (with its reason)                 |
-| Game          | After CONNECT_ACCEPT: a single player can play at once            |
+| Game          | After AUTH_RESULT (OK): a single player can play at once          |
 | Waiting room  | Only if the server sends GAME_STATE = WAITING_FOR_PLAYERS         |
 | Game over     | GAME_STATE = GAME_OVER: team score and crew                       |
 
@@ -124,12 +125,14 @@ key.fire = Space
 ## Protocol rules applied by the client
 
 - CONNECT_REQUEST every 500 ms, 10 times at most (§8.1).
+- The password is typed hidden, sent only sealed in AUTH_REQUEST (§8.1), and
+  forgotten once logged in, on the form and in `ServerConnection`.
 - HEARTBEAT after 250 ms without sending; session lost after 5 s of silence (§8.2).
 - INPUT once per 60 Hz tick, repeating the last 8 masks (§4.2).
 - Datagrams from another address or with another session token are ignored (§7).
 - Older snapshots are ignored; a destroyed netId is ignored for 5 s (§4.3, §5.1).
 - Unknown entity kinds are drawn as a "?" placeholder (§5.2).
-- The PLAYER_JOINED sent right after CONNECT_ACCEPT for the players already
+- The PLAYER_JOINED sent right after AUTH_RESULT for the players already
   there fill the HUD without a notice; later ones are announced (§8.1).
 - Leaving or quitting sends DISCONNECT 3 times (§8.3).
 

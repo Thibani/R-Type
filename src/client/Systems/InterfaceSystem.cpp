@@ -107,6 +107,15 @@ void cardHead(sf::RenderTarget& target, const Assets& assets, ColourMode mode, s
     }
 }
 
+/// One star per character of the password (a UTF-8 character can use several bytes).
+std::string hidden(std::string_view password)
+{
+    const auto isCharacterStart
+        = [](char c) { return (static_cast<unsigned char>(c) & 0xC0U) != 0x80U; };
+    return std::string(
+        static_cast<std::size_t>(std::ranges::count_if(password, isCharacterStart)), '*');
+}
+
 /// A small player card: head, ship and name, or "Free slot".
 void crewCard(sf::RenderTarget& target, const Assets& assets, ColourMode mode, sf::FloatRect card,
     std::size_t player, const PlayerSlot& slot, bool isYou)
@@ -136,16 +145,21 @@ void drawConnect(sf::RenderTarget& target, const Assets& assets, ColourMode mode
     }
 
     box(target, layout::ConnectPanel, theme::Surface, theme::Hull, 4.0F, true);
-    text(target, assets.display, "Join a game", 32, theme::Text, {700.0F, 164.0F});
+    text(target, assets.display, "Join a game", 32, theme::Text, {700.0F, 146.0F});
     widgets::field(target, assets, layout::NameInput, "Player name", session.name,
         session.focus == layout::NameField);
-    text(target, assets.body, "16 characters max", 15, theme::Muted, {700.0F, 303.0F});
+    text(target, assets.body, "16 characters max", 15, theme::Muted, {700.0F, 271.0F});
+    widgets::field(target, assets, layout::PasswordInput, "Password", hidden(session.password),
+        session.focus == layout::PasswordField);
+    text(target, assets.body, "8 to 64 characters", 15, theme::Muted, {942.0F, 271.0F});
     widgets::field(target, assets, layout::AddressInput, "Server address", session.address,
         session.focus == layout::AddressField);
     widgets::field(target, assets, layout::PortInput, "Port", session.port,
         session.focus == layout::PortField);
     widgets::button(
-        target, assets, layout::Connect, "Connect", true, session.focus == layout::ConnectButton);
+        target, assets, layout::Login, "Log in", true, session.focus == layout::LoginButton);
+    widgets::button(target, assets, layout::CreateAccount, "Create account", false,
+        session.focus == layout::CreateAccountButton);
     widgets::button(target, assets, layout::OpenSettings, "Settings", false,
         session.focus == layout::SettingsButton);
     widgets::button(
@@ -156,7 +170,7 @@ void drawConnect(sf::RenderTarget& target, const Assets& assets, ColourMode mode
     } else if (!session.status.empty()) {
         text(target, assets.bodyBold, session.status, 17, theme::Blue, {700.0F, 527.0F});
     }
-    text(target, assets.body, "Tab: next field  ·  Enter: connect  ·  Esc: quit", 15, theme::Muted,
+    text(target, assets.body, "Tab: next field  ·  Enter: log in  ·  Esc: quit", 15, theme::Muted,
         compact ? sf::Vector2f{700.0F, 566.0F} : sf::Vector2f{80.0F, 682.0F});
 }
 
