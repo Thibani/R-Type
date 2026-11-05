@@ -55,6 +55,15 @@ float textWidth(const sf::Font& font, std::string_view text, unsigned size)
     return makeText(font, text, size, sf::Color::White).getLocalBounds().size.x;
 }
 
+unsigned fittedSize(const sf::Font& font, std::string_view text, unsigned size, float width)
+{
+    constexpr unsigned smallest = 9;
+    while (size > smallest && textWidth(font, text, size) > width) {
+        --size;
+    }
+    return size;
+}
+
 void text(sf::RenderTarget& target, const sf::Font& font, std::string_view text, unsigned size,
     sf::Color colour, sf::Vector2f position)
 {

@@ -129,6 +129,15 @@ void changeColourMode(Settings& settings, int step)
     settings.dirty = true;
 }
 
+void changeInterfaceSize(Settings& settings, int step)
+{
+    const auto& sizes = Settings::InterfaceSizes;
+    const auto count = std::ssize(sizes);
+    const auto current = std::ranges::find(sizes, settings.interfaceSize) - sizes.begin();
+    settings.interfaceSize = sizes.at(static_cast<std::size_t>((current + step + count) % count));
+    settings.dirty = true;
+}
+
 /// Left or Right (`direction` -1 or 1) on the focused row of the settings.
 void adjustSettings(const Session& session, Settings& settings, int direction)
 {
@@ -136,6 +145,8 @@ void adjustSettings(const Session& session, Settings& settings, int direction)
         changeVolume(settings, direction * Settings::VolumeStep);
     } else if (session.focus == layout::ColourRow) {
         changeColourMode(settings, direction);
+    } else if (session.focus == layout::InterfaceSizeRow) {
+        changeInterfaceSize(settings, direction);
     }
 }
  
@@ -148,6 +159,8 @@ void activateSettings(Session& session, Settings& settings, int index)
         settings.dirty = true;
     } else if (index == layout::ColourRow) {
         changeColourMode(settings, 1);
+    } else if (index == layout::InterfaceSizeRow) {
+        changeInterfaceSize(settings, 1);
     } else if (index < layout::ResetRow) {
         session.capturing = static_cast<Action>(index - layout::FirstKeyRow); // Next key pressed is bound
     } else if (index == layout::ResetRow) {
@@ -194,9 +207,9 @@ void activate(Session& session, Settings& settings, int index, ecs::GameLoop& lo
     }
 }
 
-void moveFocus(Session& session, int step)
+void moveFocus(Session& session, const Settings& settings, int step)
 {
-    const int count = static_cast<int>(layout::focusables(session).size());
+    const int count = static_cast<int>(layout::focusables(session, settings.interfaceSize).size());
     if (count > 0) {
         session.focus = (session.focus + step + count) % count;
     }
@@ -243,12 +256,12 @@ void onKey(Session& session, Settings& settings, const sf::Event::KeyPressed& ke
         escape(session, loop);
         break;
     case Key::Tab:
-        moveFocus(session, key.shift ? -1 : 1);
+        moveFocus(session, settings, key.shift ? -1 : 1);
         break;
     case Key::Down:
     case Key::Up:
         if (inMenu) { // In the game, arrows move the ship
-            moveFocus(session, key.code == Key::Down ? 1 : -1);
+            moveFocus(session, settings, key.code == Key::Down ? 1 : -1);
         }
         break;
     case Key::Left:
@@ -320,9 +333,9 @@ void InputSystem::update(ecs::World& world, const ecs::Time& /*time*/)
             if (click->button != sf::Mouse::Button::Left || session.capturing) {
                 continue;
             }
-            const sf::Vector2f point = _window.mapPixelToCoords(
-                click->position, letterboxed({theme::UiWidth, theme::UiHeight}, _window.getSize()));
-            const auto targets = layout::focusables(session);
+            const sf::Vector2f point = _window.mapPixelToCoords(click->position,
+                letterboxed(layout::visibleArea(session, settings.interfaceSize), _window.getSize()));
+            const auto targets = layout::focusables(session, settings.interfaceSize);
             for (std::size_t i = 0; i < targets.size(); ++i) {
                 if (targets.at(i).contains(point)) {
                     session.focus = static_cast<int>(i);

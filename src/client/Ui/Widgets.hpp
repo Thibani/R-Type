@@ -26,6 +26,10 @@ void box(sf::RenderTarget& target, sf::FloatRect rect, sf::Color fill, sf::Color
 [[nodiscard]]
 float textWidth(const sf::Font& font, std::string_view text, unsigned size);
 
+/// The largest size up to `size` at which `text` fits in `width`.
+[[nodiscard]]
+unsigned fittedSize(const sf::Font& font, std::string_view text, unsigned size, float width);
+
 /// Draws `text` with its top-left corner at `position`.
 void text(sf::RenderTarget& target, const sf::Font& font, std::string_view text, unsigned size,
     sf::Color colour, sf::Vector2f position);

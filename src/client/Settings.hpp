@@ -15,6 +15,7 @@
 ///     # R-Type client settings
 ///     volume = 80
 ///     colour = Off
+///     interface = 100
 ///     key.up = Up
 ///     key.fire = Space
 ///

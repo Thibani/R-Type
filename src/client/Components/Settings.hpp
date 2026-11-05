@@ -35,6 +35,8 @@ inline constexpr std::size_t ColourModeCount = 4;
 struct Settings {
     static constexpr int MaxVolume = 100;
     static constexpr int VolumeStep = 10;
+    // Up to where every screen still fits: at 150 %, the canvas is 853 × 480
+    static constexpr std::array<int, 4> InterfaceSizes{75, 100, 125, 150};
     static constexpr std::array<sf::Keyboard::Key, ActionCount> DefaultKeys{
         sf::Keyboard::Key::Up,
         sf::Keyboard::Key::Down,
@@ -46,6 +48,7 @@ struct Settings {
     int volume{80}; // Sound effects, 0 (muted) to 100 %
     std::array<sf::Keyboard::Key, ActionCount> keys{DefaultKeys}; // Indexed by Action
     ColourMode colourMode{ColourMode::Off};
+    int interfaceSize{100}; // Percent, one of InterfaceSizes
 
     bool dirty{false}; // Changed since the last save: SettingsSystem saves it
     std::string saveError; // Why the last save failed, shown on the settings screen
