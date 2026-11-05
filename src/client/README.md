@@ -33,7 +33,7 @@ Technology choices: [`docs/technical-study/client.md`](../../docs/technical-stud
 | `Components/Session.hpp`           | Current screen, form, players, score, notices              |
 | `Components/Controls.hpp`          | `PlayerControls` (keys held), `InputHistory` (last 8 ticks)|
 | `Components/SoundEvent.hpp`        | A sound to play this frame                                 |
-| `Components/Settings.hpp`          | `Settings` (volume, colour mode, key bindings), `Action`                |
+| `Components/Settings.hpp`          | `Settings` (volume, colour mode, interface size, key bindings), `Action`                |
 | `Ui/`                              | Hangar theme, screen layout, drawing helpers, letterboxing |
 
 Everything except `main.cpp` is the `rtype_client` library, so the tests can
@@ -77,9 +77,15 @@ its own copy of the sprites, repainted at startup (`Assets.cpp`, `theme::Palette
 
 **Settings** open over the connection form (Settings button) or over the game
 (Esc menu → Settings; the game keeps running). Up/Down choose a row,
-Left/Right change the volume, Enter changes a key: press the new key, or Esc
-to cancel. A key already used by another action is swapped with it. Changes
+Left/Right change the volume, colour mode and interface size, Enter changes a
+key: press the new key, or Esc to cancel. A key already used by another action is swapped with it. Changes
 apply at once and are saved.
+
+**Interface size** keeps every position on the 1280 × 720 canvas: the view
+shows more or less of it (`layout::visibleArea()`), and clicks use the same view.
+The HUD stays in the corners and wraps its chips. Above 100 %, the connection
+form, waiting room and game over use a compact form. 150 % is the maximum because
+it is the largest size at which every screen still fits.
 
 ---
 
@@ -91,6 +97,7 @@ Plain `key = value` text, saved whenever a setting changes:
 # R-Type client settings
 volume = 80
 colour = Off
+interface = 100
 key.up = Up
 key.down = Down
 key.left = Left
