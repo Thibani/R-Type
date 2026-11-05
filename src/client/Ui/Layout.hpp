@@ -1,6 +1,7 @@
 #pragma once
 
 #include "client/Components/Session.hpp"
+#include "client/Ui/Theme.hpp"
 
 #include <SFML/Graphics/Rect.hpp>
 
@@ -9,7 +10,17 @@
 /// Where the clickable parts of each screen are, on the 1280 × 720 interface
 /// canvas (positions taken from the Hangar mockup). The input system uses
 /// them for clicks, the interface system to draw: both always agree.
+///
+/// Interface size: positions stay on this canvas, and the view shows more or
+/// less of it (`visibleArea()`). Above 100 %, screens too wide for that use
+/// their compact form.
 namespace client::layout {
+
+[[nodiscard]]
+constexpr bool isCompact(int interfaceSize) noexcept
+{
+    return interfaceSize > 100;
+}
 
 // Connection form: fields and buttons, in Tab order (Session::focus).
 inline constexpr int NameField = 0;
@@ -28,7 +39,12 @@ inline constexpr sf::FloatRect OpenSettings{{920.0F, 437.0F}, {128.0F, 56.0F}};
 inline constexpr sf::FloatRect Quit{{1056.0F, 437.0F}, {112.0F, 56.0F}};
 
 // Waiting room
-inline constexpr sf::FloatRect Leave{{80.0F, 608.0F}, {112.0F, 56.0F}};
+[[nodiscard]]
+constexpr sf::FloatRect leave(int interfaceSize) noexcept
+{
+    return {isCompact(interfaceSize) ? sf::Vector2f{270.0F, 400.0F} : sf::Vector2f{80.0F, 608.0F},
+        {112.0F, 56.0F}};
+}
 
 // Esc menu over the game: Resume (0), Settings (1), Leave game (2)
 inline constexpr int ResumeButton = 0;
@@ -39,26 +55,55 @@ inline constexpr sf::FloatRect Resume{{462.0F, 342.0F}, {356.0F, 56.0F}};
 inline constexpr sf::FloatRect MenuSettings{{462.0F, 416.0F}, {356.0F, 56.0F}};
 inline constexpr sf::FloatRect LeaveGame{{462.0F, 490.0F}, {356.0F, 56.0F}};
 
-// Settings, over any screen: volume, colours, one row per action, then two buttons
+// Settings, over any screen, on two columns so they fit at every size. Left:
+// volume, colours, interface size and two buttons. Right: one row per action.
 inline constexpr int VolumeRow = 0;
 inline constexpr int ColourRow = 1;
-inline constexpr int FirstKeyRow = 2; // + Action index
+inline constexpr int InterfaceSizeRow = 2;
+inline constexpr int FirstKeyRow = 3; // + Action index
 inline constexpr int ResetRow = FirstKeyRow + static_cast<int>(ActionCount);
 inline constexpr int BackRow = ResetRow + 1;
-inline constexpr sf::FloatRect SettingsPanel{{340.0F, 40.0F}, {600.0F, 640.0F}};
+inline constexpr sf::FloatRect SettingsPanel{{223.0F, 124.0F}, {834.0F, 420.0F}};
 
 [[nodiscard]]
 constexpr sf::FloatRect settingsRow(int row) noexcept
 {
-    return {{372.0F, 122.0F + (static_cast<float>(row) * 52.0F)}, {536.0F, 46.0F}};
+    const auto at = [](float x, int line) -> sf::FloatRect {
+        return {{x, 184.0F + (static_cast<float>(line) * 52.0F)}, {385.0F, 46.0F}};
+    };
+    if (row < FirstKeyRow) {
+        return at(245.0F, row);
+    }
+    if (row < ResetRow) {
+        return at(650.0F, row - FirstKeyRow);
+    }
+    return at(245.0F, row - ResetRow + FirstKeyRow);
 }
 
 // Game over
 inline constexpr sf::FloatRect BackToMenu{{530.0F, 612.0F}, {220.0F, 56.0F}};
 
+/// The part of the canvas shown at this interface size, around what the screen
+/// needs. Larger than the canvas below 100 %, smaller above.
+[[nodiscard]]
+constexpr sf::FloatRect visibleArea(const Session& session, int interfaceSize) noexcept
+{
+    const float ratio = 100.0F / static_cast<float>(interfaceSize);
+    const sf::Vector2f size{theme::UiWidth * ratio, theme::UiHeight * ratio};
+    sf::Vector2f centre{theme::UiWidth / 2.0F, theme::UiHeight / 2.0F};
+    if (isCompact(interfaceSize) && !session.settingsOpen) {
+        if (session.screen == Screen::Connect) {
+            centre.x = ConnectPanel.position.x + (ConnectPanel.size.x / 2.0F);
+        } else if (session.screen == Screen::GameOver) {
+            centre.y = 440.0F; // From the title to the button
+        }
+    }
+    return {{centre.x - (size.x / 2.0F), centre.y - (size.y / 2.0F)}, size};
+}
+
 /// The focusable parts of the current screen, in focus order.
 [[nodiscard]]
-inline std::vector<sf::FloatRect> focusables(const Session& session)
+inline std::vector<sf::FloatRect> focusables(const Session& session, int interfaceSize)
 {
     if (session.settingsOpen) {
         std::vector<sf::FloatRect> rows;
@@ -71,7 +116,7 @@ inline std::vector<sf::FloatRect> focusables(const Session& session)
     case Screen::Connect:
         return {NameInput, AddressInput, PortInput, Connect, OpenSettings, Quit};
     case Screen::WaitingRoom:
-        return {Leave};
+        return {leave(interfaceSize)};
     case Screen::Game:
         if (session.menuOpen) {
             return {Resume, MenuSettings, LeaveGame};

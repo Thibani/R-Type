@@ -71,6 +71,41 @@ std::string_view trim(std::string_view text) noexcept
     return text.substr(first, last - first + 1);
 }
 
+std::optional<int> parseInt(std::string_view text) noexcept
+{
+    int value = 0;
+    const char* last = std::to_address(text.end());
+    const auto [rest, error] = std::from_chars(std::to_address(text.begin()), last, value);
+    return error == std::errc{} && rest == last ? std::optional(value) : std::nullopt;
+}
+
+/// Sets what one line of the file says. A bad value keeps the default.
+void applySetting(Settings& settings, std::string_view key, std::string_view value)
+{
+    if (key == "volume") {
+        if (const auto volume = parseInt(value)) {
+            settings.volume = std::clamp(*volume, 0, Settings::MaxVolume);
+        }
+    } else if (key == "interface") {
+        const auto size = parseInt(value);
+        if (size && std::ranges::contains(Settings::InterfaceSizes, *size)) {
+            settings.interfaceSize = *size;
+        }
+    } else if (key == "colour") {
+        // NOLINTNEXTLINE(readability-qualified-auto): a raw pointer on libstdc++ only, not on MSVC
+        if (const auto name = std::ranges::find(ColourModeNames, value); name != ColourModeNames.end()) {
+            settings.colourMode = static_cast<ColourMode>(name - ColourModeNames.begin());
+        }
+    } else {
+        for (std::size_t action = 0; action < ActionCount; ++action) {
+            const auto bound = keyFromName(value);
+            if (ActionKeys.at(action) == key && bound) {
+                settings.keys.at(action) = *bound;
+            }
+        }
+    }
+}
+
 bool sharesAKey(const Settings& settings) noexcept
 {
     for (std::size_t a = 0; a < ActionCount; ++a) {
@@ -142,26 +177,7 @@ Settings parseSettings(std::string_view text)
         const std::string_view key = trim(line.substr(0, equal));
         const std::string_view value = trim(line.substr(equal + 1));
 
-        if (key == "volume") {
-            int volume = 0;
-            const char* last = std::to_address(value.end());
-            const auto [rest, error] = std::from_chars(std::to_address(value.begin()), last, volume);
-            if (error == std::errc{} && rest == last) {
-                settings.volume = std::clamp(volume, 0, Settings::MaxVolume);
-            }
-        } else if (key == "colour") {
-            // NOLINTNEXTLINE(readability-qualified-auto): a raw pointer on libstdc++ only, not on MSVC
-            if (const auto name = std::ranges::find(ColourModeNames, value); name != ColourModeNames.end()) {
-                settings.colourMode = static_cast<ColourMode>(name - ColourModeNames.begin());
-            }
-        } else {
-            for (std::size_t action = 0; action < ActionCount; ++action) {
-                const auto bound = keyFromName(value);
-                if (ActionKeys.at(action) == key && bound) {
-                    settings.keys.at(action) = *bound;
-                }
-            }
-        }
+        applySetting(settings, key, value);
     }
     if (sharesAKey(settings)) {
         settings.keys = Settings::DefaultKeys; // Edited by hand into a conflict
@@ -174,6 +190,7 @@ std::string formatSettings(const Settings& settings)
     std::string text = "# R-Type client settings\n";
     text += "volume = " + std::to_string(settings.volume) + '\n';
     text += "colour = " + std::string(colourModeName(settings.colourMode)) + '\n';
+    text += "interface = " + std::to_string(settings.interfaceSize) + '\n';
     for (std::size_t action = 0; action < ActionCount; ++action) {
         text += std::string(ActionKeys.at(action)) + " = "
             + std::string(keyName(settings.keys.at(action)).value_or("Space")) + '\n';
