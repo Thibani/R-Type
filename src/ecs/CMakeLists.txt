@@ -12,6 +12,7 @@ add_library(rtype_ecs
     Entity/EntityManager.cpp
 
     Component/Component.hpp
+    Component/IComponentStorage.hpp
     Component/ComponentStorage.hpp
     Component/ComponentManager.hpp
     Component/ComponentManager.cpp
@@ -28,6 +29,7 @@ add_library(rtype_ecs
     Time/FrameClock.hpp
 
     Event/Event.hpp
+    Event/IEventChannel.hpp
     Event/EventChannel.hpp
     Event/Subscription.hpp
     Event/Subscription.cpp
@@ -40,8 +42,12 @@ add_library(rtype_ecs
     Scheduler/Scheduler.hpp
     Scheduler/Scheduler.cpp
 
+    Resource/IResourceHolder.hpp
+    Resource/ResourceHolder.hpp
     Resource/Resources.hpp
     Resource/Resources.cpp
+    Resource/IAssetCache.hpp
+    Resource/AssetCache.hpp
     Resource/AssetManager.hpp
     Resource/AssetManager.cpp
 

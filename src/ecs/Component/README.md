@@ -5,6 +5,7 @@ This folder contains the component layer of the ECS:
 | File                   | Content                                                     |
 |------------------------|-------------------------------------------------------------|
 | `Component.hpp`        | The `Component` concept and `componentTypeId<T>()`          |
+| `IComponentStorage.hpp` | `IComponentStorage`: abstract interface of a storage, whatever the component type |
 | `ComponentStorage.hpp` | `ComponentStorage<T>`: every component of one type, in a sparse set |
 | `ComponentManager.hpp` | `ComponentManager`: one storage per component type          |
 | `ComponentManager.cpp` | The non-template part of `ComponentManager`                 |
