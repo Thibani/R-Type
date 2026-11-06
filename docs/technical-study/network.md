@@ -377,6 +377,14 @@ per address. Rewriting the whole file for each one would make the game wait for 
 changes stay in memory and the file is written at most once per second, and when the server
 stops. The price: a crash can lose the last second of changes, which a player can simply redo.
 
+### Private messages (#92)
+
+Messages for an offline friend wait in a third text file (`--messages`, default `messages.txt`),
+written like the friends file and for the same reason. At most 100 wait per player, so the file
+stays small and a message is read at most once, then forgotten. They are in clear: encrypting
+them for their reader would need a key that the reader alone holds, which the accounts do not
+have. This is written in the protocol as a known limit.
+
 ## 11. Security
 
 | Threat                              | Mitigation                                         | Status |

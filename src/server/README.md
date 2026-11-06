@@ -6,9 +6,11 @@ clients comply with.
 | File                                | Content                                                  |
 |-------------------------------------|----------------------------------------------------------|
 | `main.cpp`                          | Entry point: options, network thread, World, GameLoop, Ctrl+C |
-| `ServerOptions.hpp`                 | Command line parsing (`-p`, `--accounts`, `--friends`, `-h`) |
+| `ServerOptions.hpp`                 | Command line parsing (`-p`, `--accounts`, `--friends`, `--messages`, `-h`) |
 | `AccountStore.hpp`                  | The accounts, in memory and in their file (no ECS, no network) |
 | `FriendStore.hpp`                   | Friends and requests, in memory and in their file (no ECS, no network) |
+| `MessageStore.hpp`                  | Private messages waiting for an offline player, in memory and in their file |
+| `OnlinePlayers.hpp`                 | The channels of the players online this frame, by name   |
 | `TextFile.hpp`                      | What both files need: atomic replace, copy of a damaged file |
 | `ServerSystems.hpp`                 | `installSystems()`: every system, in order; `installSimulation()` |
 | `Spawn.hpp`                         | The weapons as data (`weapons::`); create ships, Bydos, projectiles |
@@ -79,6 +81,7 @@ frameStart()  NetReceiveSystem        network thread inbox → ReceivedPacket / 
               JoinSystem              JOIN_GAME / LEAVE_GAME → place in the game (InGame)
               TimeoutSystem           silent session → Disconnecting
               FriendSystem            friends' messages, who is online, file saved once a second
+              ChatSystem              chat and private messages, file saved once a second
               InputSystem             ClientMessage (INPUT) → the player's PlayerInput
               PlayerShipSystem        one ship per connected player, after its respawn delay
 simulation    TickSystem              SimulationTick + 1, first of every step
@@ -249,6 +252,7 @@ its packets. Only a player in the game has a `playerId` (0–3), in `InGame`.
 | JOIN_GAME, 4 players already             | JOIN_RESULT (GAME_FULL)                               |
 | LEAVE_GAME                               | Back to the main page; ship destroyed; PLAYER_LEFT (QUIT) to the players |
 | FRIEND_REQUEST, FRIEND_ANSWER, FRIEND_REMOVE | FRIEND_RESULT and FRIEND_ENTRY (§8.5)             |
+| CHAT_SEND, PRIVATE_SEND                  | CHAT_MESSAGE or CHAT_REFUSED (§8.6)                   |
 | Empty name                               | CONNECT_REJECT (INVALID_NAME)                         |
 | Other protocol version                   | CONNECT_REJECT (VERSION_MISMATCH)                     |
 | Wrong token for the address, or unknown address | Dropped, counted                               |

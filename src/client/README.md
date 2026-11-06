@@ -26,6 +26,7 @@ Technology choices: [`docs/technical-study/client.md`](../../docs/technical-stud
 | `Settings.hpp`                     | Settings file (read, write, where it lives), key names, `bindKey()` |
 | `ClientSystems.hpp`                | `installSystems()`: every system, in order                 |
 | `Network/ServerConnection.hpp`     | Session with the server: connect, key exchange, encryption, retries, heartbeat, timeout |
+| `Chat.hpp`                         | What a typed line means (`/msg`), and how a message wraps  |
 | `Replication.hpp`                  | Server payloads → entities and `Session` (no window, testable) |
 | `Assets.hpp`                       | Textures, fonts, sounds; sprite frame of each `Look`       |
 | `Singleton.hpp`                    | `singleton<T>(world)`: state shared by several systems     |
@@ -85,6 +86,13 @@ its own copy of the sprites, repainted at startup (`Assets.cpp`, `theme::Palette
 it, or with Tab: the keyboard alone can do everything (Enter asks or presses a button, PgUp and
 PgDn scroll, Esc closes). Requests come first, then friends online, offline, and requests sent.
 The status is written, not only coloured. The list stays up to date during a game.
+
+**Chat**: a pale box on the main page (click it, or Tab to it) and in the game (Enter). Enter
+sends, Esc cancels, and every key goes to the chat meanwhile, none to the ship. The typing line
+disappears after sending; the messages stay, and PgUp, PgDn or the wheel go through the last 100.
+`/msg name text` writes to a friend, anywhere: `Chat.cpp` takes the longest friend's name the
+text starts with, whatever its case. A right click on a friend in the panel gives Message, which
+opens the chat with "To [name]:". Private lines say so in words ("[From name]"), not only in colour.
 
 **Settings** open over the connection form or the main page (Settings button) or over the game
 (Esc menu → Settings; the game keeps running). Up/Down choose a row,
@@ -146,7 +154,7 @@ key.fire = Space
 - The PLAYER_JOINED sent right after JOIN_RESULT for the players already
   there fill the HUD without a notice; later ones are announced (§8.4).
 - On the main page, what still arrives from a game we left is ignored (§8.4).
-- Friends' packets count everywhere, and do not end the catching up of a new game (§8.5).
+- Friends' and chat packets count everywhere, and do not end the catching up of a new game (§8.5, §8.6).
 - Logging out or quitting sends DISCONNECT 3 times (§8.3).
 
 ---
