@@ -6,14 +6,14 @@
 #include <cstdint>
 #include <limits>
 
-/// Constants and enumerations of the R-Type network protocol, version 3.
+/// Constants and enumerations of the R-Type network protocol, version 4.
 /// The reference is docs/protocol.md: section numbers below point to it.
 namespace network::protocol {
 
 // --- Sizes and identification (§2, §3) ---------------------------------------
 
 inline constexpr std::uint16_t Magic = 0x5254; // "RT"
-inline constexpr std::uint8_t Version = 3;
+inline constexpr std::uint8_t Version = 4;
 
 inline constexpr std::size_t HeaderSize = 20;
 inline constexpr std::size_t MaxDatagramSize = 1200;
@@ -59,6 +59,9 @@ enum class PacketType : std::uint8_t {
     PlayerLeft = 0x24,
     PlayerDied = 0x25,
     GameState = 0x26,
+    JoinGame = 0x30,
+    LeaveGame = 0x31,
+    JoinResult = 0x32,
 };
 
 /// Which way a packet travels. A receiver drops packets going the wrong way.
@@ -98,6 +101,11 @@ enum class AuthCode : std::uint8_t {
     InvalidPassword = 4,
     InvalidName = 5,
     ServerError = 6,
+};
+
+enum class JoinCode : std::uint8_t {
+    Ok = 0,
+    GameFull = 1,
 };
 
 enum class LeaveReason : std::uint8_t {

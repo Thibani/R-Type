@@ -78,8 +78,11 @@ inline std::vector<Sample> all()
     const EntityDestroy destroy{.netId = 77, .reason = DestroyReason::Killed, .killerNetId = 12};
     network::crypto::PublicKey publicKey{};
     publicKey.fill(std::byte{0x5A});
-    const ConnectAccept accept{
-        .playerId = 2, .tickRate = 60, .snapshotRate = 30, .maxPlayers = 4, .publicKey = publicKey};
+    const ConnectAccept accept{.playerId = NoPlayer,
+        .tickRate = 60,
+        .snapshotRate = 30,
+        .maxPlayers = 4,
+        .publicKey = publicKey};
     const Snapshot emptySnapshot{
         .serverTick = 1,
         .lastInputTick = 0,
@@ -115,6 +118,10 @@ inline std::vector<Sample> all()
         toClient(makePacket(PlayerLeft{.playerId = 1, .reason = LeaveReason::Timeout}, 10)),
         toClient(makePacket(PlayerDied{.playerId = 0, .killerNetId = NoEntity}, 11)),
         toClient(makePacket(GameState{.phase = GamePhase::Running, .score = 123456}, 65535)),
+        toServer(makePacket(JoinGame{}, 12)),
+        toServer(makePacket(LeaveGame{}, 13)),
+        toClient(makePacket(JoinResult{.code = JoinCode::Ok, .playerId = 2}, 14)),
+        toClient(makePacket(JoinResult{.code = JoinCode::GameFull, .playerId = NoPlayer}, 15)),
     };
 }
 
