@@ -74,7 +74,7 @@ TEST(PacketCodec, MatchesTheSpecificationExample)
     };
 
     const auto expected = bytes({
-        0x52, 0x54, 0x03, 0x01, 0x00, 0x00, 0x00, 0x30, // magic, version, type, flags, reserved, size
+        0x52, 0x54, 0x04, 0x01, 0x00, 0x00, 0x00, 0x30, // magic, version, type, flags, reserved, size
         0x00, 0x00, 0x00, 0x00, // sessionToken
         0x00, 0x00, 0x00, 0x00, // sequence, ack
         0x00, 0x00, 0x00, 0x00, // ackBits
@@ -96,7 +96,7 @@ TEST(PacketCodec, ConnectPacketsKeepThePublicKey)
     ASSERT_TRUE(decodedRequest.has_value());
     EXPECT_EQ(std::get<ConnectRequest>(decodedRequest->payload).publicKey, filledKey(0x11));
 
-    const Packet accept = makePacket(ConnectAccept{.playerId = 0,
+    const Packet accept = makePacket(ConnectAccept{.playerId = NoPlayer,
         .tickRate = 60,
         .snapshotRate = 30,
         .maxPlayers = 4,
@@ -122,7 +122,7 @@ TEST(PacketCodec, EncodesHeaderFields)
     const auto datagram = encodeOrFail(packet);
 
     const auto expected = bytes({
-        0x52, 0x54, 0x03, 0x25, // magic, version, PLAYER_DIED
+        0x52, 0x54, 0x04, 0x25, // magic, version, PLAYER_DIED
         0x03, 0x00, 0x00, 0x05, // RELIABLE | HAS_ACK, reserved, payloadSize 5
         0xCA, 0xFE, 0xBA, 0xBE, // sessionToken
         0x00, 0x2A, 0x00, 0x29, // sequence 42, ack 41
@@ -143,7 +143,7 @@ TEST(PacketCodec, PayloadSizesMatchTheSpecification)
 
     const std::vector<Expected> cases{
         {.payload = ConnectRequest{.name = "a"}, .size = 48},
-        {.payload = ConnectAccept{.playerId = 0, .tickRate = 60, .snapshotRate = 30, .maxPlayers = 4}, .size = 36},
+        {.payload = ConnectAccept{.playerId = NoPlayer, .tickRate = 60, .snapshotRate = 30, .maxPlayers = 4}, .size = 36},
         {.payload = ConnectReject(), .size = 1},
         {.payload = Disconnect(), .size = 1},
         {.payload = Heartbeat(), .size = 0},
@@ -155,6 +155,9 @@ TEST(PacketCodec, PayloadSizesMatchTheSpecification)
         {.payload = PlayerLeft(), .size = 4},
         {.payload = PlayerDied(), .size = 5},
         {.payload = GameState(), .size = 7},
+        {.payload = JoinGame(), .size = 2},
+        {.payload = LeaveGame(), .size = 2},
+        {.payload = JoinResult{.code = JoinCode::Ok, .playerId = 0}, .size = 4},
     };
 
     for (const auto& [payload, size] : cases) {
@@ -437,7 +440,11 @@ TEST(PacketCodecEncoding, RefusesInvalidPayloads)
     const std::vector<Payload> invalid{
         ConnectRequest{.name = "seventeen bytes!!"},
         ConnectRequest{.name = std::string("a\0b", 3)},
-        ConnectAccept{.playerId = 4, .tickRate = 60, .snapshotRate = 30, .maxPlayers = 4},
+        ConnectAccept{.playerId = 0, .tickRate = 60, .snapshotRate = 30, .maxPlayers = 4},
+        JoinResult{.code = JoinCode::Ok, .playerId = NoPlayer},
+        JoinResult{.code = JoinCode::Ok, .playerId = 4},
+        JoinResult{.code = JoinCode::GameFull, .playerId = 0},
+        JoinResult{.code = static_cast<JoinCode>(2), .playerId = NoPlayer},
         Input{.firstTick = 0, .count = 0, .masks = {}},
         Input{.firstTick = 0, .count = 9, .masks = {}},
         Snapshot{.serverTick = 0, .lastInputTick = 0, .partIndex = 0, .partCount = 1, .entities = std::vector<EntityState>(MaxSnapshotEntities + 1)},

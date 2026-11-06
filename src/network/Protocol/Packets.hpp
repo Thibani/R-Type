@@ -118,6 +118,24 @@ struct Input {
     friend bool operator==(const Input&, const Input&) = default;
 };
 
+/// The player asks to enter the game. Answered by JOIN_RESULT.
+struct JoinGame {
+    static constexpr PacketType Type = PacketType::JoinGame;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = true;
+
+    friend bool operator==(const JoinGame&, const JoinGame&) = default;
+};
+
+/// The player goes back to the main page, and stays connected.
+struct LeaveGame {
+    static constexpr PacketType Type = PacketType::LeaveGame;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = true;
+
+    friend bool operator==(const LeaveGame&, const LeaveGame&) = default;
+};
+
 // --- Server -> client (§4.3) -------------------------------------------------
 
 /// State of one entity inside a snapshot. Positions and velocities are
@@ -221,11 +239,23 @@ struct GameState {
     friend bool operator==(const GameState&, const GameState&) = default;
 };
 
+/// Answer to JOIN_GAME. Reliable, and sent before any event of the game.
+struct JoinResult {
+    static constexpr PacketType Type = PacketType::JoinResult;
+    static constexpr Direction Way = Direction::ServerToClient;
+    static constexpr bool Reliable = true;
+
+    JoinCode code{JoinCode::Ok};
+    std::uint8_t playerId{NoPlayer}; // 0..3 if `Ok`, NoPlayer otherwise
+
+    friend bool operator==(const JoinResult&, const JoinResult&) = default;
+};
+
 // --- Whole packet ------------------------------------------------------------
 
 using Payload = std::variant<ConnectRequest, ConnectAccept, ConnectReject, Disconnect, Heartbeat,
-    AuthRequest, AuthResult, Input, Snapshot, EntitySpawn, EntityDestroy, PlayerJoined, PlayerLeft,
-    PlayerDied, GameState>;
+    AuthRequest, AuthResult, Input, JoinGame, LeaveGame, Snapshot, EntitySpawn, EntityDestroy,
+    PlayerJoined, PlayerLeft, PlayerDied, GameState, JoinResult>;
 
 /// Acknowledgement carried by a packet (HAS_ACK flag, §6.1).
 struct Ack {

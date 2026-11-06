@@ -92,9 +92,9 @@ namespace {
 
     bool validate(const ConnectAccept& packet) noexcept
     {
+        // A session has no place in a game yet: that comes with JOIN_RESULT
         return packet.maxPlayers >= 1 && packet.maxPlayers <= MaxPlayers
-            && packet.playerId < packet.maxPlayers && packet.tickRate > 0
-            && packet.snapshotRate > 0;
+            && packet.playerId == NoPlayer && packet.tickRate > 0 && packet.snapshotRate > 0;
     }
 
     bool validate(const ConnectReject& packet) noexcept
@@ -131,6 +131,16 @@ namespace {
         }
         return std::ranges::all_of(std::span(packet.masks).first(packet.count),
             [](std::uint8_t mask) { return (mask & ~unsigned{input::Known}) == 0U; });
+    }
+
+    bool validate(const JoinGame& /*packet*/) noexcept
+    {
+        return true;
+    }
+
+    bool validate(const LeaveGame& /*packet*/) noexcept
+    {
+        return true;
     }
 
     bool validate(const Snapshot& packet) noexcept
@@ -172,6 +182,14 @@ namespace {
     bool validate(const GameState& packet) noexcept
     {
         return inRange(packet.phase, GamePhase::WaitingForPlayers, GamePhase::GameOver);
+    }
+
+    bool validate(const JoinResult& packet) noexcept
+    {
+        if (packet.code == JoinCode::Ok) {
+            return isValidPlayer(packet.playerId);
+        }
+        return packet.code == JoinCode::GameFull && packet.playerId == NoPlayer;
     }
 
     // --- Names and passwords (§2.2) ------------------------------------------
@@ -263,6 +281,10 @@ namespace {
         }
     }
 
+    void writePayload(ByteWriter& /*writer*/, const JoinGame& /*packet*/) noexcept { }
+
+    void writePayload(ByteWriter& /*writer*/, const LeaveGame& /*packet*/) noexcept { }
+
     void writeEntityState(ByteWriter& writer, const EntityState& entity) noexcept
     {
         writer.write(entity.netId);
@@ -327,6 +349,12 @@ namespace {
     {
         writer.write(std::to_underlying(packet.phase));
         writer.write(packet.score);
+    }
+
+    void writePayload(ByteWriter& writer, const JoinResult& packet) noexcept
+    {
+        writer.write(std::to_underlying(packet.code));
+        writer.write(packet.playerId);
     }
 
     // --- Payload readers ------------------------------------------------------
@@ -401,6 +429,16 @@ namespace {
         for (std::size_t i = 0; i < count; ++i) {
             packet.masks[i] = reader.read<std::uint8_t>();
         }
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& /*reader*/, JoinGame& /*packet*/)
+    {
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& /*reader*/, LeaveGame& /*packet*/)
+    {
         return {};
     }
 
@@ -481,6 +519,13 @@ namespace {
     {
         packet.phase = static_cast<GamePhase>(reader.read<std::uint8_t>());
         packet.score = reader.read<std::uint32_t>();
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& reader, JoinResult& packet)
+    {
+        packet.code = static_cast<JoinCode>(reader.read<std::uint8_t>());
+        packet.playerId = reader.read<std::uint8_t>();
         return {};
     }
 
@@ -636,6 +681,12 @@ std::expected<Packet, DecodeError> decode(std::span<const std::byte> datagram, D
         return decodeAs<AuthResult>(*header, payload, direction);
     case PacketType::Input:
         return decodeAs<Input>(*header, payload, direction);
+    case PacketType::JoinGame:
+        return decodeAs<JoinGame>(*header, payload, direction);
+    case PacketType::LeaveGame:
+        return decodeAs<LeaveGame>(*header, payload, direction);
+    case PacketType::JoinResult:
+        return decodeAs<JoinResult>(*header, payload, direction);
     case PacketType::Snapshot:
         return decodeAs<Snapshot>(*header, payload, direction);
     case PacketType::EntitySpawn:
