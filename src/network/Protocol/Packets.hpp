@@ -170,6 +170,29 @@ struct FriendRemove {
     friend bool operator==(const FriendRemove&, const FriendRemove&) = default;
 };
 
+/// A message for the players of the game.
+struct ChatSend {
+    static constexpr PacketType Type = PacketType::ChatSend;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = true;
+
+    std::string text; // 1 to MaxChatSize bytes of valid UTF-8, no control character
+
+    friend bool operator==(const ChatSend&, const ChatSend&) = default;
+};
+
+/// A private message for a friend, online or not.
+struct PrivateSend {
+    static constexpr PacketType Type = PacketType::PrivateSend;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = true;
+
+    std::string name;
+    std::string text;
+
+    friend bool operator==(const PrivateSend&, const PrivateSend&) = default;
+};
+
 // --- Server -> client (§4.3) -------------------------------------------------
 
 /// State of one entity inside a snapshot. Positions and velocities are
@@ -308,12 +331,35 @@ struct FriendEntry {
     friend bool operator==(const FriendEntry&, const FriendEntry&) = default;
 };
 
+/// One line of chat. The server fills `name`: a client cannot write as someone else.
+struct ChatMessage {
+    static constexpr PacketType Type = PacketType::ChatMessage;
+    static constexpr Direction Way = Direction::ServerToClient;
+    static constexpr bool Reliable = true;
+
+    ChatKind kind{ChatKind::Game};
+    std::string name;
+    std::string text;
+
+    friend bool operator==(const ChatMessage&, const ChatMessage&) = default;
+};
+
+struct ChatRefused {
+    static constexpr PacketType Type = PacketType::ChatRefused;
+    static constexpr Direction Way = Direction::ServerToClient;
+    static constexpr bool Reliable = true;
+
+    ChatRefusal reason{ChatRefusal::TooFast};
+
+    friend bool operator==(const ChatRefused&, const ChatRefused&) = default;
+};
+
 // --- Whole packet ------------------------------------------------------------
 
 using Payload = std::variant<ConnectRequest, ConnectAccept, ConnectReject, Disconnect, Heartbeat,
     AuthRequest, AuthResult, Input, JoinGame, LeaveGame, FriendRequest, FriendAnswer, FriendRemove,
-    Snapshot, EntitySpawn, EntityDestroy, PlayerJoined, PlayerLeft, PlayerDied, GameState,
-    JoinResult, FriendResult, FriendEntry>;
+    ChatSend, PrivateSend, Snapshot, EntitySpawn, EntityDestroy, PlayerJoined, PlayerLeft,
+    PlayerDied, GameState, JoinResult, FriendResult, FriendEntry, ChatMessage, ChatRefused>;
 
 /// Acknowledgement carried by a packet (HAS_ACK flag, §6.1).
 struct Ack {

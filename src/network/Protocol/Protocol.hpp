@@ -6,14 +6,14 @@
 #include <cstdint>
 #include <limits>
 
-/// Constants and enumerations of the R-Type network protocol, version 5.
+/// Constants and enumerations of the R-Type network protocol, version 6.
 /// The reference is docs/protocol.md: section numbers below point to it.
 namespace network::protocol {
 
 // --- Sizes and identification (§2, §3) ---------------------------------------
 
 inline constexpr std::uint16_t Magic = 0x5254; // "RT"
-inline constexpr std::uint8_t Version = 5;
+inline constexpr std::uint8_t Version = 6;
 
 inline constexpr std::size_t HeaderSize = 20;
 inline constexpr std::size_t MaxDatagramSize = 1200;
@@ -23,6 +23,7 @@ inline constexpr std::size_t SealOverhead = 24; // Added by encryption (§3.3): 
 inline constexpr std::size_t NameSize = 16;
 inline constexpr std::size_t MinPasswordSize = 8; // Only checked when an account is created
 inline constexpr std::size_t MaxPasswordSize = 64;
+inline constexpr std::size_t MaxChatSize = 200; // Bytes of UTF-8 in one message
 inline constexpr std::size_t MaxInputMasks = 8;
 inline constexpr std::size_t SnapshotHeaderSize = 11;
 inline constexpr std::size_t EntityStateSize = 13;
@@ -67,6 +68,10 @@ enum class PacketType : std::uint8_t {
     FriendRemove = 0x35,
     FriendResult = 0x36,
     FriendEntry = 0x37,
+    ChatSend = 0x38,
+    PrivateSend = 0x39,
+    ChatMessage = 0x3A,
+    ChatRefused = 0x3B,
 };
 
 /// Which way a packet travels. A receiver drops packets going the wrong way.
@@ -133,6 +138,19 @@ enum class FriendState : std::uint8_t {
     RequestReceived = 2, // They asked the player
     RequestSent = 3, // The player asked them
     Removed = 4, // Nothing any more: forget them
+};
+
+/// Who a CHAT_MESSAGE is for, and what its `name` means.
+enum class ChatKind : std::uint8_t {
+    Game = 0, // For the players of the game; `name` wrote it
+    Received = 1, // Private; `name` wrote it
+    Sent = 2, // Private, our own, as the server took it; `name` receives it
+};
+
+enum class ChatRefusal : std::uint8_t {
+    TooFast = 0,
+    NotFriend = 1,
+    MailboxFull = 2,
 };
 
 enum class LeaveReason : std::uint8_t {

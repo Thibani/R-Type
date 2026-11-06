@@ -159,6 +159,16 @@ namespace {
         return !packet.name.empty() && isValidName(packet.name);
     }
 
+    bool validate(const ChatSend& packet) noexcept
+    {
+        return isValidChatText(packet.text);
+    }
+
+    bool validate(const PrivateSend& packet) noexcept
+    {
+        return !packet.name.empty() && isValidName(packet.name) && isValidChatText(packet.text);
+    }
+
     bool validate(const Snapshot& packet) noexcept
     {
         if (packet.partCount == 0 || packet.partIndex >= packet.partCount
@@ -219,6 +229,17 @@ namespace {
             && inRange(packet.state, FriendState::Offline, FriendState::Removed);
     }
 
+    bool validate(const ChatMessage& packet) noexcept
+    {
+        return inRange(packet.kind, ChatKind::Game, ChatKind::Sent) && !packet.name.empty()
+            && isValidName(packet.name) && isValidChatText(packet.text);
+    }
+
+    bool validate(const ChatRefused& packet) noexcept
+    {
+        return inRange(packet.reason, ChatRefusal::TooFast, ChatRefusal::MailboxFull);
+    }
+
     // --- Names and passwords (§2.2) ------------------------------------------
 
     /// Writes `text` as a zero-padded field of `Size` bytes. `text` must be valid.
@@ -257,6 +278,25 @@ namespace {
             text[i] = static_cast<char>(std::to_integer<unsigned char>(field[i]));
         }
         return isValidUtf8(text);
+    }
+
+    /// Writes a chat text, the last field of its packet: a count, then its bytes.
+    /// `text` must be valid.
+    void writeChatText(ByteWriter& writer, std::string_view text) noexcept
+    {
+        writer.write(static_cast<std::uint8_t>(text.size()));
+        writer.writeBytes(std::as_bytes(std::span(text)));
+    }
+
+    /// Reads a chat text. The count must match the bytes left: checked before allocating.
+    bool readChatText(ByteReader& reader, std::string& text)
+    {
+        const auto count = static_cast<std::size_t>(reader.read<std::uint8_t>());
+        if (!reader.ok() || reader.remaining() != count) {
+            return false;
+        }
+        text.resize(count);
+        return reader.readBytes(std::as_writable_bytes(std::span(text)));
     }
 
     // --- Payload writers ------------------------------------------------------
@@ -326,6 +366,17 @@ namespace {
     void writePayload(ByteWriter& writer, const FriendRemove& packet) noexcept
     {
         writeText<NameSize>(writer, packet.name);
+    }
+
+    void writePayload(ByteWriter& writer, const ChatSend& packet) noexcept
+    {
+        writeChatText(writer, packet.text);
+    }
+
+    void writePayload(ByteWriter& writer, const PrivateSend& packet) noexcept
+    {
+        writeText<NameSize>(writer, packet.name);
+        writeChatText(writer, packet.text);
     }
 
     void writeEntityState(ByteWriter& writer, const EntityState& entity) noexcept
@@ -409,6 +460,18 @@ namespace {
     {
         writeText<NameSize>(writer, packet.name);
         writer.write(std::to_underlying(packet.state));
+    }
+
+    void writePayload(ByteWriter& writer, const ChatMessage& packet) noexcept
+    {
+        writer.write(std::to_underlying(packet.kind));
+        writeText<NameSize>(writer, packet.name);
+        writeChatText(writer, packet.text);
+    }
+
+    void writePayload(ByteWriter& writer, const ChatRefused& packet) noexcept
+    {
+        writer.write(std::to_underlying(packet.reason));
     }
 
     // --- Payload readers ------------------------------------------------------
@@ -515,6 +578,19 @@ namespace {
         return readText<NameSize>(reader, packet.name) ? ReadError{} : DecodeError::InvalidName;
     }
 
+    ReadError readPayload(ByteReader& reader, ChatSend& packet)
+    {
+        return readChatText(reader, packet.text) ? ReadError{} : DecodeError::BadPayloadSize;
+    }
+
+    ReadError readPayload(ByteReader& reader, PrivateSend& packet)
+    {
+        if (!readText<NameSize>(reader, packet.name)) {
+            return DecodeError::InvalidName;
+        }
+        return readChatText(reader, packet.text) ? ReadError{} : DecodeError::BadPayloadSize;
+    }
+
     EntityState readEntityState(ByteReader& reader) noexcept
     {
         EntityState entity;
@@ -614,6 +690,21 @@ namespace {
             return DecodeError::InvalidName;
         }
         packet.state = static_cast<FriendState>(reader.read<std::uint8_t>());
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& reader, ChatMessage& packet)
+    {
+        packet.kind = static_cast<ChatKind>(reader.read<std::uint8_t>());
+        if (!readText<NameSize>(reader, packet.name)) {
+            return DecodeError::InvalidName;
+        }
+        return readChatText(reader, packet.text) ? ReadError{} : DecodeError::BadPayloadSize;
+    }
+
+    ReadError readPayload(ByteReader& reader, ChatRefused& packet)
+    {
+        packet.reason = static_cast<ChatRefusal>(reader.read<std::uint8_t>());
         return {};
     }
 
@@ -785,6 +876,14 @@ std::expected<Packet, DecodeError> decode(std::span<const std::byte> datagram, D
         return decodeAs<FriendResult>(*header, payload, direction);
     case PacketType::FriendEntry:
         return decodeAs<FriendEntry>(*header, payload, direction);
+    case PacketType::ChatSend:
+        return decodeAs<ChatSend>(*header, payload, direction);
+    case PacketType::PrivateSend:
+        return decodeAs<PrivateSend>(*header, payload, direction);
+    case PacketType::ChatMessage:
+        return decodeAs<ChatMessage>(*header, payload, direction);
+    case PacketType::ChatRefused:
+        return decodeAs<ChatRefused>(*header, payload, direction);
     case PacketType::Snapshot:
         return decodeAs<Snapshot>(*header, payload, direction);
     case PacketType::EntitySpawn:
@@ -807,6 +906,16 @@ bool isValidName(std::string_view name) noexcept
 {
     return name.size() <= NameSize && !name.contains('\0')
         && isValidUtf8(name);
+}
+
+bool isValidChatText(std::string_view text) noexcept
+{
+    const auto isControl = [](char c) {
+        const auto byte = static_cast<unsigned char>(c);
+        return byte < 0x20U || byte == 0x7FU;
+    };
+    return !text.empty() && text.size() <= MaxChatSize && std::ranges::none_of(text, isControl)
+        && isValidUtf8(text);
 }
 
 std::string_view toString(DecodeError error) noexcept
