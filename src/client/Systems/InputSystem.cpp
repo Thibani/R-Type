@@ -1,9 +1,11 @@
 #include "client/Systems/InputSystem.hpp"
 
+#include "client/Chat.hpp"
 #include "client/Components/Controls.hpp"
 #include "client/Components/Session.hpp"
 #include "client/Components/Settings.hpp"
 #include "client/Gamepad.hpp"
+#include "client/Replication.hpp"
 #include "client/Settings.hpp"
 #include "client/Singleton.hpp"
 #include "client/Ui/Layout.hpp"
@@ -20,7 +22,10 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <utility>
+#include <variant>
 
 namespace client {
 
@@ -30,6 +35,8 @@ namespace {
 
 constexpr std::size_t MaxAddressLength = 63;
 constexpr std::size_t MaxPortLength = 5;
+// "/msg ", a name, a space, then a message of the longest size
+constexpr std::size_t MaxChatInput = 5 + NameSize + 1 + MaxChatSize;
 
 void appendUtf8(std::string& text, char32_t c)
 {
@@ -91,6 +98,16 @@ std::string* focusedField(Session& session)
 /// Adds a typed character if the focused field accepts it.
 void type(Session& session, char32_t c)
 {
+    if (session.chatOpen) {
+        if (c >= 0x20 && c != 0x7F) {
+            std::string longer = session.chatInput;
+            appendUtf8(longer, c);
+            if (longer.size() <= MaxChatInput) {
+                session.chatInput = longer;
+            }
+        }
+        return;
+    }
     std::string* field = focusedField(session);
     if (field == nullptr || c < 0x20 || c == 0x7F) {
         return; // Control characters (Enter, Tab, Backspace) are keys, not text
@@ -249,6 +266,111 @@ void scrollFriends(Session& session, int interfaceSize, int step)
     }
 }
 
+void openChat(Session& session, std::optional<std::string> target)
+{
+    session.chatOpen = true;
+    session.chatInput.clear();
+    session.chatTarget = std::move(target);
+    session.chatScroll = 0;
+}
+
+void closeChat(Session& session)
+{
+    session.chatOpen = false;
+    session.chatInput.clear();
+    session.chatTarget.reset();
+}
+
+/// Sends what is typed, or says why it cannot be sent. The typing line disappears,
+/// and what was said stays in the chat.
+void submitChat(Session& session)
+{
+    const ChatOrder order = readChat(
+        session.chatInput, session.chatTarget, session.friends, session.playerId.has_value());
+    if (const auto* game = std::get_if<ChatOrder::ToGame>(&order.action)) {
+        session.outgoing.emplace_back(ChatSend{.text = game->text});
+    } else if (const auto* letter = std::get_if<ChatOrder::ToFriend>(&order.action)) {
+        session.outgoing.emplace_back(PrivateSend{.name = letter->name, .text = letter->text});
+    } else if (const auto* problem = std::get_if<ChatOrder::Problem>(&order.action)) {
+        addChatLine(
+            session, ChatLine{.kind = ChatLine::Kind::Notice, .name = {}, .text = problem->text});
+    }
+    closeChat(session);
+}
+
+/// Moves back in the chat, or towards its newest line.
+void scrollChat(Session& session, int step)
+{
+    const std::size_t oldest = session.chat.empty() ? 0 : session.chat.size() - 1;
+    if (step > 0) {
+        session.chatScroll = std::min(session.chatScroll + 1, oldest);
+    } else {
+        session.chatScroll = session.chatScroll > 0 ? session.chatScroll - 1 : 0;
+    }
+}
+
+/// Every key while typing in the chat: nothing reaches the ship or the screen behind.
+void onChatKey(Session& session, sf::Keyboard::Key key)
+{
+    using sf::Keyboard::Key;
+    if (key == Key::Escape) {
+        closeChat(session);
+    } else if (key == Key::Enter) {
+        submitChat(session);
+    } else if (key == Key::PageUp || key == Key::PageDown) {
+        scrollChat(session, key == Key::PageUp ? 1 : -1);
+    } else if (key == Key::Backspace) {
+        if (!session.chatInput.empty()) {
+            eraseLast(session.chatInput);
+        } else {
+            session.chatTarget.reset(); // Nothing left to erase: back to the group
+        }
+    }
+}
+
+/// A right click on a friend's row of the panel opens its menu. Anywhere else, closes it.
+void rightClick(Session& session, sf::FloatRect area, sf::Vector2f point)
+{
+    using network::protocol::FriendState;
+    session.friendMenu.reset();
+    if (!layout::friendsOpen(session)) {
+        return;
+    }
+    const sf::FloatRect bar = layout::friendsBar(area, true);
+    const auto last
+        = std::min(session.friends.size(), session.friendScroll + layout::friendRowsShown(bar));
+    for (std::size_t row = session.friendScroll; row < last; ++row) {
+        const FriendRow& person = session.friends.at(row);
+        const bool isFriend
+            = person.state == FriendState::Online || person.state == FriendState::Offline;
+        if (isFriend && layout::friendRow(bar, row - session.friendScroll).contains(point)) {
+            session.friendMenu = person.name;
+        }
+    }
+}
+
+/// What a left click does before reaching the parts of the screen: the menu's button, and
+/// leaving the chat by clicking beside it. True if the click was used.
+bool leftClickOnChatOrMenu(
+    Session& session, const Settings& settings, sf::FloatRect area, sf::Vector2f point)
+{
+    const auto button = layout::friendMenuButton(session, layout::friendsBar(area, true));
+    const std::optional<std::string> menu = std::exchange(session.friendMenu, std::nullopt);
+    if (button && button->contains(point)) {
+        openChat(session, menu);
+        session.focus = layout::PlayButton;
+        session.friendsHovered = false;
+        return true;
+    }
+    if (session.chatOpen) {
+        if (layout::chatBox(session, area, settings.interfaceSize).contains(point)) {
+            return true; // Still typing
+        }
+        closeChat(session);
+    }
+    return false;
+}
+
 /// Does what the focused (or clicked) element of the screen does.
 void activate(Session& session, Settings& settings, int index, ecs::GameLoop& loop)
 {
@@ -278,6 +400,8 @@ void activate(Session& session, Settings& settings, int index, ecs::GameLoop& lo
             openSettings(session);
         } else if (index == layout::LogOutButton) {
             session.request = Request::Leave;
+        } else if (index == layout::ChatBox) {
+            openChat(session, std::nullopt);
         } else if (index == layout::FriendAddButton) {
             askFriend(session);
         } else if (index >= layout::FirstFriendButton) {
@@ -412,6 +536,10 @@ void onKey(
         capture(session, settings, *session.capturing, key.code);
         return;
     }
+    if (session.chatOpen) {
+        onChatKey(session, key.code);
+        return;
+    }
     const bool menu = inMenu(session);
     switch (key.code) {
     case Key::Escape:
@@ -436,12 +564,16 @@ void onKey(
     case Key::PageDown:
         if (layout::friendsOpen(session)) {
             scrollFriends(session, settings.interfaceSize, key.code == Key::PageDown ? 1 : -1);
+        } else if (session.screen == Screen::Home || session.screen == Screen::Game) {
+            scrollChat(session, key.code == Key::PageUp ? 1 : -1);
         }
         break;
     case Key::Enter:
-        if (menu) {
-            confirm(session, settings, loop);
+        if (!menu) {
+            openChat(session, std::nullopt); // In the game, Enter talks
+            break;
         }
+        confirm(session, settings, loop);
         break;
     case Key::Backspace:
         if (std::string* field = focusedField(session)) {
@@ -495,12 +627,21 @@ void InputSystem::update(ecs::World& world, const ecs::Time& /*time*/)
         } else if (const auto* typed = event->getIf<sf::Event::TextEntered>()) {
             type(session, typed->unicode);
         } else if (const auto* click = event->getIf<sf::Event::MouseButtonPressed>()) {
-            if (click->button != sf::Mouse::Button::Left || session.capturing) {
+            if ((click->button != sf::Mouse::Button::Left
+                    && click->button != sf::Mouse::Button::Right)
+                || session.capturing) {
                 continue;
             }
-            const sf::Vector2f point = _window.mapPixelToCoords(click->position,
-                letterboxed(
-                    layout::visibleArea(session, settings.interfaceSize), _window.getSize()));
+            const sf::FloatRect area = layout::visibleArea(session, settings.interfaceSize);
+            const sf::Vector2f point
+                = _window.mapPixelToCoords(click->position, letterboxed(area, _window.getSize()));
+            if (click->button == sf::Mouse::Button::Right) {
+                rightClick(session, area, point);
+                continue;
+            }
+            if (leftClickOnChatOrMenu(session, settings, area, point)) {
+                continue;
+            }
             const auto targets = layout::focusables(session, settings.interfaceSize);
             bool hit = false;
             for (std::size_t i = 0; i < targets.size(); ++i) {
@@ -527,8 +668,14 @@ void InputSystem::update(ecs::World& world, const ecs::Time& /*time*/)
         } else if (const auto* wheel = event->getIf<sf::Event::MouseWheelScrolled>()) {
             if (layout::friendsOpen(session) && wheel->delta != 0.0F) {
                 scrollFriends(session, settings.interfaceSize, wheel->delta < 0.0F ? 1 : -1);
+            } else if (wheel->delta != 0.0F
+                && (session.screen == Screen::Home || session.screen == Screen::Game)) {
+                scrollChat(session, wheel->delta > 0.0F ? 1 : -1);
             }
         }
+    }
+    if (!layout::friendsOpen(session)) {
+        session.friendMenu.reset();
     }
     if (session.screen == Screen::Home && !session.settingsOpen) {
         // A row may have gone since the last frame: the focus and the scroll must still exist
@@ -543,7 +690,7 @@ void InputSystem::update(ecs::World& world, const ecs::Time& /*time*/)
     }
     // Held keys and pads only steer the ship in the game itself, never through a menu
     std::uint8_t mask = 0;
-    if (!inMenu(session) && _window.hasFocus()) {
+    if (!inMenu(session) && !session.chatOpen && _window.hasFocus()) {
         mask = heldKeys(settings);
         for (unsigned joystick = 0; joystick < sf::Joystick::Count; ++joystick) {
             mask = static_cast<std::uint8_t>(

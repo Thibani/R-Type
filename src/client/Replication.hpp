@@ -1,5 +1,6 @@
 #pragma once
 
+#include "client/Components/Session.hpp"
 #include "ecs/World/World.hpp"
 #include "network/Protocol/Packets.hpp"
 
@@ -16,10 +17,16 @@ inline constexpr float DestroyedMemorySeconds = 5.0F;
 /// Seconds a notice ("P4 Dave left the game") stays on screen.
 inline constexpr float NoticeSeconds = 4.0F;
 
+/// Lines of chat kept in memory, for scrolling back. Gone at log out.
+inline constexpr std::size_t MaxChatLines = 100;
+
 /// Applies one game payload. `now` is the client's elapsed time in seconds.
 /// Outside the game, only JOIN_RESULT counts: what still arrives from a game we
 /// left must not bring it back on the main page.
 void applyPayload(ecs::World& world, const network::protocol::Payload& payload, float now);
+
+/// Adds a line to the chat, the oldest going if there are too many.
+void addChatLine(Session& session, ChatLine line);
 
 /// Logged in: to the main page.
 void startSession(ecs::World& world);
