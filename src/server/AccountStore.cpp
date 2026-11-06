@@ -1,6 +1,7 @@
 #include "server/AccountStore.hpp"
 
 #include "network/Protocol/PacketCodec.hpp"
+#include "server/TextFile.hpp"
 
 #include <algorithm>
 #include <array>
@@ -10,6 +11,7 @@
 #include <functional>
 #include <optional>
 #include <span>
+#include <sstream>
 #include <system_error>
 #include <utility>
 
@@ -148,18 +150,8 @@ std::expected<AccountStore, std::string> AccountStore::load(
         }
     }
 
-    if (store._damagedLines > 0) {
-        // Streams, not copy_file(): with MinGW it refuses to replace an older copy
-        input.clear();
-        input.seekg(0);
-        std::filesystem::path copy = file;
-        copy += ".damaged";
-        std::ofstream output(copy, std::ios::binary | std::ios::trunc);
-        output << input.rdbuf();
-        output.close();
-        if (!output) {
-            return std::unexpected("cannot save a copy of the damaged file " + file.string());
-        }
+    if (store._damagedLines > 0 && !keepDamagedCopy(file)) {
+        return std::unexpected("cannot save a copy of the damaged file " + file.string());
     }
     return store;
 }
@@ -209,37 +201,13 @@ std::size_t AccountStore::damagedLines() const noexcept
 
 bool AccountStore::save() const
 {
-    std::filesystem::path temporary = _file;
-    temporary += ".tmp";
-
-    {
-        std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
-        output << Header << '\n';
-        for (const auto& [name, account] : _accounts) {
-            output << account.cost.kibibytes << ' ' << account.cost.passes << ' '
-                   << toHex(account.salt) << ' ' << toHex(account.hash) << ' ' << name << '\n';
-        }
-        output.close();
-        if (!output) {
-            std::error_code ignored;
-            std::filesystem::remove(temporary, ignored);
-            return false;
-        }
+    std::ostringstream content;
+    content << Header << '\n';
+    for (const auto& [name, account] : _accounts) {
+        content << account.cost.kibibytes << ' ' << account.cost.passes << ' '
+                << toHex(account.salt) << ' ' << toHex(account.hash) << ' ' << name << '\n';
     }
-
-    // Only the server's user may read it (no effect on Windows). Not fatal: the
-    // file holds no password, this only makes offline guessing harder to start
-    std::error_code error;
-    std::filesystem::permissions(
-        temporary, std::filesystem::perms::owner_read | std::filesystem::perms::owner_write, error);
-
-    std::filesystem::rename(temporary, _file, error);
-    if (error) {
-        std::error_code ignored;
-        std::filesystem::remove(temporary, ignored);
-        return false;
-    }
-    return true;
+    return replaceFile(_file, content.str());
 }
 
 } // namespace server

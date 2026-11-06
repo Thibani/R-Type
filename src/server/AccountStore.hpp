@@ -63,8 +63,6 @@ public:
 private:
     AccountStore(std::filesystem::path file, network::crypto::PasswordCost cost);
 
-    /// Writes a temporary file, then renames it over the real one: a crash
-    /// during the write leaves the previous file intact.
     [[nodiscard]]
     bool save() const;
 

@@ -17,6 +17,7 @@
 #include "server/Components/ClientMessage.hpp"
 #include "server/Components/NetClient.hpp"
 #include "server/Components/Player.hpp"
+#include "server/FriendStore.hpp"
 #include "server/Network.hpp"
 #include "server/ServerSystems.hpp"
 #include "server/Systems/ConnectionSystem.hpp"
@@ -86,6 +87,16 @@ server::AccountStore loadOrFail(
     return std::move(*accounts);
 }
 
+server::FriendStore loadFriendsOrFail(const std::filesystem::path& file)
+{
+    auto friends = server::FriendStore::load(file);
+    if (!friends) {
+        ADD_FAILURE() << "cannot load the friends: " << friends.error();
+        std::abort();
+    }
+    return std::move(*friends);
+}
+
 /// Copies the ClientMessages seen this frame, before they are discarded.
 class MessageRecorder final : public ecs::System {
 public:
@@ -112,8 +123,9 @@ public:
     explicit TestServer(const std::filesystem::path* accountsFile = nullptr,
         network::crypto::PasswordCost cost = testing_players::FastCost)
         : _accounts(loadOrFail(accountsFile != nullptr ? *accountsFile : _ownFile.path(), cost))
+        , _friends(loadFriendsOrFail(_friendsFile.path()))
     {
-        server::installSystems(_world, _loop, *_network, _accounts);
+        server::installSystems(_world, _loop, *_network, _accounts, _friends);
         _loop.frameStart().add<MessageRecorder>(messages); // After every server system
     }
 
@@ -175,6 +187,12 @@ public:
         return count;
     }
 
+    [[nodiscard]]
+    const std::filesystem::path& friendsFile() const noexcept
+    {
+        return _friendsFile.path();
+    }
+
     template <typename System>
     [[nodiscard]]
     System& system()
@@ -191,7 +209,9 @@ public:
 
 private:
     testing_players::TemporaryFile _ownFile;
+    testing_players::TemporaryFile _friendsFile;
     server::AccountStore _accounts;
+    server::FriendStore _friends;
     // Declared first, so destroyed last: the thread outlives the systems using it
     std::unique_ptr<network::NetworkThread> _network = openNetworkOrFail();
     ecs::World _world;
@@ -1613,4 +1633,274 @@ TEST(LeaveGame, TheNextGameStartsWithFreshInputs)
     const server::PlayerInput* input = server.playerInput(0);
     ASSERT_NE(input, nullptr);
     EXPECT_EQ(input->mask, input::Up);
+}
+
+// --- Friends (§8.5) ---------------------------------------------------------------
+
+namespace {
+
+/// The next FRIEND_ENTRY about `name`, if one comes.
+std::optional<FriendEntry> entryAbout(
+    TestServer& server, TestClient& client, const std::string& name)
+{
+    while (const auto entry = waitFor<FriendEntry>(server, client)) {
+        if (entry->name == name) {
+            return entry;
+        }
+    }
+    return std::nullopt;
+}
+
+/// Two players logged in, friends, each already told about the other.
+struct TwoFriends {
+    explicit TwoFriends(TestServer& server)
+        : ann(server.address())
+        , ben(server.address())
+    {
+        logInOrFail(server, ann, "Ann");
+        logInOrFail(server, ben, "Ben");
+        ann.sendReliable(FriendRequest{.name = "Ben"});
+        EXPECT_TRUE(entryAbout(server, ben, "Ann").has_value());
+        ben.sendReliable(FriendAnswer{.name = "Ann", .reply = FriendReply::Accept});
+        const auto forBen = entryAbout(server, ben, "Ann");
+        EXPECT_TRUE(forBen.has_value());
+        EXPECT_EQ(forBen.value_or(FriendEntry{}).state, FriendState::Online);
+    }
+
+    TestClient ann;
+    TestClient ben;
+};
+
+} // namespace
+
+TEST(Friends, RequestReachesTheOtherPlayer)
+{
+    TestServer server;
+    TestClient ann(server.address());
+    TestClient ben(server.address());
+    logInOrFail(server, ann, "Ann");
+    logInOrFail(server, ben, "Ben");
+
+    ann.sendReliable(FriendRequest{.name = "Ben"});
+
+    const auto result = waitFor<FriendResult>(server, ann);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->code, FriendCode::Ok);
+    EXPECT_EQ(waitFor<FriendEntry>(server, ann),
+        (FriendEntry{.name = "Ben", .state = FriendState::RequestSent}));
+    EXPECT_EQ(waitFor<FriendEntry>(server, ben),
+        (FriendEntry{.name = "Ann", .state = FriendState::RequestReceived}));
+}
+
+TEST(Friends, UnknownNameIsRefused)
+{
+    TestServer server;
+    TestClient ann(server.address());
+    logInOrFail(server, ann, "Ann");
+
+    ann.sendReliable(FriendRequest{.name = "Nobody"});
+
+    EXPECT_EQ(waitFor<FriendResult>(server, ann), (FriendResult{.code = FriendCode::UnknownName}));
+}
+
+TEST(Friends, OwnNameIsRefused)
+{
+    TestServer server;
+    TestClient ann(server.address());
+    logInOrFail(server, ann, "Ann");
+
+    ann.sendReliable(FriendRequest{.name = "Ann"});
+
+    EXPECT_EQ(waitFor<FriendResult>(server, ann), (FriendResult{.code = FriendCode::Yourself}));
+}
+
+TEST(Friends, AskingTwiceIsRefused)
+{
+    TestServer server;
+    TestClient ann(server.address());
+    TestClient ben(server.address());
+    logInOrFail(server, ann, "Ann");
+    logInOrFail(server, ben, "Ben");
+    ann.sendReliable(FriendRequest{.name = "Ben"});
+    ASSERT_TRUE(waitFor<FriendResult>(server, ann).has_value());
+
+    ann.sendReliable(FriendRequest{.name = "Ben"});
+
+    EXPECT_EQ(
+        waitFor<FriendResult>(server, ann), (FriendResult{.code = FriendCode::AlreadyLinked}));
+}
+
+TEST(Friends, AcceptingTellsBothAndShowsWhoIsOnline)
+{
+    TestServer server;
+    TwoFriends both(server);
+
+    const auto forAnn = entryAbout(server, both.ann, "Ben");
+    ASSERT_TRUE(forAnn.has_value()); // RequestSent, read first
+    const auto then = entryAbout(server, both.ann, "Ben");
+    ASSERT_TRUE(then.has_value());
+    EXPECT_EQ(then->state, FriendState::Online);
+}
+
+TEST(Friends, RefusingForgetsTheRequestOnBothSides)
+{
+    TestServer server;
+    TestClient ann(server.address());
+    TestClient ben(server.address());
+    logInOrFail(server, ann, "Ann");
+    logInOrFail(server, ben, "Ben");
+    ann.sendReliable(FriendRequest{.name = "Ben"});
+    ASSERT_TRUE(entryAbout(server, ben, "Ann").has_value());
+    ASSERT_TRUE(entryAbout(server, ann, "Ben").has_value());
+
+    ben.sendReliable(FriendAnswer{.name = "Ann", .reply = FriendReply::Refuse});
+
+    EXPECT_EQ(entryAbout(server, ann, "Ben"),
+        (FriendEntry{.name = "Ben", .state = FriendState::Removed}));
+    EXPECT_EQ(entryAbout(server, ben, "Ann"),
+        (FriendEntry{.name = "Ann", .state = FriendState::Removed}));
+}
+
+TEST(Friends, AnsweringNoRequestDoesNothing)
+{
+    // Nobody can make themselves someone's friend by "accepting" a request never sent
+    TestServer server;
+    TestClient ann(server.address());
+    TestClient ben(server.address());
+    logInOrFail(server, ann, "Ann");
+    logInOrFail(server, ben, "Ben");
+
+    ben.sendReliable(FriendAnswer{.name = "Ann", .reply = FriendReply::Accept});
+
+    EXPECT_FALSE(waitFor<FriendEntry>(server, ben).has_value());
+    EXPECT_FALSE(waitFor<FriendEntry>(server, ann).has_value());
+}
+
+TEST(Friends, AskingBackMakesThemFriends)
+{
+    TestServer server;
+    TestClient ann(server.address());
+    TestClient ben(server.address());
+    logInOrFail(server, ann, "Ann");
+    logInOrFail(server, ben, "Ben");
+    ann.sendReliable(FriendRequest{.name = "Ben"});
+    ASSERT_TRUE(entryAbout(server, ben, "Ann").has_value());
+
+    ben.sendReliable(FriendRequest{.name = "Ann"});
+
+    EXPECT_EQ(
+        entryAbout(server, ben, "Ann"), (FriendEntry{.name = "Ann", .state = FriendState::Online}));
+}
+
+TEST(Friends, RemovingTellsBoth)
+{
+    TestServer server;
+    TwoFriends both(server);
+
+    both.ann.sendReliable(FriendRemove{.name = "Ben"});
+
+    EXPECT_EQ(entryAbout(server, both.ben, "Ann"),
+        (FriendEntry{.name = "Ann", .state = FriendState::Removed}));
+}
+
+TEST(Friends, FriendsLearnWhenSomeoneLeavesAndComesBack)
+{
+    TestServer server;
+    TwoFriends both(server);
+
+    both.ben.send(Disconnect{.reason = DisconnectReason::Quit});
+    EXPECT_EQ(entryAbout(server, both.ann, "Ben"),
+        (FriendEntry{.name = "Ben", .state = FriendState::RequestSent})); // Older entry
+    EXPECT_EQ(entryAbout(server, both.ann, "Ben"),
+        (FriendEntry{.name = "Ben", .state = FriendState::Online}));
+    EXPECT_EQ(entryAbout(server, both.ann, "Ben"),
+        (FriendEntry{.name = "Ben", .state = FriendState::Offline}));
+
+    TestClient back(server.address());
+    (void)openSessionOrFail(server, back, "Ben");
+    EXPECT_EQ(authenticate(server, back, AuthMode::Login), AuthCode::Ok);
+
+    EXPECT_EQ(entryAbout(server, back, "Ann"),
+        (FriendEntry{.name = "Ann", .state = FriendState::Online}));
+    EXPECT_EQ(entryAbout(server, both.ann, "Ben"),
+        (FriendEntry{.name = "Ben", .state = FriendState::Online}));
+}
+
+TEST(Friends, ARequestWaitsForAnOfflinePlayer)
+{
+    TestServer server;
+    TestClient ann(server.address());
+    TestClient ben(server.address());
+    logInOrFail(server, ann, "Ann");
+    logInOrFail(server, ben, "Ben");
+    ben.send(Disconnect{.reason = DisconnectReason::Quit});
+    deliver(server);
+    deliver(server);
+
+    ann.sendReliable(FriendRequest{.name = "Ben"});
+    ASSERT_TRUE(waitFor<FriendResult>(server, ann).has_value());
+
+    TestClient back(server.address());
+    (void)openSessionOrFail(server, back, "Ben");
+    EXPECT_EQ(authenticate(server, back, AuthMode::Login), AuthCode::Ok);
+    EXPECT_EQ(entryAbout(server, back, "Ann"),
+        (FriendEntry{.name = "Ann", .state = FriendState::RequestReceived}));
+}
+
+TEST(Friends, TheListStaysUpToDateDuringAGame)
+{
+    TestServer server;
+    TwoFriends both(server);
+    both.ann.inbox.clear();
+    ASSERT_EQ(joinOrFail(server, both.ann).code, JoinCode::Ok);
+
+    both.ben.send(Disconnect{.reason = DisconnectReason::Quit});
+
+    bool told = false;
+    while (const auto entry = entryAbout(server, both.ann, "Ben")) {
+        told = told || entry->state == FriendState::Offline;
+    }
+    EXPECT_TRUE(told);
+}
+
+TEST(Friends, BeforeLoggingInEverythingIsIgnored)
+{
+    TestServer server;
+    TestClient ann(server.address());
+    logInOrFail(server, ann, "Ann");
+    TestClient stranger(server.address());
+    (void)openSessionOrFail(server, stranger, "Stranger");
+
+    stranger.sendReliable(FriendRequest{.name = "Ann"});
+
+    EXPECT_FALSE(waitFor<FriendEntry>(server, ann).has_value());
+    EXPECT_FALSE(waitFor<FriendResult>(server, stranger).has_value());
+}
+
+TEST(Friends, TheFileIsWrittenAtMostOncePerSecond)
+{
+    // Otherwise a client could make the whole game wait for the disk, 120 times a second
+    TestServer server;
+    TestClient ann(server.address());
+    TestClient ben(server.address());
+    logInOrFail(server, ann, "Ann");
+    logInOrFail(server, ben, "Ben");
+    server.frame(2.0F); // Long after the last save
+    const auto contentOf = [&] {
+        std::ifstream input(server.friendsFile(), std::ios::binary);
+        return std::string(std::istreambuf_iterator<char>(input), {});
+    };
+    const std::string empty = contentOf();
+
+    ann.sendReliable(FriendRequest{.name = "Ben"});
+    deliver(server);
+    const std::string first = contentOf();
+    EXPECT_NE(first, empty); // The first change after a long time is saved at once
+
+    ann.sendReliable(FriendRemove{.name = "Ben"});
+    deliver(server);
+    EXPECT_EQ(contentOf(), first); // Too soon: it waits
+
+    server.frame(1.1F);
+    EXPECT_EQ(contentOf(), empty);
 }

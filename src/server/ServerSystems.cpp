@@ -13,6 +13,7 @@
 #include "server/Systems/ConnectionSystem.hpp"
 #include "server/Systems/DamageSystem.hpp"
 #include "server/Systems/DiscardPacketsSystem.hpp"
+#include "server/Systems/FriendSystem.hpp"
 #include "server/Systems/InputSystem.hpp"
 #include "server/Systems/JoinSystem.hpp"
 #include "server/Systems/LoginSystem.hpp"
@@ -48,8 +49,8 @@ void installSimulation(ecs::World& world)
     world.systems().add<game::DespawnSystem>(world);
 }
 
-void installSystems(
-    ecs::World& world, ecs::GameLoop& loop, network::NetworkThread& socket, AccountStore& accounts)
+void installSystems(ecs::World& world, ecs::GameLoop& loop, network::NetworkThread& socket,
+    AccountStore& accounts, FriendStore& friends)
 {
     loop.frameStart().add<NetReceiveSystem>(socket);
     loop.frameStart().add<ConnectionSystem>(socket);
@@ -57,6 +58,7 @@ void installSystems(
     loop.frameStart().add<LoginSystem>(accounts);
     loop.frameStart().add<JoinSystem>();
     loop.frameStart().add<TimeoutSystem>();
+    loop.frameStart().add<FriendSystem>(accounts, friends);
     loop.frameStart().add<InputSystem>();
     loop.frameStart().add<PlayerShipSystem>();
 
