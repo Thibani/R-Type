@@ -46,6 +46,14 @@ struct FriendRow {
     network::protocol::FriendState state{network::protocol::FriendState::Offline};
 };
 
+/// One line of the chat. `Notice`s come from the client itself; the others from CHAT_MESSAGE.
+struct ChatLine {
+    enum class Kind : std::uint8_t { Game, Received, Sent, Notice };
+    Kind kind{Kind::Notice};
+    std::string name; // Who wrote it, or who receives it if `Sent`
+    std::string text;
+};
+
 /// Singleton: everything the interface shows that is not an entity.
 struct Session {
     Screen screen{Screen::Connect};
@@ -72,7 +80,15 @@ struct Session {
     std::string friendMessage; // Answer to the last request
     std::size_t friendScroll{0}; // First row shown
     bool friendsHovered{false}; // The mouse is over the bar
+    std::optional<std::string> friendMenu; // The friend whose right-click menu is open
     std::vector<network::protocol::Payload> outgoing; // Reliable, sent by NetSendSystem
+
+    // Chat, on the main page and in the game
+    std::vector<ChatLine> chat; // Oldest first, MaxChatLines at most
+    std::size_t chatScroll{0}; // Newest messages hidden by scrolling back
+    bool chatOpen{false}; // Typing: every key goes to the chat, none to the ship
+    std::string chatInput;
+    std::optional<std::string> chatTarget; // "To [name]:", from the right-click menu
 
     // Game
     std::optional<std::uint8_t> playerId; // Ours, from JOIN_RESULT: only while in the game

@@ -24,6 +24,8 @@ add_library(rtype_client
     Settings.hpp
     Settings.cpp
     Singleton.hpp
+    Chat.hpp
+    Chat.cpp
     Replication.hpp
     Replication.cpp
     Assets.hpp

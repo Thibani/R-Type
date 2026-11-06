@@ -1,6 +1,7 @@
 #include "client/Systems/InterfaceSystem.hpp"
 
 #include "client/Assets.hpp"
+#include "client/Chat.hpp"
 #include "client/Components/NetEntity.hpp"
 #include "client/Components/Session.hpp"
 #include "client/Components/Settings.hpp"
@@ -169,6 +170,94 @@ void drawConnect(sf::RenderTarget& target, const Assets& assets, ColourMode mode
         compact ? sf::Vector2f{716.0F, 545.0F} : sf::Vector2f{64.0F, 682.0F});
 }
 
+std::string chatLabel(const ChatLine& line)
+{
+    switch (line.kind) {
+    case ChatLine::Kind::Game:
+        return line.name + ": " + line.text;
+    case ChatLine::Kind::Received:
+        return "[From " + line.name + "] " + line.text;
+    case ChatLine::Kind::Sent:
+        return "[To " + line.name + "] " + line.text;
+    case ChatLine::Kind::Notice:
+        break;
+    }
+    return line.text;
+}
+
+sf::Color chatColour(ChatLine::Kind kind) noexcept
+{
+    switch (kind) {
+    case ChatLine::Kind::Game:
+        return theme::Text;
+    case ChatLine::Kind::Received:
+    case ChatLine::Kind::Sent:
+        return theme::Gold;
+    case ChatLine::Kind::Notice:
+        break;
+    }
+    return theme::Muted;
+}
+
+/// The chat: the newest messages at the bottom, a pale frame, and the typing line
+/// only while typing. Private messages are told apart by their words, not only their colour.
+void drawChat(sf::RenderTarget& target, const Assets& assets, const Session& session,
+    sf::FloatRect rect, bool focused)
+{
+    box(target, rect, session.chatOpen ? theme::ChatFrameOpen : theme::ChatFrame,
+        focused || session.chatOpen ? theme::Blue : theme::ChatBorder, focused ? 2.0F : 1.0F);
+
+    constexpr float Margin = 8.0F;
+    const float width = rect.size.x - (2.0F * Margin);
+    const auto fits = [&](std::string_view part) {
+        return textWidth(assets.body, part, layout::ChatTextSize) <= width;
+    };
+    float bottom = rect.position.y + rect.size.y - Margin;
+    if (session.chatOpen) {
+        const std::string prefix
+            = session.chatTarget ? "To [" + *session.chatTarget + "]: " : std::string{};
+        const float prefixWidth = textWidth(assets.bodyBold, prefix, layout::ChatTextSize);
+        const sf::FloatRect line{{rect.position.x, bottom - layout::ChatInputHeight + Margin},
+            {rect.size.x, layout::ChatInputHeight}};
+        box(target, line, theme::InputBackground, theme::Hull, 1.0F);
+        const sf::Vector2f inside = line.position + sf::Vector2f{Margin, 6.0F};
+        text(target, assets.bodyBold, prefix, layout::ChatTextSize, theme::Gold, inside);
+        // The end of what is typed, like a field whose text is too long
+        std::string_view shown = session.chatInput;
+        const auto isContinuation
+            = [](char c) { return (static_cast<unsigned char>(c) & 0xC0U) == 0x80U; };
+        while (!shown.empty()
+            && textWidth(assets.body, shown, layout::ChatTextSize) > width - prefixWidth - 6.0F) {
+            shown.remove_prefix(1);
+            while (!shown.empty() && isContinuation(shown.front())) {
+                shown.remove_prefix(1);
+            }
+        }
+        const sf::Vector2f typed = inside + sf::Vector2f{prefixWidth, 0.0F};
+        text(target, assets.body, shown, layout::ChatTextSize, theme::Text, typed);
+        box(target,
+            {{typed.x + textWidth(assets.body, shown, layout::ChatTextSize) + 2.0F,
+                 line.position.y + 6.0F},
+                {2.0F, layout::ChatInputHeight - 12.0F}},
+            theme::Blue, theme::Blue, 0.0F);
+        bottom = line.position.y - 4.0F;
+    }
+
+    const float top = rect.position.y + Margin;
+    std::size_t next
+        = session.chat.size() > session.chatScroll ? session.chat.size() - session.chatScroll : 0;
+    while (next > 0 && bottom - layout::ChatLineHeight >= top) {
+        const ChatLine& line = session.chat.at(--next);
+        const auto parts = wrapChatText(chatLabel(line), fits);
+        for (auto part = parts.rbegin();
+            part != parts.rend() && bottom - layout::ChatLineHeight >= top; ++part) {
+            bottom -= layout::ChatLineHeight;
+            text(target, assets.body, *part, layout::ChatTextSize, chatColour(line.kind),
+                {rect.position.x + Margin, bottom});
+        }
+    }
+}
+
 /// The main page: who we are, and the way into the game. No "P1" on the banner:
 /// a place in the game only exists once in it.
 void drawHome(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
@@ -200,6 +289,8 @@ void drawHome(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
     widgets::button(target, assets, layout::logOut(interfaceSize), "Log out", false,
         session.focus == layout::LogOutButton);
     centredHelp(target, assets, "Tab: next  ·  Enter: select", compact ? 538.0F : 690.0F);
+    drawChat(target, assets, session, layout::homeChat(interfaceSize),
+        !session.settingsOpen && !session.chatOpen && session.focus == layout::ChatBox);
 }
 
 /// A small button of the friends panel.
@@ -293,6 +384,10 @@ void drawFriendsOpen(
             label = "Cancel";
         }
         rowButton(target, assets, button.rect, label, focused);
+    }
+    if (const auto menu = layout::friendMenuButton(session, bar)) {
+        box(target, *menu, theme::Surface, theme::Blue, 2.0F);
+        centredText(target, assets.bodyBold, "Message", 14, theme::Text, *menu);
     }
     if (session.friends.size() > layout::friendRowsShown(bar)) {
         text(target, assets.body, "PgUp / PgDn or wheel: more", 13, theme::Muted,
@@ -644,6 +739,9 @@ void InterfaceSystem::update(ecs::World& world, const ecs::Time& time)
         break;
     case Screen::Game:
         drawHud(_window, _assets, world, session, time.elapsedSeconds(), area);
+        if (!session.chat.empty() || session.chatOpen) {
+            drawChat(_window, _assets, session, layout::gameChat(area), false);
+        }
         if (session.menuOpen) {
             drawMenu(_window, _assets, session, area);
         }

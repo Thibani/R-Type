@@ -638,3 +638,35 @@ TEST(FriendsPanel, OnlyTheRowsShownHaveButtons)
     EXPECT_EQ(buttons.front().row, 10U);
     EXPECT_EQ(buttons.back().row, 10U + shown - 1U);
 }
+
+TEST(FriendsPanel, TheMenuOpensOnTheRowOfTheFriend)
+{
+    using network::protocol::FriendState;
+    client::Session session;
+    session.friends = {{.name = "Ann", .state = FriendState::Online},
+        {.name = "Ben", .state = FriendState::Online}};
+    const sf::FloatRect bar = client::layout::friendsBar({{0.0F, 0.0F}, {1280.0F, 720.0F}}, true);
+
+    EXPECT_FALSE(client::layout::friendMenuButton(session, bar).has_value());
+
+    session.friendMenu = "Ben";
+    const auto button = client::layout::friendMenuButton(session, bar);
+    ASSERT_TRUE(button.has_value());
+    const sf::FloatRect row = client::layout::friendRow(bar, 1);
+    EXPECT_GT(button->position.y, row.position.y + 30.0F); // The name of the row stays visible
+    EXPECT_LE(button->position.y, row.position.y + row.size.y);
+    EXPECT_TRUE(bar.contains(button->position + button->size));
+
+    session.friendMenu = "Gone";
+    EXPECT_FALSE(client::layout::friendMenuButton(session, bar).has_value());
+}
+
+TEST(ChatBox, TheChatFitsAtEverySizeInTheGame)
+{
+    for (const int size : Settings::InterfaceSizes) {
+        client::Session session;
+        session.screen = client::Screen::Game;
+        const sf::FloatRect area = client::layout::visibleArea(session, size);
+        EXPECT_TRUE(contains(area, client::layout::gameChat(area))) << size;
+    }
+}

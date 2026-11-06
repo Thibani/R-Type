@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 /// Where the clickable parts of each screen are, on the 1280 × 720 interface
@@ -175,12 +176,33 @@ constexpr sf::FloatRect visibleArea(const Session& session, int interfaceSize) n
     return {{centre.x - (size.x / 2.0F), centre.y - (size.y / 2.0F)}, size};
 }
 
+// Chat box, on the main page (above Settings and Log out), and in the game (bottom left,
+// above the reminder of the keys). On the main page, it is the 4th focusable part.
+inline constexpr int ChatBox = 3;
+inline constexpr float ChatInputHeight = 30.0F;
+inline constexpr float ChatLineHeight = 20.0F;
+inline constexpr unsigned ChatTextSize = 15;
+
+[[nodiscard]]
+constexpr sf::FloatRect homeChat(int interfaceSize) noexcept
+{
+    return isCompact(interfaceSize) ? sf::FloatRect{{225.0F, 130.0F}, {315.0F, 270.0F}}
+                                    : sf::FloatRect{{64.0F, 250.0F}, {440.0F, 290.0F}};
+}
+
+[[nodiscard]]
+constexpr sf::FloatRect gameChat(sf::FloatRect area) noexcept
+{
+    constexpr sf::Vector2f Size{420.0F, 180.0F};
+    return {{area.position.x + 18.0F, area.position.y + area.size.y - 60.0F - Size.y}, Size};
+}
+
 // Friends bar, on the right of the main page, whatever the interface size. In focus
-// order after the buttons of the page: the name field, Add, then the buttons of the rows.
+// order after the chat box: the name field, Add, then the buttons of the rows.
 // Closed, the bar itself takes the place of the field: moving the focus to it opens it.
-inline constexpr int FriendNameField = 3;
-inline constexpr int FriendAddButton = 4;
-inline constexpr int FirstFriendButton = 5;
+inline constexpr int FriendNameField = 4;
+inline constexpr int FriendAddButton = 5;
+inline constexpr int FirstFriendButton = 6;
 inline constexpr float FriendsClosedWidth = 56.0F;
 inline constexpr float FriendsOpenWidth = 300.0F;
 inline constexpr float FriendsPadding = 16.0F;
@@ -264,6 +286,37 @@ inline std::vector<FriendButton> friendButtons(const Session& session, sf::Float
     return buttons;
 }
 
+/// The Message button of the right-click menu, just under the row of `session.friendMenu`,
+/// so that its name stays visible. It stays inside the bar, even under the last row.
+/// Nullopt if no menu is open, or if that row is not on screen.
+[[nodiscard]]
+inline std::optional<sf::FloatRect> friendMenuButton(const Session& session, sf::FloatRect bar)
+{
+    if (!session.friendMenu) {
+        return std::nullopt;
+    }
+    const auto last = std::min(session.friends.size(), session.friendScroll + friendRowsShown(bar));
+    for (std::size_t row = session.friendScroll; row < last; ++row) {
+        if (session.friends.at(row).name == *session.friendMenu) {
+            const sf::FloatRect line = friendRow(bar, row - session.friendScroll);
+            constexpr sf::Vector2f Size{96.0F, 34.0F};
+            const float lowest = bar.position.y + bar.size.y - Size.y - 2.0F;
+            return sf::FloatRect{{line.position.x + FriendsPadding,
+                                     std::min(line.position.y + line.size.y - 6.0F, lowest)},
+                Size};
+        }
+    }
+    return std::nullopt;
+}
+
+/// The chat box of the current screen. Only the main page and the game have one.
+[[nodiscard]]
+constexpr sf::FloatRect chatBox(
+    const Session& session, sf::FloatRect area, int interfaceSize) noexcept
+{
+    return session.screen == Screen::Home ? homeChat(interfaceSize) : gameChat(area);
+}
+
 /// The focusable parts of the current screen, in focus order.
 [[nodiscard]]
 inline std::vector<sf::FloatRect> focusables(const Session& session, int interfaceSize)
@@ -280,8 +333,8 @@ inline std::vector<sf::FloatRect> focusables(const Session& session, int interfa
         return {NameInput, PasswordInput, AddressInput, PortInput, Login, CreateAccount,
             OpenSettings, Quit};
     case Screen::Home: {
-        std::vector<sf::FloatRect> parts{
-            play(interfaceSize), homeSettings(interfaceSize), logOut(interfaceSize)};
+        std::vector<sf::FloatRect> parts{play(interfaceSize), homeSettings(interfaceSize),
+            logOut(interfaceSize), homeChat(interfaceSize)};
         const sf::FloatRect area = visibleArea(session, interfaceSize);
         if (!friendsOpen(session)) {
             // One unit inside the bar, which itself touches the edges of the view

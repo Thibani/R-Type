@@ -244,12 +244,43 @@ void apply(ecs::World& world, const FriendResult& result, float /*now*/)
     }
 }
 
+void apply(ecs::World& world, const ChatMessage& message, float /*now*/)
+{
+    const auto kindOf = [](ChatKind kind) {
+        switch (kind) {
+        case ChatKind::Game:
+            return ChatLine::Kind::Game;
+        case ChatKind::Received:
+            return ChatLine::Kind::Received;
+        case ChatKind::Sent:
+            break;
+        }
+        return ChatLine::Kind::Sent;
+    };
+    addChatLine(singleton<Session>(world),
+        ChatLine{.kind = kindOf(message.kind), .name = message.name, .text = message.text});
+}
+
+void apply(ecs::World& world, const ChatRefused& refused, float /*now*/)
+{
+    std::string text = "Too fast: wait a moment.";
+    if (refused.reason == ChatRefusal::NotFriend) {
+        text = "Not in your friends.";
+    } else if (refused.reason == ChatRefusal::MailboxFull) {
+        text = "Too many messages are waiting for them.";
+    }
+    addChatLine(singleton<Session>(world),
+        ChatLine{.kind = ChatLine::Kind::Notice, .name = {}, .text = std::move(text)});
+}
+
 /// True for what has nothing to do with a game: it counts on the main page too,
 /// and says nothing about the order of the game's events.
-bool isAboutFriends(const Payload& payload) noexcept
+bool isOutsideTheGame(const Payload& payload) noexcept
 {
     return std::holds_alternative<FriendEntry>(payload)
-        || std::holds_alternative<FriendResult>(payload);
+        || std::holds_alternative<FriendResult>(payload)
+        || std::holds_alternative<ChatMessage>(payload)
+        || std::holds_alternative<ChatRefused>(payload);
 }
 
 template <typename Other>
@@ -263,7 +294,7 @@ void apply(ecs::World& /*world*/, const Other& /*payload*/, float /*now*/)
 void applyPayload(ecs::World& world, const Payload& payload, float now)
 {
     const Session& session = singleton<Session>(world);
-    if (isAboutFriends(payload)) {
+    if (isOutsideTheGame(payload)) {
         std::visit([&](const auto& packet) { apply(world, packet, now); }, payload);
         return;
     }
@@ -277,6 +308,17 @@ void applyPayload(ecs::World& world, const Payload& payload, float now)
         singleton<Session>(world).catchingUp = false;
     }
     std::visit([&](const auto& packet) { apply(world, packet, now); }, payload);
+}
+
+void addChatLine(Session& session, ChatLine line)
+{
+    session.chat.push_back(std::move(line));
+    if (session.chat.size() > MaxChatLines) {
+        session.chat.erase(session.chat.begin());
+    }
+    if (session.chatScroll > 0) { // Reading older lines: they stay where they are
+        session.chatScroll = std::min(session.chatScroll + 1, session.chat.size() - 1);
+    }
 }
 
 void startSession(ecs::World& world)
@@ -304,6 +346,10 @@ void enterGame(ecs::World& world, std::uint8_t playerId)
     session.catchingUp = true;
     session.focus = 0;
     session.friendsHovered = false;
+    session.friendMenu.reset();
+    session.chatOpen = false;
+    session.chatInput.clear();
+    session.chatTarget.reset();
     session.error.clear();
 }
 
@@ -321,6 +367,9 @@ void leaveGame(ecs::World& world)
     session.screen = Screen::Home;
     session.focus = 0;
     session.joining = false;
+    session.chatOpen = false;
+    session.chatInput.clear();
+    session.chatTarget.reset();
     session.playerId.reset();
     session.players = {};
     session.score = 0;
@@ -339,7 +388,10 @@ void clearSession(ecs::World& world)
     session.friendName.clear();
     session.friendMessage.clear();
     session.friendScroll = 0;
+    session.friendMenu.reset();
     session.outgoing.clear();
+    session.chat.clear();
+    session.chatScroll = 0;
 }
 
 } // namespace client
