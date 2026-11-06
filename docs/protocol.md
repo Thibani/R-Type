@@ -1,10 +1,10 @@
-# R-Type Network Protocol — Version 5
+# R-Type Network Protocol — Version 6
 
 | Status   | Implemented                 |
 |----------|-----------------------------|
-| Version  | 5                           |
+| Version  | 6                           |
 | Transport| UDP only                    |
-| Issue    | #21 (design), #10 (documentation), #97 (encryption), #73 (accounts), #72 (main page), #126 (friends) |
+| Issue    | #21 (design), #10 (documentation), #97 (encryption), #73 (accounts), #72 (main page), #126 (friends), #92 (chat) |
 
 This document specifies the binary protocol spoken between `r-type_client`
 and `r-type_server`. It is meant to be complete enough to write a new client
@@ -118,7 +118,7 @@ Every datagram starts with this 20-byte header.
 | Offset | Size | Field          | Description                                                  |
 |-------:|-----:|----------------|--------------------------------------------------------------|
 | 0      | 2    | `magic`        | Always `0x5254` (`"RT"`). Filters out stray traffic.          |
-| 2      | 1    | `version`      | Protocol version. This document describes version `5`.       |
+| 2      | 1    | `version`      | Protocol version. This document describes version `6`.       |
 | 3      | 1    | `type`         | Packet type, see [§4](#4-packet-types).                       |
 | 4      | 1    | `flags`        | Bit field, see below.                                         |
 | 5      | 1    | `reserved`     | **MUST** be `0`.                                              |
@@ -134,7 +134,7 @@ Every datagram starts with this 20-byte header.
 |----:|------------|----------------------------------------------------------------------|
 | 0   | `RELIABLE` | The payload starts with a `u16 reliableId` and must be acknowledged. |
 | 1   | `HAS_ACK`  | `ack` and `ackBits` are meaningful. Clear until a packet is received.|
-| 2–7 | —          | Reserved, **MUST** be `0` in version 5.                              |
+| 2–7 | —          | Reserved, **MUST** be `0` in version 6.                              |
 
 ### 3.2 Versioning
 
@@ -227,8 +227,12 @@ Sizes are payload sizes, header excluded. Reliable packets include their
 | `0x35` | `FRIEND_REMOVE`   | C → S     | **yes**  | 18                 |
 | `0x36` | `FRIEND_RESULT`   | S → C     | **yes**  | 3                  |
 | `0x37` | `FRIEND_ENTRY`    | S → C     | **yes**  | 19                 |
+| `0x38` | `CHAT_SEND`       | C → S     | **yes**  | 4 … 203 (`3 + size`) |
+| `0x39` | `PRIVATE_SEND`    | C → S     | **yes**  | 20 … 219 (`19 + size`) |
+| `0x3A` | `CHAT_MESSAGE`    | S → C     | **yes**  | 21 … 220 (`20 + size`) |
+| `0x3B` | `CHAT_REFUSED`    | S → C     | **yes**  | 3                  |
 
-Ranges `0x00`, `0x08–0x0F`, `0x11–0x1F`, `0x27–0x2F` and `0x38–0xFF` are reserved.
+Ranges `0x00`, `0x08–0x0F`, `0x11–0x1F`, `0x27–0x2F` and `0x3C–0xFF` are reserved.
 
 These sizes are before encryption: every type except `CONNECT_REQUEST`,
 `CONNECT_ACCEPT` and `CONNECT_REJECT` adds 24 bytes on the network
@@ -325,6 +329,18 @@ The server ignores them before the login ([§8.5](#85-friends)).
 | 18     | 1    | `reply`      | `FRIEND_ANSWER` only: `0` REFUSE, `1` ACCEPT        |
 
 `FRIEND_REMOVE` removes a friend, or cancels a request the player sent.
+
+#### `CHAT_SEND` (`0x38`) and `PRIVATE_SEND` (`0x39`)
+
+A chat text is 1 to 200 bytes of valid UTF-8, without any control character. It comes
+last in its packet, after a `u8` count that **MUST** match the bytes left.
+
+| Offset | Size | Field        | Values                                              |
+|-------:|-----:|--------------|-----------------------------------------------------|
+| 0      | 2    | `reliableId` |                                                     |
+| 2      | 16   | `name`       | `PRIVATE_SEND` only: the exact name of a friend     |
+| …      | 1    | `size`       | Bytes of `text`                                     |
+| …      | size | `text`       |                                                     |
 
 #### `INPUT` (`0x10`)
 
@@ -474,6 +490,25 @@ newcomer once for every player already connected.
 
 ---
 
+`CHAT_MESSAGE` (`0x3A`) — one line of chat. The server writes `name` itself.
+
+| Offset | Size | Field        | Values                                              |
+|-------:|-----:|--------------|-----------------------------------------------------|
+| 0      | 2    | `reliableId` |                                                     |
+| 2      | 1    | `kind`       | `0` GAME, `1` RECEIVED (private), `2` SENT (private, your own) |
+| 3      | 16   | `name`       | Who wrote it; for SENT, who receives it             |
+| 19     | 1    | `size`       | Bytes of `text`                                     |
+| 20     | size | `text`       |                                                     |
+
+`CHAT_REFUSED` (`0x3B`) — a message was not taken.
+
+| Offset | Size | Field        | Values                                              |
+|-------:|-----:|--------------|-----------------------------------------------------|
+| 0      | 2    | `reliableId` |                                                     |
+| 2      | 1    | `reason`     | `0` TOO_FAST, `1` NOT_FRIEND, `2` MAILBOX_FULL      |
+
+---
+
 ## 5. Identifiers and enumerations
 
 ### 5.1 Network entity ids
@@ -544,7 +579,7 @@ of an enemy, `CONNECT_ACCEPT`).
   messages wait until the window moves. Without this rule, losing a single
   message while many others are in flight would disconnect a healthy peer.
 
-The client sends reliable messages too (`JOIN_GAME`, `LEAVE_GAME`, friends), with the same rules.
+The client sends reliable messages too (`JOIN_GAME`, `LEAVE_GAME`, friends, chat), with the same rules.
 
 ---
 
@@ -680,6 +715,25 @@ Known limits: `UNKNOWN_NAME` tells whether an account exists, which adding by ex
 cannot avoid. 50 accounts can fill a player's requests. The server saves the file at most
 once per second, so a crash can lose the last second of changes. The file is not encrypted.
 
+### 8.6 Chat
+
+- `CHAT_SEND` from a player in the game: every player of the game gets a `CHAT_MESSAGE
+  (GAME)`, the author too. From a player who is not in a game, it is ignored.
+- `PRIVATE_SEND` to a friend, online or not: if online, they get a `CHAT_MESSAGE (RECEIVED)`;
+  if offline, the server keeps the message and delivers it at their next login, oldest first,
+  then forgets it. The author gets a `CHAT_MESSAGE (SENT)`. To anybody else: `CHAT_REFUSED
+  (NOT_FRIEND)`. With 100 messages already waiting: `CHAT_REFUSED (MAILBOX_FULL)`.
+- A player can write **5 messages per 5 seconds**, game and private together. Beyond them:
+  `CHAT_REFUSED (TOO_FAST)`. This value is a choice, not a measure.
+
+The server sets the name of a message from the session: a client cannot write as someone else.
+
+Known limits: the messages waiting are in a plain text file, so whoever runs the server can
+read them. It is saved at most once per second, so a crash can lose the last second, or
+deliver a message a second time. A message is forgotten once sent to its reader, even if
+they crash before receiving it. The server keeps no other history: the client's goes when it
+logs out.
+
 ---
 
 ## 9. Timing
@@ -708,7 +762,7 @@ that is about **40 KB/s per client** downstream, events excluded. Upstream, `INP
 
 ```text
 52 54             magic "RT"
-05                version 5
+06                version 6
 01                type CONNECT_REQUEST
 00                flags: none (nothing received yet, so no HAS_ACK)
 00                reserved
@@ -727,8 +781,8 @@ Total: 68 bytes.
 
 ## 11. Possible extensions
 
-Kept out of version 5, but the header leaves room for them:
+Kept out of version 6, but the header leaves room for them:
 
 - a `COMPRESSED` flag bit for LZ4 or zlib payloads;
 - delta snapshots relative to the last acknowledged snapshot;
-- rooms and lobbies, as new packet types in the `0x38–0x4F` range (#71, #72).
+- rooms and lobbies, as new packet types in the `0x3C–0x4F` range (#71, #72).
