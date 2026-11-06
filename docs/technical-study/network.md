@@ -385,6 +385,26 @@ stays small and a message is read at most once, then forgotten. They are in clea
 them for their reader would need a key that the reader alone holds, which the accounts do not
 have. This is written in the protocol as a known limit.
 
+### Games in parallel and groups (#71, #72, #111)
+
+Each game has its own `ecs::World` and `ecs::GameLoop` (`GameRoom`). The sessions stay in the
+server's main World for the whole connection, and a player in a game also has an entity in the
+World of that game, which points to their session.
+
+| Option | For | Against |
+|---|---|---|
+| **One World per game (chosen)** | Two games cannot touch each other: no query can see the other's entities. The game systems do not change. The score and the enemies go with the room | One indirection from the player to their session |
+| One World with a game number on each entity | No second World | Every system must filter, including the collisions of `game`: one mistake and a shot crosses into another game |
+| Moving the session between Worlds | The game systems see a `NetClient` as before | Every network system, and the chat and friends, must look through every World |
+
+Groups are plain data (`Groups`), kept in memory: a group is worth nothing after its last member
+leaves. The rules are in that class, tested without a network; `GroupSystem` only reads the orders
+and tells the members. Each member is told the group's state when it differs from the last one
+they were sent, so no change can be forgotten, whatever its cause.
+
+A code has 6 signs out of 32, about a billion values, without those easy to mistake when read
+aloud. Trying them is limited to 5 wrong codes per 30 seconds and per account.
+
 ## 11. Security
 
 | Threat                              | Mitigation                                         | Status |
