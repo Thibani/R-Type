@@ -24,6 +24,7 @@ Technology choices: [`docs/technical-study/client.md`](../../docs/technical-stud
 | `main.cpp`                         | Entry point: options, assets, socket, window, World, loop  |
 | `ClientOptions.hpp`                | Command line parsing (`-s`, `-p`, `-n`, `-h`)               |
 | `Settings.hpp`                     | Settings file (read, write, where it lives), key names, `bindKey()` |
+| `Gamepad.hpp`                      | Gamepads: stick, D-pad and bound buttons → INPUT mask; menu buttons |
 | `ClientSystems.hpp`                | `installSystems()`: every system, in order                 |
 | `Network/ServerConnection.hpp`     | Session with the server: connect, key exchange, encryption, retries, heartbeat, timeout |
 | `Replication.hpp`                  | Server payloads → entities and `Session` (no window, testable) |
@@ -77,10 +78,12 @@ screens. Players are told apart by colour, pattern and P1-P4 tag. Each colour mo
 its own copy of the sprites, repainted at startup (`Assets.cpp`, `theme::Palettes`).
 
 **Settings** open over the connection form (Settings button) or over the game
-(Esc menu → Settings; the game keeps running). Up/Down choose a row,
-Left/Right change the volume, colour mode and interface size, Enter changes a
-key: press the new key, or Esc to cancel. A key already used by another action is swapped with it. Changes
-apply at once and are saved.
+(Esc menu → Settings; the game keeps running). The arrows (or a pad's stick
+and D-pad) move to the nearest row that way, across both columns. Enter (or A)
+steps the volume, colour mode or interface size to its next value, wrapping
+around, or waits for a new key or button: press it, or Esc to cancel. A key
+already used by another action is swapped with it. Changes apply at once and
+are saved.
 
 **Interface size** keeps every position on the 1280 × 720 canvas: the view
 shows more or less of it (`layout::visibleArea()`), and clicks use the same view.
@@ -104,6 +107,11 @@ key.down = Down
 key.left = Left
 key.right = Right
 key.fire = Space
+button.up = none
+button.down = none
+button.left = none
+button.right = none
+button.fire = 0
 ```
 
 | System  | Location                                                        |

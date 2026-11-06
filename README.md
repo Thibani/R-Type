@@ -135,7 +135,7 @@ firewall when asked, or clients on other machines cannot reach it.
 
 The options fill the connection form. Every player needs an account: type a password
 (8 to 64 characters) and choose Create account the first time, then Enter logs in. In game: arrows to
-move, Space to fire, Esc for the menu. The `assets/` folder is copied next to the
+move, Space to fire, Esc for the menu; with a gamepad, the stick, A and Start. The `assets/` folder is copied next to the
 binary at build time. Exit code `84` on invalid arguments or missing assets.
 Details: [`src/client/README.md`](src/client/README.md).
 
