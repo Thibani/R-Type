@@ -9,7 +9,7 @@ server (`docs/protocol.md`).
 ```
 
 The options fill the connection form; type a password, then Enter logs in, or
-use Create account. Graphics, input and
+use Create account. The main page follows, and Play enters the game. Graphics, input and
 audio use **SFML 3.1** (fetched by CPM). Sprites, fonts and sounds are in
 `assets/`, copied next to the executable at build time.
 
@@ -68,7 +68,8 @@ other, they share components. `RenderSystem` only reads `Position` and
 | Screen        | When                                                              |
 |---------------|-------------------------------------------------------------------|
 | Connect       | At start, and after any failure (with its reason)                 |
-| Game          | After AUTH_RESULT (OK): a single player can play at once          |
+| Home          | After AUTH_RESULT (OK), and after leaving a game                  |
+| Game          | After JOIN_RESULT (OK): a single player can play at once          |
 | Waiting room  | Only if the server sends GAME_STATE = WAITING_FOR_PLAYERS         |
 | Game over     | GAME_STATE = GAME_OVER: team score and crew                       |
 
@@ -76,10 +77,11 @@ Every screen has the moving sky of `StarfieldSystem` behind it. The screens with
 gameplay also have slow gold streaks: never in the game, where they could look like shots.
 
 Esc opens the in-game menu (the game keeps running) or leaves the other
-screens. Players are told apart by colour, pattern and P1-P4 tag. Each colour mode has
+screens: the form quits, the waiting room and game over go back to the main page, and
+the main page itself ignores it, since logging out has its own button. Players are told apart by colour, pattern and P1-P4 tag. Each colour mode has
 its own copy of the sprites, repainted at startup (`Assets.cpp`, `theme::Palettes`).
 
-**Settings** open over the connection form (Settings button) or over the game
+**Settings** open over the connection form or the main page (Settings button) or over the game
 (Esc menu → Settings; the game keeps running). Up/Down choose a row,
 Left/Right change the volume, colour mode and interface size, Enter changes a
 key: press the new key, or Esc to cancel. A key already used by another action is swapped with it. Changes
@@ -135,9 +137,11 @@ key.fire = Space
 - Datagrams from another address or with another session token are ignored (§7).
 - Older snapshots are ignored; a destroyed netId is ignored for 5 s (§4.3, §5.1).
 - Unknown entity kinds are drawn as a "?" placeholder (§5.2).
-- The PLAYER_JOINED sent right after AUTH_RESULT for the players already
-  there fill the HUD without a notice; later ones are announced (§8.1).
-- Leaving or quitting sends DISCONNECT 3 times (§8.3).
+- JOIN_GAME and LEAVE_GAME are reliable: sent again until acknowledged (§6.2).
+- The PLAYER_JOINED sent right after JOIN_RESULT for the players already
+  there fill the HUD without a notice; later ones are announced (§8.4).
+- On the main page, what still arrives from a game we left is ignored (§8.4).
+- Logging out or quitting sends DISCONNECT 3 times (§8.3).
 
 ---
 

@@ -1,10 +1,10 @@
-# R-Type Network Protocol — Version 3
+# R-Type Network Protocol — Version 4
 
 | Status   | Implemented                 |
 |----------|-----------------------------|
-| Version  | 3                           |
+| Version  | 4                           |
 | Transport| UDP only                    |
-| Issue    | #21 (design), #10 (documentation), #97 (encryption), #73 (accounts) |
+| Issue    | #21 (design), #10 (documentation), #97 (encryption), #73 (accounts), #72 (main page) |
 
 This document specifies the binary protocol spoken between `r-type_client`
 and `r-type_server`. It is meant to be complete enough to write a new client
@@ -37,7 +37,10 @@ are to be interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/
    |        everything below is encrypted   |
    | -- AUTH_REQUEST ---------------------> |  log in, or create the account
    | <----------- AUTH_RESULT (reliable) -- |
-   |         if OK, the player is in game   |
+   |    if OK, the player is on the main    |
+   |    page: connected, not in the game    |
+   | -- JOIN_GAME (reliable) -------------> |  the player chooses to play
+   | <----------- JOIN_RESULT (reliable) -- |  a place in the game, or GAME_FULL
    | <-------- PLAYER_JOINED (reliable) --- |  one per player already in game
    | <-------- ENTITY_SPAWN  (reliable) --- |  one per existing entity
    |                                        |
@@ -45,6 +48,7 @@ are to be interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/
    | <------------ SNAPSHOT (30 Hz) ------ |
    | <------- events (reliable) ----------- |
    |                                        |
+   | -- LEAVE_GAME (reliable) ------------> |  back to the main page
    | -- DISCONNECT -----------------------> |  or silence => timeout
 ```
 
@@ -114,7 +118,7 @@ Every datagram starts with this 20-byte header.
 | Offset | Size | Field          | Description                                                  |
 |-------:|-----:|----------------|--------------------------------------------------------------|
 | 0      | 2    | `magic`        | Always `0x5254` (`"RT"`). Filters out stray traffic.          |
-| 2      | 1    | `version`      | Protocol version. This document describes version `3`.       |
+| 2      | 1    | `version`      | Protocol version. This document describes version `4`.       |
 | 3      | 1    | `type`         | Packet type, see [§4](#4-packet-types).                       |
 | 4      | 1    | `flags`        | Bit field, see below.                                         |
 | 5      | 1    | `reserved`     | **MUST** be `0`.                                              |
@@ -130,7 +134,7 @@ Every datagram starts with this 20-byte header.
 |----:|------------|----------------------------------------------------------------------|
 | 0   | `RELIABLE` | The payload starts with a `u16 reliableId` and must be acknowledged. |
 | 1   | `HAS_ACK`  | `ack` and `ackBits` are meaningful. Clear until a packet is received.|
-| 2–7 | —          | Reserved, **MUST** be `0` in version 3.                              |
+| 2–7 | —          | Reserved, **MUST** be `0` in version 4.                              |
 
 ### 3.2 Versioning
 
@@ -215,8 +219,11 @@ Sizes are payload sizes, header excluded. Reliable packets include their
 | `0x24` | `PLAYER_LEFT`     | S → C     | **yes**  | 4                  |
 | `0x25` | `PLAYER_DIED`     | S → C     | **yes**  | 5                  |
 | `0x26` | `GAME_STATE`      | S → C     | **yes**  | 7                  |
+| `0x30` | `JOIN_GAME`       | C → S     | **yes**  | 2                  |
+| `0x31` | `LEAVE_GAME`      | C → S     | **yes**  | 2                  |
+| `0x32` | `JOIN_RESULT`     | S → C     | **yes**  | 4                  |
 
-Ranges `0x00`, `0x08–0x0F`, `0x11–0x1F` and `0x27–0xFF` are reserved.
+Ranges `0x00`, `0x08–0x0F`, `0x11–0x1F`, `0x27–0x2F` and `0x33–0xFF` are reserved.
 
 These sizes are before encryption: every type except `CONNECT_REQUEST`,
 `CONNECT_ACCEPT` and `CONNECT_REJECT` adds 24 bytes on the network
@@ -237,7 +244,7 @@ These sizes are before encryption: every type except `CONNECT_REQUEST`,
 
 | Offset | Size | Field          | Description                                   |
 |-------:|-----:|----------------|-----------------------------------------------|
-| 0      | 1    | `playerId`     | `0`–`3`. Also selects the ship colour.        |
+| 0      | 1    | `playerId`     | Always `0xFF`: a place in the game comes with `JOIN_RESULT`. |
 | 1      | 1    | `tickRate`     | Server simulation rate in Hz (e.g. `60`).     |
 | 2      | 1    | `snapshotRate` | Snapshots per second (e.g. `30`).             |
 | 3      | 1    | `maxPlayers`   | Players per game (`4`).                       |
@@ -286,15 +293,21 @@ Reliable, and always the first reliable message of a session.
 
 | Code | Name                | Meaning                                                    |
 |-----:|---------------------|------------------------------------------------------------|
-| `0`  | `OK`                | The player is in the game                                  |
+| `0`  | `OK`                | The player is logged in, on the main page                  |
 | `1`  | `WRONG_CREDENTIALS` | Unknown name or wrong password: the same code for both     |
 | `2`  | `NAME_TAKEN`        | REGISTER: this account already exists                      |
-| `3`  | `ALREADY_CONNECTED` | LOGIN: right password, but this account is in the game     |
+| `3`  | `ALREADY_CONNECTED` | LOGIN: right password, but this account is already connected |
 | `4`  | `INVALID_PASSWORD`  | REGISTER: fewer than 8 bytes                               |
 | `5`  | `INVALID_NAME`      | REGISTER: empty name, or a control character in it         |
 | `6`  | `SERVER_ERROR`      | The server could not hash or save                          |
 
 ### 4.2 Client → server
+
+#### `JOIN_GAME` (`0x30`) and `LEAVE_GAME` (`0x31`)
+
+Reliable, and their only field is `reliableId`. Before the login, the server
+ignores them. It also ignores `JOIN_GAME` from a player in the game, and
+`LEAVE_GAME` from a player who is not ([§8.4](#84-main-page-and-game)).
 
 #### `INPUT` (`0x10`)
 
@@ -417,6 +430,14 @@ newcomer once for every player already connected.
 | 2      | 1    | `state`      | `0` WAITING_FOR_PLAYERS, `1` RUNNING, `2` GAME_OVER |
 | 3      | 4    | `score`      | Shared team score.                            |
 
+`JOIN_RESULT` (`0x32`) — the answer to `JOIN_GAME`. It comes before every event of the game.
+
+| Offset | Size | Field        | Values                                        |
+|-------:|-----:|--------------|-----------------------------------------------|
+| 0      | 2    | `reliableId` |                                               |
+| 2      | 1    | `code`       | `0` OK, `1` GAME_FULL                         |
+| 3      | 1    | `playerId`   | `0`–`3` if OK, `0xFF` otherwise               |
+
 ---
 
 ## 5. Identifiers and enumerations
@@ -449,7 +470,9 @@ a placeholder.
 ### 5.3 Players
 
 `playerId` is `0`–`3`, unique in a game, and selects the ship colour so the
-four players are distinct. `0xFF` means "no player" (`owner` of an enemy).
+four players are distinct. A player has one only while in the game: it is given
+by `JOIN_RESULT`, and may change after leaving. `0xFF` means "no player" (`owner`
+of an enemy, `CONNECT_ACCEPT`).
 
 ---
 
@@ -487,7 +510,7 @@ four players are distinct. `0xFF` means "no player" (`owner` of an enemy).
   messages wait until the window moves. Without this rule, losing a single
   message while many others are in flight would disconnect a healthy peer.
 
-In version 3 only the server sends reliable messages.
+In version 4 the client sends reliable messages too (`JOIN_GAME`, `LEAVE_GAME`), with the same rules.
 
 ---
 
@@ -550,40 +573,57 @@ against the remaining bytes first (rule 8).
 1. The client sends `CONNECT_REQUEST` with `sessionToken = 0`, every 500 ms,
    up to 10 times, until it gets an answer.
 2. The server answers:
-   - `CONNECT_REJECT` if the version differs, the game is full or running,
-     or the name is invalid;
-   - otherwise `CONNECT_ACCEPT` with a new token and `playerId`.
+   - `CONNECT_REJECT` if the version differs, the server already has 64 sessions
+     (`SERVER_FULL`), or the name is invalid;
+   - otherwise `CONNECT_ACCEPT` with a new token.
    A duplicate request from an address that already has a session receives
    the same `CONNECT_ACCEPT` again (the first one may have been lost). A
    request with another `publicKey` gets no answer and does not change the
    session: an address can be faked. An invalid `publicKey` gets no answer.
 3. The client sends `AUTH_REQUEST`, sealed, every 500 ms, up to 20 times, until
    it receives `AUTH_RESULT`. The server handles only the first one it receives.
-   Until the result is `OK`, the session is not part of the game: the server sends
-   it only `AUTH_RESULT` and heartbeats, and ignores everything from it except
+   Until the result is `OK`, the server sends the session only `AUTH_RESULT` and heartbeats, and ignores everything from it except
    `AUTH_REQUEST`, `HEARTBEAT` and `DISCONNECT`.
 4. If the result is not `OK`, the client sends `DISCONNECT`, and must open a new
    session to try again. The server closes a session still not logged in after
    **10 seconds** (`DISCONNECT` TIMEOUT).
-5. If it is `OK`, the server sends the newcomer, reliably: `PLAYER_JOINED` for every
-   other player, `ENTITY_SPAWN` for every existing entity, then `GAME_STATE`. It
-   sends `PLAYER_JOINED` for the newcomer to every other client.
+5. If it is `OK`, the player is on the main page ([§8.4](#84-main-page-and-game)).
 
-An account can be in the game only once. A session that is not logged in still uses
-one of the 4 player slots, for at most 10 seconds.
+An account can be connected only once. A session that is not logged in uses one of
+the 64 sessions, for at most 10 seconds.
 
 ### 8.2 Keep-alive and timeout
 
 - A peer that sent nothing for **250 ms** sends a `HEARTBEAT`.
 - A peer that received nothing for **5 seconds** considers the session dead.
 - When a client session dies (timeout, crash, `DISCONNECT`), the server
-  removes it, destroys its ship and sends `PLAYER_LEFT` to the remaining
-  clients. The game goes on.
+  removes it. If it was in the game, the server destroys its ship and sends
+  `PLAYER_LEFT` to the remaining players. The game goes on.
 
 ### 8.3 Disconnection
 
 Either side sends `DISCONNECT` (3 times, best effort) and forgets the
 session. A client receiving `DISCONNECT` returns to its connection screen.
+
+### 8.4 Main page and game
+
+A logged-in player is on the main page: the session is open, and nothing of the game
+is sent to it. The other players do not know about it. Any number of players can be
+there, up to the 64 sessions of the server.
+
+- `JOIN_GAME`, with a free place among the 4: the server sends `JOIN_RESULT (OK)` with
+  a `playerId`. Then, reliably and in this order: `PLAYER_JOINED` for every other
+  player, `ENTITY_SPAWN` for every existing entity, then `GAME_STATE`. It sends
+  `PLAYER_JOINED` for the newcomer to every other player.
+- `JOIN_GAME`, with no free place: `JOIN_RESULT (GAME_FULL)`, and the player stays on
+  the main page. A place freed in a frame can only be taken from the next one.
+- `LEAVE_GAME`: the player goes back to the main page and frees their place. The server
+  destroys their ship, and sends `PLAYER_LEFT (QUIT)` to the other players. Coming
+  back is a new `JOIN_GAME`, which sends everything again.
+
+Events and snapshots sent before the server read `LEAVE_GAME` may still arrive: a client
+**MUST** ignore them until `JOIN_RESULT`. The input ticks and snapshot ticks of a session
+keep growing across games, so nothing late from one game counts in the next.
 
 ---
 
@@ -613,7 +653,7 @@ that is about **40 KB/s per client** downstream, events excluded. Upstream, `INP
 
 ```text
 52 54             magic "RT"
-03                version 3
+04                version 4
 01                type CONNECT_REQUEST
 00                flags: none (nothing received yet, so no HAS_ACK)
 00                reserved
@@ -632,10 +672,8 @@ Total: 68 bytes.
 
 ## 11. Possible extensions
 
-Kept out of version 3, but the header leaves room for them:
+Kept out of version 4, but the header leaves room for them:
 
 - a `COMPRESSED` flag bit for LZ4 or zlib payloads;
 - delta snapshots relative to the last acknowledged snapshot;
-- rooms and lobbies, as new packet types in the `0x30–0x4F` range (#71, #72);
-- reliable client → server messages (chat, room commands) using the same
-  mechanism as [§6.2](#62-reliable-messages).
+- rooms and lobbies, as new packet types in the `0x33–0x4F` range (#71, #72).
