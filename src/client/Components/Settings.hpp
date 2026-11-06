@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 
 namespace client {
@@ -45,8 +46,13 @@ struct Settings {
         sf::Keyboard::Key::Space,
     };
 
+    // Gamepad buttons, by Action: the stick and D-pad already move, A fires
+    static constexpr std::array<std::optional<unsigned>, ActionCount> DefaultButtons{
+        std::nullopt, std::nullopt, std::nullopt, std::nullopt, 0U};
+
     int volume{80}; // Sound effects, 0 (muted) to 100 %
     std::array<sf::Keyboard::Key, ActionCount> keys{DefaultKeys}; // Indexed by Action
+    std::array<std::optional<unsigned>, ActionCount> buttons{DefaultButtons}; // Indexed by Action
     ColourMode colourMode{ColourMode::Off};
     int interfaceSize{100}; // Percent, one of InterfaceSizes
 

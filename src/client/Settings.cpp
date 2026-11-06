@@ -1,5 +1,7 @@
 #include "client/Settings.hpp"
 
+#include "client/Gamepad.hpp"
+
 #include <algorithm>
 #include <array>
 #include <charconv>
@@ -53,6 +55,11 @@ constexpr std::array<std::string_view, ActionCount> ActionKeys{
     "key.up", "key.down", "key.left", "key.right", "key.fire",
 };
 
+/// File names of the gamepad buttons, in `Action` order.
+constexpr std::array<std::string_view, ActionCount> ActionButtons{
+    "button.up", "button.down", "button.left", "button.right", "button.fire",
+};
+
 /// In `ColourMode` order.
 constexpr std::array<std::string_view, ColourModeCount> ColourModeNames{
     "Off", "Protanopia", "Deuteranopia", "Tritanopia",
@@ -96,6 +103,17 @@ void applySetting(Settings& settings, std::string_view key, std::string_view val
         if (const auto name = std::ranges::find(ColourModeNames, value); name != ColourModeNames.end()) {
             settings.colourMode = static_cast<ColourMode>(name - ColourModeNames.begin());
         }
+    } else if (key.starts_with("button.")) {
+        const auto button = parseInt(value);
+        const bool valid = value == "none"
+            || (button && *button >= 0 && std::cmp_less(*button, gamepad::MaxButtons)
+                && std::cmp_not_equal(*button, gamepad::StartButton));
+        for (std::size_t action = 0; action < ActionCount; ++action) {
+            if (ActionButtons.at(action) == key && valid) {
+                settings.buttons.at(action)
+                    = button ? std::optional(static_cast<unsigned>(*button)) : std::nullopt;
+            }
+        }
     } else {
         for (std::size_t action = 0; action < ActionCount; ++action) {
             const auto bound = keyFromName(value);
@@ -106,11 +124,23 @@ void applySetting(Settings& settings, std::string_view key, std::string_view val
     }
 }
 
-bool sharesAKey(const Settings& settings) noexcept
+constexpr bool isUnbound(sf::Keyboard::Key /*key*/) noexcept
+{
+    return false; // Every action has a key
+}
+
+constexpr bool isUnbound(std::optional<unsigned> button) noexcept
+{
+    return !button;
+}
+
+/// True if two actions share a value. Unbound buttons do not count.
+template <typename T>
+bool sharesAValue(const std::array<T, ActionCount>& values) noexcept
 {
     for (std::size_t a = 0; a < ActionCount; ++a) {
         for (std::size_t b = a + 1; b < ActionCount; ++b) {
-            if (settings.keys.at(a) == settings.keys.at(b)) {
+            if (values.at(a) == values.at(b) && !isUnbound(values.at(a))) {
                 return true;
             }
         }
@@ -161,6 +191,21 @@ bool bindKey(Settings& settings, Action action, sf::Keyboard::Key key) noexcept
     return true;
 }
 
+bool bindButton(Settings& settings, Action action, unsigned button) noexcept
+{
+    if (button >= gamepad::MaxButtons || button == gamepad::StartButton) {
+        return false;
+    }
+    auto& buttons = settings.buttons;
+    const auto index = static_cast<std::size_t>(action);
+    // NOLINTNEXTLINE(readability-qualified-auto): a raw pointer on libstdc++ only, not on MSVC
+    if (auto other = std::ranges::find(buttons, std::optional(button)); other != buttons.end()) {
+        *other = buttons.at(index);
+    }
+    buttons.at(index) = button;
+    return true;
+}
+
 Settings parseSettings(std::string_view text)
 {
     Settings settings;
@@ -179,8 +224,12 @@ Settings parseSettings(std::string_view text)
 
         applySetting(settings, key, value);
     }
-    if (sharesAKey(settings)) {
-        settings.keys = Settings::DefaultKeys; // Edited by hand into a conflict
+    // Edited by hand into a conflict
+    if (sharesAValue(settings.keys)) {
+        settings.keys = Settings::DefaultKeys;
+    }
+    if (sharesAValue(settings.buttons)) {
+        settings.buttons = Settings::DefaultButtons;
     }
     return settings;
 }
@@ -194,6 +243,11 @@ std::string formatSettings(const Settings& settings)
     for (std::size_t action = 0; action < ActionCount; ++action) {
         text += std::string(ActionKeys.at(action)) + " = "
             + std::string(keyName(settings.keys.at(action)).value_or("Space")) + '\n';
+    }
+    for (std::size_t action = 0; action < ActionCount; ++action) {
+        const auto button = settings.buttons.at(action);
+        text += std::string(ActionButtons.at(action)) + " = "
+            + (button ? std::to_string(*button) : std::string("none")) + '\n';
     }
     return text;
 }

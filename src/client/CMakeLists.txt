@@ -23,6 +23,7 @@ add_library(rtype_client
     ClientOptions.cpp
     Settings.hpp
     Settings.cpp
+    Gamepad.cpp
     Singleton.hpp
     Replication.hpp
     Replication.cpp
