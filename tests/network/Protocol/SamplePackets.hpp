@@ -127,6 +127,11 @@ inline std::vector<Sample> all()
         toServer(makePacket(FriendRemove{.name = "Zoë"}, 18)),
         toClient(makePacket(FriendResult{.code = FriendCode::LimitReached}, 19)),
         toClient(makePacket(FriendEntry{.name = "Zoë", .state = FriendState::Removed}, 20)),
+        toServer(makePacket(ChatSend{.text = "Salut à tous"}, 21)),
+        toServer(makePacket(PrivateSend{.name = "Zoë", .text = std::string(MaxChatSize, 'x')}, 22)),
+        toClient(makePacket(
+            ChatMessage{.kind = ChatKind::Received, .name = "Zoë", .text = "ça va ?"}, 23)),
+        toClient(makePacket(ChatRefused{.reason = ChatRefusal::MailboxFull}, 24)),
     };
 }
 

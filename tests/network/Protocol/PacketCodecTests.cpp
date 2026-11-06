@@ -74,7 +74,7 @@ TEST(PacketCodec, MatchesTheSpecificationExample)
     };
 
     const auto expected = bytes({
-        0x52, 0x54, 0x05, 0x01, 0x00, 0x00, 0x00, 0x30, // magic, version, type, flags, reserved, size
+        0x52, 0x54, 0x06, 0x01, 0x00, 0x00, 0x00, 0x30, // magic, version, type, flags, reserved, size
         0x00, 0x00, 0x00, 0x00, // sessionToken
         0x00, 0x00, 0x00, 0x00, // sequence, ack
         0x00, 0x00, 0x00, 0x00, // ackBits
@@ -122,7 +122,7 @@ TEST(PacketCodec, EncodesHeaderFields)
     const auto datagram = encodeOrFail(packet);
 
     const auto expected = bytes({
-        0x52, 0x54, 0x05, 0x25, // magic, version, PLAYER_DIED
+        0x52, 0x54, 0x06, 0x25, // magic, version, PLAYER_DIED
         0x03, 0x00, 0x00, 0x05, // RELIABLE | HAS_ACK, reserved, payloadSize 5
         0xCA, 0xFE, 0xBA, 0xBE, // sessionToken
         0x00, 0x2A, 0x00, 0x29, // sequence 42, ack 41
@@ -163,6 +163,10 @@ TEST(PacketCodec, PayloadSizesMatchTheSpecification)
         {.payload = FriendRemove{.name = "a"}, .size = 18},
         {.payload = FriendResult(), .size = 3},
         {.payload = FriendEntry{.name = "a", .state = FriendState::Online}, .size = 19},
+        {.payload = ChatSend{.text = "abc"}, .size = 6},
+        {.payload = PrivateSend{.name = "a", .text = "abc"}, .size = 22},
+        {.payload = ChatMessage{.kind = ChatKind::Game, .name = "a", .text = "abc"}, .size = 23},
+        {.payload = ChatRefused(), .size = 3},
     };
 
     for (const auto& [payload, size] : cases) {
@@ -458,6 +462,18 @@ TEST(PacketCodecEncoding, RefusesInvalidPayloads)
         FriendResult{.code = static_cast<FriendCode>(5)},
         FriendEntry{.name = "", .state = FriendState::Online},
         FriendEntry{.name = "a", .state = static_cast<FriendState>(5)},
+        ChatSend{.text = ""},
+        ChatSend{.text = std::string(MaxChatSize + 1, 'x')},
+        ChatSend{.text = "two\nlines"},
+        ChatSend{.text = "a\tb"},
+        ChatSend{.text = std::string("a\0b", 3)},
+        ChatSend{.text = "\xC3"}, // Cut in the middle of a character
+        PrivateSend{.name = "", .text = "a"},
+        PrivateSend{.name = "a", .text = ""},
+        ChatMessage{.kind = static_cast<ChatKind>(3), .name = "a", .text = "b"},
+        ChatMessage{.kind = ChatKind::Game, .name = "", .text = "b"},
+        ChatMessage{.kind = ChatKind::Game, .name = "a", .text = ""},
+        ChatRefused{.reason = static_cast<ChatRefusal>(3)},
         Input{.firstTick = 0, .count = 0, .masks = {}},
         Input{.firstTick = 0, .count = 9, .masks = {}},
         Snapshot{.serverTick = 0, .lastInputTick = 0, .partIndex = 0, .partCount = 1, .entities = std::vector<EntityState>(MaxSnapshotEntities + 1)},
@@ -558,4 +574,15 @@ TEST(PacketCodecAuth, AuthPacketsOnlyTravelOneWay)
         DecodeError::WrongDirection);
     EXPECT_EQ(decodeError(encodeOrFail(makePacket(AuthResult{})), Direction::ClientToServer),
         DecodeError::WrongDirection);
+}
+
+TEST(PacketCodecValidation, RejectsAChatTextWhoseCountDoesNotMatch)
+{
+    for (const int change : {-1, 1, 100}) {
+        auto datagram = encodeOrFail(makePacket(ChatSend{.text = "abc"}, 1));
+        const std::size_t count = HeaderSize + 2; // After the reliableId
+        datagram.at(count) = static_cast<std::byte>(3 + change);
+        EXPECT_EQ(decodeError(datagram, Direction::ClientToServer), DecodeError::BadPayloadSize)
+            << change;
+    }
 }
