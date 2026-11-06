@@ -25,6 +25,10 @@ add_library(rtype_server
     Components/Combat.hpp
     AccountStore.hpp
     AccountStore.cpp
+    FriendStore.hpp
+    FriendStore.cpp
+    TextFile.hpp
+    TextFile.cpp
     Spawn.hpp
     Spawn.cpp
 
@@ -38,6 +42,8 @@ add_library(rtype_server
     Systems/LoginSystem.cpp
     Systems/JoinSystem.hpp
     Systems/JoinSystem.cpp
+    Systems/FriendSystem.hpp
+    Systems/FriendSystem.cpp
     Systems/TimeoutSystem.hpp
     Systems/TimeoutSystem.cpp
     Systems/SessionCleanupSystem.hpp

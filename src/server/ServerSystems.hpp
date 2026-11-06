@@ -4,6 +4,7 @@
 #include "ecs/World/World.hpp"
 #include "network/Transport/NetworkThread.hpp"
 #include "server/AccountStore.hpp"
+#include "server/FriendStore.hpp"
 
 namespace server {
 
@@ -12,8 +13,10 @@ namespace server {
 ///     frameStart  NetReceiveSystem      network thread inbox → ReceivedPacket / IncompatibleClient
 ///                 ConnectionSystem      CONNECT_REQUEST → session, ACCEPT / REJECT
 ///                 SessionReceiveSystem  other packets → session, ClientMessage
-///                 LoginSystem           AUTH_REQUEST → account checked, player admitted
+///                 LoginSystem           AUTH_REQUEST → account checked, main page open
+///                 JoinSystem            JOIN_GAME / LEAVE_GAME → place in the game
 ///                 TimeoutSystem         silent sessions → Disconnecting
+///                 FriendSystem          friends' messages, who is online, saved once a second
 ///                 InputSystem           INPUT → the player's PlayerInput
 ///                 PlayerShipSystem      one ship per connected player, respawn delay
 ///     simulation  installSimulation()   below
@@ -26,11 +29,11 @@ namespace server {
 /// Every system runs on the game thread; `socket` hands datagrams to and from
 /// the network thread.
 ///
-/// `accounts` must outlive `loop`.
+/// `accounts` and `friends` must outlive `loop`.
 ///
 /// `main` and the tests both use it, so they always run the same server.
-void installSystems(
-    ecs::World& world, ecs::GameLoop& loop, network::NetworkThread& socket, AccountStore& accounts);
+void installSystems(ecs::World& world, ecs::GameLoop& loop, network::NetworkThread& socket,
+    AccountStore& accounts, FriendStore& friends);
 
 /// The simulation alone (the World's own systems, at the fixed step), in order:
 ///
