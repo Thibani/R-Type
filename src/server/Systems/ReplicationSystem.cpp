@@ -14,7 +14,13 @@ namespace server {
 using namespace network::protocol;
 
 ReplicationSystem::ReplicationSystem(ecs::World& world)
+    : ReplicationSystem(world, world)
+{
+}
+
+ReplicationSystem::ReplicationSystem(ecs::World& world, ecs::World& sessions)
     : _world(world)
+    , _sessions(sessions)
     , _onDespawn(world.events().subscribe<game::DespawnEvent>(
           [this](const game::DespawnEvent& despawn) { onDespawn(despawn); }))
 {
@@ -60,7 +66,8 @@ void ReplicationSystem::update(ecs::World& world, const ecs::Time& /*time*/)
     });
 
     const std::uint32_t score = singleton<TeamScore>(world).value;
-    world.query<NetClient, InGame>([&](ecs::Entity /*entity*/, NetClient& client, InGame&) {
+    world.query<InGame>([&](ecs::Entity /*entity*/, InGame& player) {
+        NetClient& client = _sessions.getComponent<NetClient>(player.session);
         for (const PlayerDied& death : _deaths) {
             client.channel.queueReliable(death);
         }

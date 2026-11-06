@@ -1,11 +1,12 @@
 #include "server/Systems/SnapshotSystem.hpp"
 
 #include "ecs/World/World.hpp"
-#include "game/Components/Motion.hpp"
 #include "game/Components/Health.hpp"
+#include "game/Components/Motion.hpp"
 #include "server/Components/NetClient.hpp"
 #include "server/Components/NetEntity.hpp"
 #include "server/Components/Player.hpp"
+#include "server/GameRoom.hpp"
 #include "server/Network.hpp"
 #include "server/Singleton.hpp"
 
@@ -50,6 +51,13 @@ SnapshotSystem::SnapshotSystem(network::NetworkThread& socket) noexcept
 
 void SnapshotSystem::update(ecs::World& world, const ecs::Time& time)
 {
+    for (const auto& [id, room] : singleton<GameRooms>(world).rooms) {
+        sendRoom(room->world, world, time);
+    }
+}
+
+void SnapshotSystem::sendRoom(ecs::World& world, ecs::World& sessions, const ecs::Time& time)
+{
     const std::uint32_t tick = singleton<SimulationTick>(world).value;
     auto& last = singleton<LastSnapshot>(world).tick;
     if (last && tick - *last < TicksPerSnapshot) {
@@ -76,7 +84,8 @@ void SnapshotSystem::update(ecs::World& world, const ecs::Time& time)
     });
 
     const TimePoint now = toTimePoint(time);
-    world.query<NetClient, InGame>([&](ecs::Entity entity, NetClient& client, InGame&) {
+    world.query<InGame>([&](ecs::Entity entity, InGame& player) {
+        NetClient& client = sessions.getComponent<NetClient>(player.session);
         const auto* input = world.tryGetComponent<PlayerInput>(entity);
         const std::uint32_t lastInputTick = input != nullptr ? input->lastTick : 0;
         for (Snapshot& part : snapshotParts(entities, tick, lastInputTick)) {

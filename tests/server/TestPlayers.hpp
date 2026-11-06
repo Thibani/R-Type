@@ -11,7 +11,8 @@
 /// Helpers for server tests that run systems on a plain World, without sockets.
 namespace testing_players {
 
-/// A player in the game, as ConnectionSystem, LoginSystem and JoinSystem would make it.
+/// A player in a game, on a single World: their session and their place in the game on the
+/// same entity, which is all the systems of a game need.
 inline ecs::Entity addPlayer(ecs::World& world, std::uint8_t playerId)
 {
     const ecs::Entity player = world.createEntity();
@@ -32,7 +33,7 @@ inline ecs::Entity addPlayer(ecs::World& world, std::uint8_t playerId)
             .knownScore = std::nullopt,
         });
     world.addComponent(player, server::LoggedIn{});
-    world.addComponent(player, server::InGame{.playerId = playerId});
+    world.addComponent(player, server::InGame{.playerId = playerId, .session = player});
     return player;
 }
 

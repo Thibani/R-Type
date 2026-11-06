@@ -74,7 +74,7 @@ TEST(PacketCodec, MatchesTheSpecificationExample)
     };
 
     const auto expected = bytes({
-        0x52, 0x54, 0x06, 0x01, 0x00, 0x00, 0x00, 0x30, // magic, version, type, flags, reserved, size
+        0x52, 0x54, 0x07, 0x01, 0x00, 0x00, 0x00, 0x30, // magic, version, type, flags, reserved, size
         0x00, 0x00, 0x00, 0x00, // sessionToken
         0x00, 0x00, 0x00, 0x00, // sequence, ack
         0x00, 0x00, 0x00, 0x00, // ackBits
@@ -122,7 +122,7 @@ TEST(PacketCodec, EncodesHeaderFields)
     const auto datagram = encodeOrFail(packet);
 
     const auto expected = bytes({
-        0x52, 0x54, 0x06, 0x25, // magic, version, PLAYER_DIED
+        0x52, 0x54, 0x07, 0x25, // magic, version, PLAYER_DIED
         0x03, 0x00, 0x00, 0x05, // RELIABLE | HAS_ACK, reserved, payloadSize 5
         0xCA, 0xFE, 0xBA, 0xBE, // sessionToken
         0x00, 0x2A, 0x00, 0x29, // sequence 42, ack 41
@@ -167,6 +167,17 @@ TEST(PacketCodec, PayloadSizesMatchTheSpecification)
         {.payload = PrivateSend{.name = "a", .text = "abc"}, .size = 22},
         {.payload = ChatMessage{.kind = ChatKind::Game, .name = "a", .text = "abc"}, .size = 23},
         {.payload = ChatRefused(), .size = 3},
+        {.payload = GroupCode(), .size = 3},
+        {.payload = GroupJoin{.code = "ABC234"}, .size = 8},
+        {.payload = GroupLeave(), .size = 2},
+        {.payload = GroupKick{.name = "a"}, .size = 18},
+        {.payload = GroupPromote{.name = "a"}, .size = 18},
+        {.payload = GroupInvite{.name = "a"}, .size = 18},
+        {.payload = GroupAnswer{.name = "a", .reply = FriendReply::Accept}, .size = 19},
+        {.payload = GroupReady(), .size = 3},
+        {.payload = GroupState{.code = "", .countdown = 0, .leader = 0, .members = {{.name = "a", .ready = false, .inGame = false}, {.name = "b", .ready = false, .inGame = false}}}, .size = 11 + (2 * 17)},
+        {.payload = GroupResult(), .size = 3},
+        {.payload = GroupInvited{.name = "a"}, .size = 18},
     };
 
     for (const auto& [payload, size] : cases) {
@@ -452,8 +463,25 @@ TEST(PacketCodecEncoding, RefusesInvalidPayloads)
         ConnectAccept{.playerId = 0, .tickRate = 60, .snapshotRate = 30, .maxPlayers = 4},
         JoinResult{.code = JoinCode::Ok, .playerId = NoPlayer},
         JoinResult{.code = JoinCode::Ok, .playerId = 4},
-        JoinResult{.code = JoinCode::GameFull, .playerId = 0},
-        JoinResult{.code = static_cast<JoinCode>(2), .playerId = NoPlayer},
+        JoinResult{.code = JoinCode::NotReady, .playerId = 0},
+        JoinResult{.code = static_cast<JoinCode>(3), .playerId = NoPlayer},
+        GroupCode{.action = static_cast<GroupCodeAction>(2)},
+        GroupJoin{.code = ""},
+        GroupJoin{.code = "ABC23"},
+        GroupJoin{.code = "ABC2345"},
+        GroupJoin{.code = "abc234"},
+        GroupJoin{.code = "ABCO23"}, // O is not in the alphabet
+        GroupKick{.name = ""},
+        GroupPromote{.name = ""},
+        GroupInvite{.name = ""},
+        GroupAnswer{.name = "a", .reply = static_cast<FriendReply>(2)},
+        GroupState{.code = "", .countdown = 0, .leader = 0, .members = {}},
+        GroupState{.code = "", .countdown = 0, .leader = 1, .members = {{.name = "a", .ready = false, .inGame = false}}},
+        GroupState{.code = "x", .countdown = 0, .leader = 0, .members = {{.name = "a", .ready = false, .inGame = false}}},
+        GroupState{.code = "", .countdown = 0, .leader = 0, .members = {{.name = "", .ready = false, .inGame = false}}},
+        GroupState{.code = "", .countdown = 0, .leader = 0, .members = std::vector<GroupMemberState>(5, GroupMemberState{.name = "a", .ready = false, .inGame = false})},
+        GroupResult{.outcome = static_cast<GroupOutcome>(12)},
+        GroupInvited{.name = ""},
         FriendRequest{.name = ""},
         FriendRequest{.name = "seventeen bytes!!"},
         FriendAnswer{.name = "", .reply = FriendReply::Accept},

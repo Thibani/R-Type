@@ -30,6 +30,10 @@ add_library(rtype_server
     MessageStore.hpp
     MessageStore.cpp
     OnlinePlayers.hpp
+    Groups.hpp
+    Groups.cpp
+    GameRoom.hpp
+    GameRoom.cpp
     TextFile.hpp
     TextFile.cpp
     Spawn.hpp
@@ -43,8 +47,10 @@ add_library(rtype_server
     Systems/SessionReceiveSystem.cpp
     Systems/LoginSystem.hpp
     Systems/LoginSystem.cpp
-    Systems/JoinSystem.hpp
-    Systems/JoinSystem.cpp
+    Systems/GroupSystem.hpp
+    Systems/GroupSystem.cpp
+    Systems/RoomSystem.hpp
+    Systems/RoomSystem.cpp
     Systems/FriendSystem.hpp
     Systems/FriendSystem.cpp
     Systems/ChatSystem.hpp

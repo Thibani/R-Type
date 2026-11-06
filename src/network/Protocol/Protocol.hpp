@@ -5,15 +5,16 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <string_view>
 
-/// Constants and enumerations of the R-Type network protocol, version 6.
+/// Constants and enumerations of the R-Type network protocol, version 7.
 /// The reference is docs/protocol.md: section numbers below point to it.
 namespace network::protocol {
 
 // --- Sizes and identification (§2, §3) ---------------------------------------
 
 inline constexpr std::uint16_t Magic = 0x5254; // "RT"
-inline constexpr std::uint8_t Version = 6;
+inline constexpr std::uint8_t Version = 7;
 
 inline constexpr std::size_t HeaderSize = 20;
 inline constexpr std::size_t MaxDatagramSize = 1200;
@@ -24,6 +25,9 @@ inline constexpr std::size_t NameSize = 16;
 inline constexpr std::size_t MinPasswordSize = 8; // Only checked when an account is created
 inline constexpr std::size_t MaxPasswordSize = 64;
 inline constexpr std::size_t MaxChatSize = 200; // Bytes of UTF-8 in one message
+inline constexpr std::size_t GroupCodeSize = 6;
+// 32 signs: neither I, O, 0 nor 1, which are easy to mistake when reading a code aloud
+inline constexpr std::string_view GroupCodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 inline constexpr std::size_t MaxInputMasks = 8;
 inline constexpr std::size_t SnapshotHeaderSize = 11;
 inline constexpr std::size_t EntityStateSize = 13;
@@ -72,6 +76,17 @@ enum class PacketType : std::uint8_t {
     PrivateSend = 0x39,
     ChatMessage = 0x3A,
     ChatRefused = 0x3B,
+    GroupCode = 0x3C,
+    GroupJoin = 0x3D,
+    GroupLeave = 0x3E,
+    GroupKick = 0x3F,
+    GroupPromote = 0x40,
+    GroupInvite = 0x41,
+    GroupAnswer = 0x42,
+    GroupReady = 0x43,
+    GroupState = 0x44,
+    GroupResult = 0x45,
+    GroupInvited = 0x46,
 };
 
 /// Which way a packet travels. A receiver drops packets going the wrong way.
@@ -115,7 +130,37 @@ enum class AuthCode : std::uint8_t {
 
 enum class JoinCode : std::uint8_t {
     Ok = 0,
-    GameFull = 1,
+    NotLeader = 1, // Only the leader starts the game
+    NotReady = 2, // A member is not ready, or still in a game
+};
+
+/// Bits of a member, in GROUP_STATE.
+namespace groupMember {
+inline constexpr std::uint8_t Ready = 1U << 0U;
+inline constexpr std::uint8_t InGame = 1U << 1U;
+inline constexpr std::uint8_t Known = Ready | InGame;
+} // namespace groupMember
+
+inline constexpr std::size_t GroupMemberSize = NameSize + 1; // In GROUP_STATE
+
+enum class GroupCodeAction : std::uint8_t {
+    Generate = 0, // A new code replaces the old one
+    Delete = 1,
+};
+
+enum class GroupOutcome : std::uint8_t {
+    Invited = 0, // The invitation went out
+    UnknownCode = 1,
+    GroupFull = 2,
+    Kicked = 3, // This group's code no longer works for this player
+    GroupInGame = 4,
+    NotLeader = 5,
+    NotMember = 6,
+    Alone = 7, // Nobody to leave
+    TooManyTries = 8, // Too many wrong codes: wait
+    NotAvailable = 9, // Invited: not a friend, or offline
+    InvitationGone = 10,
+    RemovedFromGroup = 11, // The leader removed this player
 };
 
 enum class FriendReply : std::uint8_t {
@@ -142,7 +187,7 @@ enum class FriendState : std::uint8_t {
 
 /// Who a CHAT_MESSAGE is for, and what its `name` means.
 enum class ChatKind : std::uint8_t {
-    Game = 0, // For the players of the game; `name` wrote it
+    Game = 0, // For the group, in a game or not; `name` wrote it
     Received = 1, // Private; `name` wrote it
     Sent = 2, // Private, our own, as the server took it; `name` receives it
 };

@@ -9,23 +9,23 @@
 
 namespace server {
 
-/// Adds every server system to `loop` and `world`, in the order they must run:
+/// Adds every server system to `loop`, in the order they must run. `world` holds the
+/// sessions, whether their players are on the main page or in a game. Each game has
+/// its own World and loop (`GameRoom`), which `RoomSystem` runs:
 ///
 ///     frameStart  NetReceiveSystem      network thread inbox → ReceivedPacket / IncompatibleClient
 ///                 ConnectionSystem      CONNECT_REQUEST → session, ACCEPT / REJECT
 ///                 SessionReceiveSystem  other packets → session, ClientMessage
 ///                 LoginSystem           AUTH_REQUEST → account checked, main page open
-///                 JoinSystem            JOIN_GAME / LEAVE_GAME → place in the game
+///                 RoomMessageSystem     LEAVE_GAME → main page, INPUT → the player's game
 ///                 TimeoutSystem         silent sessions → Disconnecting
 ///                 FriendSystem          friends' messages, who is online, saved once a second
+///                 GroupSystem           group orders, countdown, game started, GROUP_STATE
 ///                 ChatSystem            chat and private messages, saved once a second
-///                 InputSystem           INPUT → the player's PlayerInput
-///                 PlayerShipSystem      one ship per connected player, respawn delay
-///     simulation  installSimulation()   below
 ///     frameEnd    SessionCleanupSystem  Disconnecting → PLAYER_LEFT, entity destroyed
-///                 ReplicationSystem     ENTITY_SPAWN / ENTITY_DESTROY / PLAYER_DIED / GAME_STATE
+///                 RoomSystem            one frame of each game, empty games removed
 ///                 NetSendSystem         reliable messages, resends, heartbeats
-///                 SnapshotSystem        SNAPSHOT of every networked entity, 30 Hz
+///                 SnapshotSystem        SNAPSHOT of each game, 30 Hz
 ///                 DiscardPacketsSystem  unhandled messages destroyed
 ///
 /// Every system runs on the game thread; `socket` hands datagrams to and from
@@ -37,6 +37,13 @@ namespace server {
 void installSystems(ecs::World& world, ecs::GameLoop& loop, network::NetworkThread& socket,
     AccountStore& accounts, FriendStore& friends, MessageStore& messages);
 
+/// In the loop of each game:
+///
+///     frameStart  InputSystem           INPUT → the player's PlayerInput
+///                 PlayerShipSystem      one ship per connected player, respawn delay
+///     simulation  installSimulation()   below
+///     frameEnd    ReplicationSystem     ENTITY_SPAWN / ENTITY_DESTROY / PLAYER_DIED / GAME_STATE
+///
 /// The simulation alone (the World's own systems, at the fixed step), in order:
 ///
 ///     TickSystem            SimulationTick + 1, first of every step
