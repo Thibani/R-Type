@@ -28,9 +28,9 @@ const std::vector<FriendRow> Friends{{.name = "Bernard", .state = FriendState::O
     {.name = "Asks", .state = FriendState::RequestReceived},
     {.name = "Sent", .state = FriendState::RequestSent}};
 
-ChatOrder read(std::string_view input, bool inGame = true)
+ChatOrder read(std::string_view input)
 {
-    return readChat(input, std::nullopt, Friends, inGame);
+    return readChat(input, std::nullopt, Friends);
 }
 
 void expectToFriend(const ChatOrder& order, std::string_view name, std::string_view text)
@@ -77,15 +77,9 @@ TEST(ChatLine, NothingTypedDoesNothing)
     EXPECT_TRUE(std::holds_alternative<ChatOrder::Nothing>(read("    ").action));
 }
 
-TEST(ChatLine, OutsideAGameThereIsNobodyToTalkTo)
-{
-    expectProblem(read("hello", false), "Not in a group yet.");
-}
-
-TEST(ChatLine, MsgFindsTheFriendAndWorksOutsideAGame)
+TEST(ChatLine, MsgFindsTheFriend)
 {
     expectToFriend(read("/msg Bernard Salut"), "Bernard", "Salut");
-    expectToFriend(read("/msg Bernard Salut", false), "Bernard", "Salut");
 }
 
 TEST(ChatLine, MsgIgnoresUpperAndLowerCaseButSendsTheExactName)
@@ -121,8 +115,7 @@ TEST(ChatLine, AWordStartingLikeTheCommandIsNotTheCommand)
 
 TEST(ChatLine, TheMenuChoosesTheFriend)
 {
-    expectToFriend(
-        readChat("/msg is text here", "Ann", Friends, false), "Ann", "/msg is text here");
+    expectToFriend(readChat("/msg is text here", "Ann", Friends), "Ann", "/msg is text here");
 }
 
 TEST(ChatLine, TooLongIsSaidNotCut)

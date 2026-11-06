@@ -184,12 +184,16 @@ void apply(ecs::World& world, const GameState& state, float /*now*/)
 void apply(ecs::World& world, const JoinResult& result, float /*now*/)
 {
     Session& session = singleton<Session>(world);
-    session.joining = false;
     if (result.code == JoinCode::Ok) {
         enterGame(world, result.playerId);
-    } else {
-        session.error = "The game is full.";
+        return;
     }
+    addChatLine(session,
+        ChatLine{.kind = ChatLine::Kind::Notice,
+            .name = {},
+            .text = result.code == JoinCode::NotLeader
+                ? "Only the leader can start the game."
+                : "Everyone must be ready, and back from their game."});
 }
 
 /// Requests received first, then who can be played with, then the requests sent.
@@ -273,6 +277,54 @@ void apply(ecs::World& world, const ChatRefused& refused, float /*now*/)
         ChatLine{.kind = ChatLine::Kind::Notice, .name = {}, .text = std::move(text)});
 }
 
+void apply(ecs::World& world, const GroupState& state, float /*now*/)
+{
+    singleton<Session>(world).group = state;
+}
+
+void apply(ecs::World& world, const GroupResult& result, float /*now*/)
+{
+    const auto textOf = [](GroupOutcome outcome) -> std::string {
+        switch (outcome) {
+        case GroupOutcome::Invited:
+            return "Invitation sent.";
+        case GroupOutcome::UnknownCode:
+            return "No group has this code.";
+        case GroupOutcome::GroupFull:
+            return "This group is full.";
+        case GroupOutcome::Kicked:
+            return "You were removed from this group: only an invitation brings you back.";
+        case GroupOutcome::GroupInGame:
+            return "This group is in a game.";
+        case GroupOutcome::NotLeader:
+            return "Only the leader can do this.";
+        case GroupOutcome::NotMember:
+            return "Not in the group.";
+        case GroupOutcome::Alone:
+            return "You are alone in your group.";
+        case GroupOutcome::TooManyTries:
+            return "Too many wrong codes: wait a moment.";
+        case GroupOutcome::NotAvailable:
+            return "This friend cannot be invited now.";
+        case GroupOutcome::InvitationGone:
+            return "This invitation no longer exists.";
+        case GroupOutcome::RemovedFromGroup:
+            break;
+        }
+        return "The leader removed you from the group.";
+    };
+    addChatLine(singleton<Session>(world),
+        ChatLine{.kind = ChatLine::Kind::Notice, .name = {}, .text = textOf(result.outcome)});
+}
+
+void apply(ecs::World& world, const GroupInvited& invited, float /*now*/)
+{
+    auto& invitations = singleton<Session>(world).invitations;
+    if (std::ranges::find(invitations, invited.name) == invitations.end()) {
+        invitations.push_back(invited.name);
+    }
+}
+
 /// True for what has nothing to do with a game: it counts on the main page too,
 /// and says nothing about the order of the game's events.
 bool isOutsideTheGame(const Payload& payload) noexcept
@@ -280,7 +332,10 @@ bool isOutsideTheGame(const Payload& payload) noexcept
     return std::holds_alternative<FriendEntry>(payload)
         || std::holds_alternative<FriendResult>(payload)
         || std::holds_alternative<ChatMessage>(payload)
-        || std::holds_alternative<ChatRefused>(payload);
+        || std::holds_alternative<ChatRefused>(payload)
+        || std::holds_alternative<GroupState>(payload)
+        || std::holds_alternative<GroupResult>(payload)
+        || std::holds_alternative<GroupInvited>(payload);
 }
 
 template <typename Other>
@@ -366,7 +421,6 @@ void leaveGame(ecs::World& world)
     Session& session = singleton<Session>(world);
     session.screen = Screen::Home;
     session.focus = 0;
-    session.joining = false;
     session.chatOpen = false;
     session.chatInput.clear();
     session.chatTarget.reset();
@@ -392,6 +446,9 @@ void clearSession(ecs::World& world)
     session.outgoing.clear();
     session.chat.clear();
     session.chatScroll = 0;
+    session.group = {};
+    session.groupCodeInput.clear();
+    session.invitations.clear();
 }
 
 } // namespace client

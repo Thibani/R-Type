@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <vector>
 
 /// Where the clickable parts of each screen are, on the 1280 × 720 interface
@@ -49,28 +50,127 @@ inline constexpr sf::FloatRect CreateAccount{{958.0F, 402.0F}, {226.0F, 52.0F}};
 inline constexpr sf::FloatRect OpenSettings{{716.0F, 466.0F}, {226.0F, 52.0F}};
 inline constexpr sf::FloatRect Quit{{958.0F, 466.0F}, {226.0F, 52.0F}};
 
-// Main page: Play (0), Settings (1), Log out (2). The right of the screen stays free.
+// Main page: Play (0), Settings (1), Log out (2), the chat, the group, then the friends.
+// A part that does not apply for now (Kick, for who does not lead) keeps its number, with
+// an empty rectangle: nothing can click it, and the focus goes past it.
 inline constexpr int PlayButton = 0;
 inline constexpr int HomeSettingsButton = 1;
 inline constexpr int LogOutButton = 2;
+inline constexpr int NewGroupCodeButton = 4;
+inline constexpr int DeleteGroupCodeButton = 5;
+inline constexpr int GroupCodeField = 6;
+inline constexpr int GroupJoinButton = 7;
+inline constexpr int LeaveGroupButton = 8;
+inline constexpr int AcceptInvitationButton = 9;
+inline constexpr int RefuseInvitationButton = 10;
+inline constexpr int FirstKickButton = 11; // + place of the member
+inline constexpr int FirstPromoteButton = 15; // + place of the member
 
+/// The left of the group's part of the page.
 [[nodiscard]]
-constexpr sf::FloatRect homeBanner(int interfaceSize) noexcept
+constexpr float groupLeft(int interfaceSize) noexcept
 {
-    return isCompact(interfaceSize) ? sf::FloatRect{{554.0F, 130.0F}, {172.0F, 280.0F}}
-                                    : sf::FloatRect{{528.0F, 130.0F}, {224.0F, 365.0F}};
+    return isCompact(interfaceSize) ? 554.0F : 528.0F;
 }
 
+/// What the group has to say: an invitation, or an error. Short enough, at normal
+/// sizes, for the open friends panel not to hide its buttons.
 [[nodiscard]]
 constexpr sf::FloatRect homeMessage(int interfaceSize) noexcept
 {
-    return {{528.0F, isCompact(interfaceSize) ? 424.0F : 560.0F}, {224.0F, 40.0F}};
+    return {{groupLeft(interfaceSize), isCompact(interfaceSize) ? 416.0F : 548.0F},
+        {isCompact(interfaceSize) ? 450.0F : 440.0F, 44.0F}};
 }
 
 [[nodiscard]]
 constexpr sf::FloatRect play(int interfaceSize) noexcept
 {
-    return {{528.0F, isCompact(interfaceSize) ? 474.0F : 620.0F}, {224.0F, 52.0F}};
+    return {
+        {groupLeft(interfaceSize), isCompact(interfaceSize) ? 474.0F : 620.0F}, {220.0F, 52.0F}};
+}
+
+[[nodiscard]]
+constexpr sf::FloatRect leaveGroup(int interfaceSize) noexcept
+{
+    return {{groupLeft(interfaceSize) + 228.0F, isCompact(interfaceSize) ? 474.0F : 620.0F},
+        {220.0F, 52.0F}};
+}
+
+[[nodiscard]]
+constexpr sf::Vector2f groupCodeLabel(int interfaceSize) noexcept
+{
+    return {groupLeft(interfaceSize), (isCompact(interfaceSize) ? 130.0F : 104.0F) + 6.0F};
+}
+
+[[nodiscard]]
+constexpr sf::FloatRect newGroupCode(int interfaceSize) noexcept
+{
+    return isCompact(interfaceSize) ? sf::FloatRect{{680.0F, 130.0F}, {100.0F, 36.0F}}
+                                    : sf::FloatRect{{680.0F, 104.0F}, {104.0F, 40.0F}};
+}
+
+[[nodiscard]]
+constexpr sf::FloatRect deleteGroupCode(int interfaceSize) noexcept
+{
+    return isCompact(interfaceSize) ? sf::FloatRect{{786.0F, 130.0F}, {70.0F, 36.0F}}
+                                    : sf::FloatRect{{790.0F, 104.0F}, {74.0F, 40.0F}};
+}
+
+[[nodiscard]]
+constexpr sf::FloatRect groupCodeInput(int interfaceSize) noexcept
+{
+    return isCompact(interfaceSize) ? sf::FloatRect{{554.0F, 194.0F}, {160.0F, 36.0F}}
+                                    : sf::FloatRect{{880.0F, 104.0F}, {160.0F, 40.0F}};
+}
+
+[[nodiscard]]
+constexpr sf::FloatRect groupJoin(int interfaceSize) noexcept
+{
+    return isCompact(interfaceSize) ? sf::FloatRect{{720.0F, 194.0F}, {70.0F, 36.0F}}
+                                    : sf::FloatRect{{1046.0F, 104.0F}, {70.0F, 40.0F}};
+}
+
+/// The card of the member at `place`, side by side.
+[[nodiscard]]
+constexpr sf::FloatRect memberCard(int interfaceSize, std::size_t place) noexcept
+{
+    const auto index = static_cast<float>(place);
+    return isCompact(interfaceSize)
+        ? sf::FloatRect{{554.0F + (index * 114.0F), 238.0F}, {106.0F, 170.0F}}
+        : sf::FloatRect{{528.0F + (index * 172.0F), 170.0F}, {160.0F, 340.0F}};
+}
+
+[[nodiscard]]
+constexpr sf::FloatRect kickMember(int interfaceSize, std::size_t place) noexcept
+{
+    const sf::FloatRect card = memberCard(interfaceSize, place);
+    return isCompact(interfaceSize)
+        ? sf::FloatRect{card.position + sf::Vector2f{8.0F, 110.0F}, {42.0F, 28.0F}}
+        : sf::FloatRect{card.position + sf::Vector2f{16.0F, 186.0F}, {60.0F, 30.0F}};
+}
+
+[[nodiscard]]
+constexpr sf::FloatRect promoteMember(int interfaceSize, std::size_t place) noexcept
+{
+    const sf::FloatRect card = memberCard(interfaceSize, place);
+    return isCompact(interfaceSize)
+        ? sf::FloatRect{card.position + sf::Vector2f{56.0F, 110.0F}, {42.0F, 28.0F}}
+        : sf::FloatRect{card.position + sf::Vector2f{84.0F, 186.0F}, {60.0F, 30.0F}};
+}
+
+/// Answering the oldest invitation, on the right of the message.
+[[nodiscard]]
+constexpr sf::FloatRect refuseInvitation(int interfaceSize) noexcept
+{
+    const sf::FloatRect line = homeMessage(interfaceSize);
+    return {{line.position.x + line.size.x - 70.0F, line.position.y + 7.0F}, {62.0F, 30.0F}};
+}
+
+[[nodiscard]]
+constexpr sf::FloatRect acceptInvitation(int interfaceSize) noexcept
+{
+    const sf::FloatRect line = refuseInvitation(interfaceSize);
+    return {{line.position.x - 68.0F, line.position.y}, line.size};
 }
 
 [[nodiscard]]
@@ -200,9 +300,9 @@ constexpr sf::FloatRect gameChat(sf::FloatRect area) noexcept
 // Friends bar, on the right of the main page, whatever the interface size. In focus
 // order after the chat box: the name field, Add, then the buttons of the rows.
 // Closed, the bar itself takes the place of the field: moving the focus to it opens it.
-inline constexpr int FriendNameField = 4;
-inline constexpr int FriendAddButton = 5;
-inline constexpr int FirstFriendButton = 6;
+inline constexpr int FriendNameField = 19;
+inline constexpr int FriendAddButton = 20;
+inline constexpr int FirstFriendButton = 21;
 inline constexpr float FriendsClosedWidth = 56.0F;
 inline constexpr float FriendsOpenWidth = 300.0F;
 inline constexpr float FriendsPadding = 16.0F;
@@ -309,6 +409,21 @@ inline std::optional<sf::FloatRect> friendMenuButton(const Session& session, sf:
     return std::nullopt;
 }
 
+/// The Invite button of the same menu, beside Message: for the leader, and a friend online.
+[[nodiscard]]
+inline std::optional<sf::FloatRect> friendInviteButton(const Session& session, sf::FloatRect bar)
+{
+    const auto message = friendMenuButton(session, bar);
+    const auto person = std::ranges::find(session.friends, session.friendMenu,
+        [](const FriendRow& row) { return std::optional<std::string>{row.name}; });
+    if (!message || person == session.friends.end() || !leadsTheGroup(session)
+        || person->state != network::protocol::FriendState::Online) {
+        return std::nullopt;
+    }
+    return sf::FloatRect{
+        message->position + sf::Vector2f{message->size.x + 6.0F, 0.0F}, message->size};
+}
+
 /// The chat box of the current screen. Only the main page and the game have one.
 [[nodiscard]]
 constexpr sf::FloatRect chatBox(
@@ -333,8 +448,28 @@ inline std::vector<sf::FloatRect> focusables(const Session& session, int interfa
         return {NameInput, PasswordInput, AddressInput, PortInput, Login, CreateAccount,
             OpenSettings, Quit};
     case Screen::Home: {
+        const auto when
+            = [](bool applies, sf::FloatRect rect) { return applies ? rect : sf::FloatRect{}; };
+        const bool leads = leadsTheGroup(session);
+        const std::size_t members = session.group.members.size();
+        const bool invited = !session.invitations.empty();
         std::vector<sf::FloatRect> parts{play(interfaceSize), homeSettings(interfaceSize),
-            logOut(interfaceSize), homeChat(interfaceSize)};
+            logOut(interfaceSize), homeChat(interfaceSize),
+            when(leads, newGroupCode(interfaceSize)),
+            when(leads && !session.group.code.empty(), deleteGroupCode(interfaceSize)),
+            groupCodeInput(interfaceSize), groupJoin(interfaceSize),
+            when(members >= 2, leaveGroup(interfaceSize)),
+            when(invited, acceptInvitation(interfaceSize)),
+            when(invited, refuseInvitation(interfaceSize))};
+        const auto canActOn = [&](std::size_t place) {
+            return leads && place < members && place != session.group.leader;
+        };
+        for (std::size_t place = 0; place < network::protocol::MaxPlayers; ++place) {
+            parts.push_back(when(canActOn(place), kickMember(interfaceSize, place)));
+        }
+        for (std::size_t place = 0; place < network::protocol::MaxPlayers; ++place) {
+            parts.push_back(when(canActOn(place), promoteMember(interfaceSize, place)));
+        }
         const sf::FloatRect area = visibleArea(session, interfaceSize);
         if (!friendsOpen(session)) {
             // One unit inside the bar, which itself touches the edges of the view
@@ -344,6 +479,12 @@ inline std::vector<sf::FloatRect> focusables(const Session& session, int interfa
             return parts;
         }
         const sf::FloatRect bar = friendsBar(area, true);
+        // The open panel covers what is behind it: a click there is for the panel
+        for (sf::FloatRect& part : parts) {
+            if (part.findIntersection(bar)) {
+                part = {};
+            }
+        }
         parts.push_back(friendNameInput(bar));
         parts.push_back(friendAdd(bar));
         for (const FriendButton& button : friendButtons(session, bar)) {

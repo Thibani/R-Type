@@ -69,7 +69,7 @@ other, they share components. `RenderSystem` only reads `Position` and
 | Screen        | When                                                              |
 |---------------|-------------------------------------------------------------------|
 | Connect       | At start, and after any failure (with its reason)                 |
-| Home          | After AUTH_RESULT (OK), and after leaving a game; has the friends panel |
+| Home          | After AUTH_RESULT (OK), and after leaving a game: the group, the chat, the friends panel |
 | Game          | After JOIN_RESULT (OK): a single player can play at once          |
 | Waiting room  | Only if the server sends GAME_STATE = WAITING_FOR_PLAYERS         |
 | Game over     | GAME_STATE = GAME_OVER: team score and crew                       |
@@ -81,6 +81,11 @@ Esc opens the in-game menu (the game keeps running) or leaves the other
 screens: the form quits, the waiting room and game over go back to the main page, and
 the main page itself ignores it, since logging out has its own button. Players are told apart by colour, pattern and P1-P4 tag. Each colour mode has
 its own copy of the sprites, repainted at startup (`Assets.cpp`, `theme::Palettes`).
+
+**Group**: the main page is the lobby. One card per member, in the colour they will have in
+the game. The leader gets a code (New code, Delete), can Kick a member, give the role (Lead), and
+starts with Play; the others press Ready. Invite is in the right-click menu of a friend online, and
+an invitation shows above Play, with Accept and Refuse. Group answers show in the chat.
 
 **Friends panel**: a thin bar on the right of the main page. It opens while the mouse is over
 it, or with Tab: the keyboard alone can do everything (Enter asks or presses a button, PgUp and
@@ -154,7 +159,7 @@ key.fire = Space
 - The PLAYER_JOINED sent right after JOIN_RESULT for the players already
   there fill the HUD without a notice; later ones are announced (§8.4).
 - On the main page, what still arrives from a game we left is ignored (§8.4).
-- Friends' and chat packets count everywhere, and do not end the catching up of a new game (§8.5, §8.6).
+- Friends', chat and group packets count everywhere, and do not end the catching up of a new game (§8.5, §8.6).
 - Logging out or quitting sends DISCONNECT 3 times (§8.3).
 
 ---

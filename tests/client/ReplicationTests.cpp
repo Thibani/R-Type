@@ -291,29 +291,86 @@ TEST(MainPage, AcceptedJoinEntersTheGame)
     client::startSession(world);
     auto& session = client::singleton<client::Session>(world);
     session.name = "Dave";
-    session.joining = true;
 
     client::applyPayload(world, JoinResult{.code = JoinCode::Ok, .playerId = 2}, 0.0F);
 
     EXPECT_EQ(session.screen, client::Screen::Game);
     EXPECT_EQ(session.playerId, 2);
     EXPECT_EQ(session.players.at(2).name, "Dave");
-    EXPECT_FALSE(session.joining);
 }
 
-TEST(MainPage, FullGameStaysOnThePageWithAMessage)
+TEST(MainPage, RefusedStartStaysOnThePageWithAMessage)
 {
     ecs::World world;
     client::startSession(world);
     auto& session = client::singleton<client::Session>(world);
-    session.joining = true;
 
-    client::applyPayload(world, JoinResult{.code = JoinCode::GameFull, .playerId = NoPlayer}, 0.0F);
+    client::applyPayload(world, JoinResult{.code = JoinCode::NotReady, .playerId = NoPlayer}, 0.0F);
 
     EXPECT_EQ(session.screen, client::Screen::Home);
-    EXPECT_EQ(session.error, "The game is full.");
+    ASSERT_EQ(session.chat.size(), 1U);
+    EXPECT_EQ(session.chat[0].kind, client::ChatLine::Kind::Notice);
     EXPECT_FALSE(session.playerId.has_value());
-    EXPECT_FALSE(session.joining);
+}
+
+TEST(MainPage, TheGroupIsKeptAsTheServerTellsIt)
+{
+    ecs::World world;
+    client::startSession(world);
+    auto& session = client::singleton<client::Session>(world);
+    session.name = "Max";
+    EXPECT_TRUE(client::leadsTheGroup(session)); // Alone, not told yet
+
+    const GroupState state{.code = "ABC234",
+        .countdown = 0,
+        .leader = 0,
+        .members = {{.name = "Lea", .ready = false, .inGame = false},
+            {.name = "Max", .ready = true, .inGame = false}}};
+    client::applyPayload(world, state, 0.0F);
+
+    EXPECT_EQ(session.group, state);
+    EXPECT_FALSE(client::leadsTheGroup(session));
+}
+
+TEST(MainPage, TheSameInvitationCountsOnce)
+{
+    ecs::World world;
+    client::startSession(world);
+    auto& session = client::singleton<client::Session>(world);
+
+    client::applyPayload(world, GroupInvited{.name = "Lea"}, 0.0F);
+    client::applyPayload(world, GroupInvited{.name = "Lea"}, 0.0F);
+    client::applyPayload(world, GroupInvited{.name = "Zoe"}, 0.0F);
+
+    EXPECT_EQ(session.invitations, (std::vector<std::string>{"Lea", "Zoe"}));
+}
+
+TEST(MainPage, GroupResultsAreToldInTheChat)
+{
+    ecs::World world;
+    client::startSession(world);
+    auto& session = client::singleton<client::Session>(world);
+
+    client::applyPayload(world, GroupResult{.outcome = GroupOutcome::UnknownCode}, 0.0F);
+
+    ASSERT_EQ(session.chat.size(), 1U);
+    EXPECT_EQ(session.chat[0].text, "No group has this code.");
+}
+
+TEST(MainPage, LoggingOutForgetsTheGroup)
+{
+    ecs::World world;
+    client::startSession(world);
+    auto& session = client::singleton<client::Session>(world);
+    session.group.code = "ABC234";
+    session.groupCodeInput = "XYZ";
+    session.invitations.push_back("Lea");
+
+    client::clearSession(world);
+
+    EXPECT_TRUE(session.group.code.empty());
+    EXPECT_TRUE(session.groupCodeInput.empty());
+    EXPECT_TRUE(session.invitations.empty());
 }
 
 TEST(MainPage, LeavingForgetsTheGameButNotTheSession)

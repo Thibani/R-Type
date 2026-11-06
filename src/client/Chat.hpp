@@ -31,14 +31,14 @@ struct ChatOrder {
 };
 
 /// Reads a line: to `target` if the right-click menu chose one, `/msg <friend> <text>`
-/// for a friend, otherwise for the players of the game.
+/// for a friend, otherwise for the group.
 ///
 /// A name can contain spaces, so `/msg` takes the longest name of a friend the text
 /// starts with, followed by a space. Upper and lower case count the same in that search
 /// (letters without accents only): the exact name is what goes to the server.
 [[nodiscard]]
 ChatOrder readChat(std::string_view input, const std::optional<std::string>& target,
-    std::span<const FriendRow> friends, bool inGame);
+    std::span<const FriendRow> friends);
 
 /// Cuts `text` into lines for which `fits` is true: between words if it can, and inside
 /// a word too long for a whole line, never inside a UTF-8 character.
