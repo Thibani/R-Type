@@ -12,7 +12,7 @@ clients comply with.
 | `Spawn.hpp`                         | The weapons as data (`weapons::`); create ships, Bydos, projectiles |
 | `Network.hpp`                       | Frame time → time point, send a packet, shutdown notice  |
 | `Components/ReceivedPacket.hpp`     | A valid packet received this frame; `IncompatibleClient` |
-| `Components/NetClient.hpp`          | A session; `LoggedIn` (part of the game); `Disconnecting` |
+| `Components/NetClient.hpp`          | A session; `LoggedIn` (main page); `InGame` (place in the game); `Disconnecting` |
 | `Components/ClientMessage.hpp`      | A game payload from a connected player                   |
 | `Components/Player.hpp`             | `PlayerInput`, `RespawnTimer` (on the player), `PlayerShip` (on the ship) |
 | `Components/Combat.hpp`             | Combat as data: `Weapon`, `Projectile`, `Trigger`, `Damage`, `ScoreValue`; `Bydo`, `BydoSpawner`, `TeamScore` |
@@ -73,7 +73,8 @@ Any exception that escapes is caught in `main`: message on stderr, exit 84.
 frameStart()  NetReceiveSystem        network thread inbox → ReceivedPacket / IncompatibleClient
               ConnectionSystem        CONNECT_REQUEST → NetClient entity, ACCEPT / REJECT
               SessionReceiveSystem    packet → its session's channel → ClientMessage
-              LoginSystem             AUTH_REQUEST → account checked, player admitted (LoggedIn)
+              LoginSystem             AUTH_REQUEST → account checked, main page open (LoggedIn)
+              JoinSystem              JOIN_GAME / LEAVE_GAME → place in the game (InGame)
               TimeoutSystem           silent session → Disconnecting
               InputSystem             ClientMessage (INPUT) → the player's PlayerInput
               PlayerShipSystem        one ship per connected player, after its respawn delay
@@ -233,19 +234,22 @@ Tests: `tests/server/GameplayTests.cpp` (the rules, step by step) and
 ## Sessions (docs/protocol.md §8)
 
 A connected player is an entity with a `NetClient`: its address, its random
-token, its `playerId` (0–3), its name, and a `ReliableChannel` that numbers,
-acknowledges and resends its packets.
+token, its name, and a `ReliableChannel` that numbers, acknowledges and resends
+its packets. Only a player in the game has a `playerId` (0–3), in `InGame`.
 
 | Event                                    | Server answer                                         |
 |------------------------------------------|-------------------------------------------------------|
-| CONNECT_REQUEST, room left               | New session; CONNECT_ACCEPT; PLAYER_JOINED to everyone already here, and about each of them to the newcomer |
+| CONNECT_REQUEST, fewer than 64 sessions  | New session; CONNECT_ACCEPT                           |
 | Same address asks again                  | The same CONNECT_ACCEPT (the first one may be lost)   |
-| 4 players already                        | CONNECT_REJECT (SERVER_FULL)                          |
+| 64 sessions already                      | CONNECT_REJECT (SERVER_FULL)                          |
+| JOIN_GAME, a place left                  | JOIN_RESULT (OK); PLAYER_JOINED to the players, and about each of them to the newcomer |
+| JOIN_GAME, 4 players already             | JOIN_RESULT (GAME_FULL)                               |
+| LEAVE_GAME                               | Back to the main page; ship destroyed; PLAYER_LEFT (QUIT) to the players |
 | Empty name                               | CONNECT_REJECT (INVALID_NAME)                         |
 | Other protocol version                   | CONNECT_REJECT (VERSION_MISMATCH)                     |
 | Wrong token for the address, or unknown address | Dropped, counted                               |
 | HEARTBEAT                                | Session kept alive                                    |
-| DISCONNECT                               | Session closed; PLAYER_LEFT (QUIT) to the others      |
+| DISCONNECT                               | Session closed; if in the game, PLAYER_LEFT (QUIT) to the others |
 | Nothing received for 5 s, or a reliable message unacknowledged for 5 s | Session closed; PLAYER_LEFT (TIMEOUT) to the others |
 | Reliable reorder buffer overflow         | DISCONNECT (PROTOCOL_ERROR); PLAYER_LEFT (KICKED)     |
 | Server sent nothing for 250 ms           | HEARTBEAT                                             |
