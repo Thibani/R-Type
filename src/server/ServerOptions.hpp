@@ -14,6 +14,7 @@ struct ServerOptions {
     std::uint16_t port{4242};
     std::filesystem::path accountsFile{"accounts.txt"};
     std::filesystem::path friendsFile{"friends.txt"};
+    std::filesystem::path messagesFile{"messages.txt"};
     bool help{false}; // -h / --help: print the usage and exit
 };
 

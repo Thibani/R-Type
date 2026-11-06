@@ -10,6 +10,7 @@
 #include "server/Systems/BydoAimSystem.hpp"
 #include "server/Systems/BydoMovementSystem.hpp"
 #include "server/Systems/BydoSpawnSystem.hpp"
+#include "server/Systems/ChatSystem.hpp"
 #include "server/Systems/ConnectionSystem.hpp"
 #include "server/Systems/DamageSystem.hpp"
 #include "server/Systems/DiscardPacketsSystem.hpp"
@@ -50,7 +51,7 @@ void installSimulation(ecs::World& world)
 }
 
 void installSystems(ecs::World& world, ecs::GameLoop& loop, network::NetworkThread& socket,
-    AccountStore& accounts, FriendStore& friends)
+    AccountStore& accounts, FriendStore& friends, MessageStore& messages)
 {
     loop.frameStart().add<NetReceiveSystem>(socket);
     loop.frameStart().add<ConnectionSystem>(socket);
@@ -59,6 +60,7 @@ void installSystems(ecs::World& world, ecs::GameLoop& loop, network::NetworkThre
     loop.frameStart().add<JoinSystem>();
     loop.frameStart().add<TimeoutSystem>();
     loop.frameStart().add<FriendSystem>(accounts, friends);
+    loop.frameStart().add<ChatSystem>(friends, messages);
     loop.frameStart().add<InputSystem>();
     loop.frameStart().add<PlayerShipSystem>();
 

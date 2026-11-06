@@ -18,8 +18,10 @@
 #include "server/Components/NetClient.hpp"
 #include "server/Components/Player.hpp"
 #include "server/FriendStore.hpp"
+#include "server/MessageStore.hpp"
 #include "server/Network.hpp"
 #include "server/ServerSystems.hpp"
+#include "server/Systems/ChatSystem.hpp"
 #include "server/Systems/ConnectionSystem.hpp"
 #include "server/Systems/LoginSystem.hpp"
 #include "server/Systems/NetReceiveSystem.hpp"
@@ -97,6 +99,16 @@ server::FriendStore loadFriendsOrFail(const std::filesystem::path& file)
     return std::move(*friends);
 }
 
+server::MessageStore loadMessagesOrFail(const std::filesystem::path& file)
+{
+    auto messages = server::MessageStore::load(file);
+    if (!messages) {
+        ADD_FAILURE() << "cannot load the messages: " << messages.error();
+        std::abort();
+    }
+    return std::move(*messages);
+}
+
 /// Copies the ClientMessages seen this frame, before they are discarded.
 class MessageRecorder final : public ecs::System {
 public:
@@ -124,8 +136,9 @@ public:
         network::crypto::PasswordCost cost = testing_players::FastCost)
         : _accounts(loadOrFail(accountsFile != nullptr ? *accountsFile : _ownFile.path(), cost))
         , _friends(loadFriendsOrFail(_friendsFile.path()))
+        , _messages(loadMessagesOrFail(_messagesFile.path()))
     {
-        server::installSystems(_world, _loop, *_network, _accounts, _friends);
+        server::installSystems(_world, _loop, *_network, _accounts, _friends, _messages);
         _loop.frameStart().add<MessageRecorder>(messages); // After every server system
     }
 
@@ -188,6 +201,12 @@ public:
     }
 
     [[nodiscard]]
+    const std::filesystem::path& messagesFile() const noexcept
+    {
+        return _messagesFile.path();
+    }
+
+    [[nodiscard]]
     const std::filesystem::path& friendsFile() const noexcept
     {
         return _friendsFile.path();
@@ -210,8 +229,10 @@ public:
 private:
     testing_players::TemporaryFile _ownFile;
     testing_players::TemporaryFile _friendsFile;
+    testing_players::TemporaryFile _messagesFile;
     server::AccountStore _accounts;
     server::FriendStore _friends;
+    server::MessageStore _messages;
     // Declared first, so destroyed last: the thread outlives the systems using it
     std::unique_ptr<network::NetworkThread> _network = openNetworkOrFail();
     ecs::World _world;
@@ -1903,4 +1924,270 @@ TEST(Friends, TheFileIsWrittenAtMostOncePerSecond)
 
     server.frame(1.1F);
     EXPECT_EQ(contentOf(), empty);
+}
+
+// --- Chat (§8.6) ------------------------------------------------------------------
+
+namespace {
+
+/// Two friends on the main page, with nothing left to read about each other.
+struct TwoChatters {
+    explicit TwoChatters(TestServer& server)
+        : both(server)
+    {
+        (void)entryAbout(server, both.ann, "Ben");
+        (void)entryAbout(server, both.ann, "Ben");
+        both.ann.inbox.clear();
+        both.ben.inbox.clear();
+    }
+
+    TwoFriends both;
+};
+
+/// The next chat line, if one comes.
+std::optional<ChatMessage> chatLine(TestServer& server, TestClient& client)
+{
+    return waitFor<ChatMessage>(server, client);
+}
+
+} // namespace
+
+TEST(Chat, AMessageReachesEveryPlayerOfTheGameUnderTheSendersName)
+{
+    TestServer server;
+    TwoChatters chatters(server);
+    TestClient& ann = chatters.both.ann;
+    TestClient& ben = chatters.both.ben;
+    ASSERT_EQ(joinOrFail(server, ann).code, JoinCode::Ok);
+    ASSERT_EQ(joinOrFail(server, ben).code, JoinCode::Ok);
+
+    ann.sendReliable(ChatSend{.text = "hello"});
+
+    const ChatMessage expected{.kind = ChatKind::Game, .name = "Ann", .text = "hello"};
+    EXPECT_EQ(chatLine(server, ann), expected); // Her own line comes back too
+    EXPECT_EQ(chatLine(server, ben), expected);
+}
+
+TEST(Chat, TheGameChatStaysInTheGame)
+{
+    TestServer server;
+    TwoChatters chatters(server);
+    TestClient& ann = chatters.both.ann;
+    TestClient& ben = chatters.both.ben;
+    ASSERT_EQ(joinOrFail(server, ann).code, JoinCode::Ok);
+
+    ann.sendReliable(ChatSend{.text = "hello"});
+
+    EXPECT_TRUE(chatLine(server, ann).has_value());
+    EXPECT_FALSE(chatLine(server, ben).has_value());
+}
+
+TEST(Chat, OutsideAGameTheGameChatGoesNowhere)
+{
+    TestServer server;
+    TwoChatters chatters(server);
+
+    chatters.both.ann.sendReliable(ChatSend{.text = "hello"});
+
+    EXPECT_FALSE(chatLine(server, chatters.both.ben).has_value());
+    EXPECT_FALSE(chatLine(server, chatters.both.ann).has_value());
+}
+
+TEST(Chat, APrivateMessageReachesOnlyTheFriend)
+{
+    TestServer server;
+    TwoChatters chatters(server);
+    TestClient cid(server.address());
+    logInOrFail(server, cid, "Cid");
+
+    chatters.both.ann.sendReliable(PrivateSend{.name = "Ben", .text = "psst"});
+
+    EXPECT_EQ(chatLine(server, chatters.both.ben),
+        (ChatMessage{.kind = ChatKind::Received, .name = "Ann", .text = "psst"}));
+    EXPECT_EQ(chatLine(server, chatters.both.ann),
+        (ChatMessage{.kind = ChatKind::Sent, .name = "Ben", .text = "psst"}));
+    EXPECT_FALSE(chatLine(server, cid).has_value());
+}
+
+TEST(Chat, APrivateMessageWorksDuringAGame)
+{
+    TestServer server;
+    TwoChatters chatters(server);
+    ASSERT_EQ(joinOrFail(server, chatters.both.ben).code, JoinCode::Ok);
+
+    chatters.both.ann.sendReliable(PrivateSend{.name = "Ben", .text = "psst"});
+
+    EXPECT_EQ(chatLine(server, chatters.both.ben),
+        (ChatMessage{.kind = ChatKind::Received, .name = "Ann", .text = "psst"}));
+}
+
+TEST(Chat, OnlyFriendsCanWritePrivately)
+{
+    TestServer server;
+    TestClient ann(server.address());
+    TestClient ben(server.address());
+    logInOrFail(server, ann, "Ann");
+    logInOrFail(server, ben, "Ben");
+
+    ann.sendReliable(PrivateSend{.name = "Ben", .text = "psst"});
+
+    EXPECT_EQ(waitFor<ChatRefused>(server, ann), (ChatRefused{.reason = ChatRefusal::NotFriend}));
+    EXPECT_FALSE(chatLine(server, ben).has_value());
+}
+
+TEST(Chat, AnOfflineFriendReadsItWhenComingBack)
+{
+    TestServer server;
+    TwoChatters chatters(server);
+    TestClient& ann = chatters.both.ann;
+    chatters.both.ben.send(Disconnect{.reason = DisconnectReason::Quit});
+    deliver(server);
+    deliver(server);
+
+    ann.sendReliable(PrivateSend{.name = "Ben", .text = "one"});
+    EXPECT_EQ(
+        chatLine(server, ann), (ChatMessage{.kind = ChatKind::Sent, .name = "Ben", .text = "one"}));
+    ann.sendReliable(PrivateSend{.name = "Ben", .text = "two"});
+    EXPECT_TRUE(chatLine(server, ann).has_value());
+
+    TestClient back(server.address());
+    (void)openSessionOrFail(server, back, "Ben");
+    EXPECT_EQ(authenticate(server, back, AuthMode::Login), AuthCode::Ok);
+
+    EXPECT_EQ(chatLine(server, back),
+        (ChatMessage{.kind = ChatKind::Received, .name = "Ann", .text = "one"}));
+    EXPECT_EQ(chatLine(server, back),
+        (ChatMessage{.kind = ChatKind::Received, .name = "Ann", .text = "two"}));
+}
+
+TEST(Chat, WritingTooFastIsRefusedThenAllowedAgain)
+{
+    TestServer server;
+    TwoChatters chatters(server);
+    TestClient& ann = chatters.both.ann;
+    for (std::size_t i = 0; i < server::ChatSystem::MaxMessagesInWindow; ++i) {
+        ann.sendReliable(PrivateSend{.name = "Ben", .text = "m" + std::to_string(i)});
+    }
+    for (std::size_t i = 0; i < server::ChatSystem::MaxMessagesInWindow; ++i) {
+        EXPECT_TRUE(chatLine(server, chatters.both.ben).has_value()) << i;
+    }
+
+    ann.sendReliable(PrivateSend{.name = "Ben", .text = "one too many"});
+    EXPECT_EQ(waitFor<ChatRefused>(server, ann), (ChatRefused{.reason = ChatRefusal::TooFast}));
+    EXPECT_FALSE(chatLine(server, chatters.both.ben).has_value());
+
+    for (int second = 0; second < 6; ++second) { // A whole window, the sessions staying alive
+        ann.poll();
+        chatters.both.ben.poll();
+        ann.send(Heartbeat{});
+        chatters.both.ben.send(Heartbeat{});
+        deliver(server, 1.0F);
+    }
+    ann.sendReliable(PrivateSend{.name = "Ben", .text = "later"});
+    EXPECT_EQ(chatLine(server, chatters.both.ben),
+        (ChatMessage{.kind = ChatKind::Received, .name = "Ann", .text = "later"}));
+}
+
+TEST(Chat, BeforeLoggingInEverythingIsIgnored)
+{
+    TestServer server;
+    TwoChatters chatters(server);
+    TestClient stranger(server.address());
+    (void)openSessionOrFail(server, stranger, "Stranger");
+
+    stranger.sendReliable(PrivateSend{.name = "Ann", .text = "psst"});
+
+    EXPECT_FALSE(chatLine(server, chatters.both.ann).has_value());
+    EXPECT_FALSE(waitFor<ChatRefused>(server, stranger).has_value());
+}
+
+TEST(Chat, NoTextIsReadableOnTheNetwork)
+{
+    TestServer server;
+    TwoChatters chatters(server);
+    TestClient& ann = chatters.both.ann;
+    TestClient& ben = chatters.both.ben;
+    ben.rawDatagrams.clear();
+
+    ann.sendReliable(PrivateSend{.name = "Ben", .text = "my secret words"});
+    ASSERT_TRUE(chatLine(server, ben).has_value());
+
+    const std::string secret = "my secret words";
+    for (const auto& datagram : ben.rawDatagrams) {
+        const std::string text(reinterpret_cast<const char*>(datagram.data()), datagram.size());
+        EXPECT_EQ(text.find(secret), std::string::npos);
+    }
+}
+
+TEST(Chat, FromTheMainPageNobodyInTheGameIsReached)
+{
+    TestServer server;
+    TwoChatters chatters(server);
+    ASSERT_EQ(joinOrFail(server, chatters.both.ben).code, JoinCode::Ok);
+
+    chatters.both.ann.sendReliable(ChatSend{.text = "hello"});
+
+    EXPECT_FALSE(chatLine(server, chatters.both.ben).has_value());
+}
+
+TEST(Chat, TheLimitSlidesWithTime)
+{
+    // 1 message, 4 seconds, 4 messages, 2 seconds: the first left the window, the others not
+    TestServer server;
+    TwoChatters chatters(server);
+    TestClient& ann = chatters.both.ann;
+    TestClient& ben = chatters.both.ben;
+    const auto waitSeconds = [&](int seconds) {
+        for (int second = 0; second < seconds; ++second) {
+            ann.poll();
+            ben.poll();
+            ann.send(Heartbeat{});
+            ben.send(Heartbeat{});
+            deliver(server, 1.0F);
+        }
+    };
+    ann.sendReliable(PrivateSend{.name = "Ben", .text = "first"});
+    ASSERT_TRUE(chatLine(server, ben).has_value());
+    waitSeconds(4);
+    for (int i = 0; i < 4; ++i) {
+        ann.sendReliable(PrivateSend{.name = "Ben", .text = "next"});
+    }
+    for (int i = 0; i < 4; ++i) {
+        ASSERT_TRUE(chatLine(server, ben).has_value()) << i;
+    }
+    waitSeconds(2);
+
+    ann.sendReliable(PrivateSend{.name = "Ben", .text = "allowed"});
+    EXPECT_EQ(chatLine(server, ben),
+        (ChatMessage{.kind = ChatKind::Received, .name = "Ann", .text = "allowed"}));
+
+    ann.sendReliable(PrivateSend{.name = "Ben", .text = "too much"});
+    EXPECT_EQ(waitFor<ChatRefused>(server, ann), (ChatRefused{.reason = ChatRefusal::TooFast}));
+}
+
+TEST(Chat, TheFileIsWrittenAtMostOncePerSecond)
+{
+    TestServer server;
+    TwoChatters chatters(server);
+    TestClient& ann = chatters.both.ann;
+    chatters.both.ben.send(Disconnect{.reason = DisconnectReason::Quit});
+    deliver(server);
+    ann.send(Heartbeat{});
+    server.frame(2.0F); // Long after the last save
+    const auto contentOf = [&] {
+        std::ifstream input(server.messagesFile(), std::ios::binary);
+        return std::string(std::istreambuf_iterator<char>(input), {});
+    };
+
+    ann.sendReliable(PrivateSend{.name = "Ben", .text = "first"});
+    deliver(server);
+    const std::string first = contentOf();
+    EXPECT_NE(first.find("first"), std::string::npos); // Saved at once
+
+    ann.sendReliable(PrivateSend{.name = "Ben", .text = "second"});
+    deliver(server);
+    EXPECT_EQ(contentOf(), first); // Too soon: it waits
+
+    server.frame(1.1F);
+    EXPECT_NE(contentOf().find("second"), std::string::npos);
 }

@@ -27,6 +27,9 @@ add_library(rtype_server
     AccountStore.cpp
     FriendStore.hpp
     FriendStore.cpp
+    MessageStore.hpp
+    MessageStore.cpp
+    OnlinePlayers.hpp
     TextFile.hpp
     TextFile.cpp
     Spawn.hpp
@@ -44,6 +47,8 @@ add_library(rtype_server
     Systems/JoinSystem.cpp
     Systems/FriendSystem.hpp
     Systems/FriendSystem.cpp
+    Systems/ChatSystem.hpp
+    Systems/ChatSystem.cpp
     Systems/TimeoutSystem.hpp
     Systems/TimeoutSystem.cpp
     Systems/SessionCleanupSystem.hpp
