@@ -66,6 +66,16 @@ void NetSendSystem::update(ecs::World& world, const ecs::Time& /*time*/)
         session.screen = Screen::Connect;
         session.focus = 0;
         session.status.clear();
+        session.error.clear();
+    } else if (session.request == Request::Play) {
+        if (!session.joining) { // A second click while waiting asks nothing more
+            session.joining = true;
+            session.error.clear();
+            _connection.sendReliable(JoinGame{});
+        }
+    } else if (session.request == Request::LeaveGame) {
+        _connection.sendReliable(LeaveGame{});
+        leaveGame(world);
     }
     if (session.request != Request::Quit) {
         session.request = Request::None; // Quit is for main(), after the loop

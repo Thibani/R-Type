@@ -344,7 +344,8 @@ TEST(InterfaceSize, EveryControlStaysVisibleAtEverySize)
     using client::Screen;
     using client::Session;
     for (const int size : Settings::InterfaceSizes) {
-        for (const Screen screen : {Screen::Connect, Screen::WaitingRoom, Screen::Game, Screen::GameOver}) {
+        for (const Screen screen :
+            {Screen::Connect, Screen::Home, Screen::WaitingRoom, Screen::Game, Screen::GameOver}) {
             for (const bool menu : {false, true}) {
                 for (const bool settings : {false, true}) {
                     Session session;
@@ -697,7 +698,8 @@ TEST(Layout, EveryFocusablePartIsInsideTheCanvasAndNoneOverlaps)
             }
         }
     };
-    for (const Screen screen : {Screen::Connect, Screen::WaitingRoom, Screen::GameOver}) {
+    for (const Screen screen :
+        {Screen::Connect, Screen::Home, Screen::WaitingRoom, Screen::GameOver}) {
         client::Session session;
         session.screen = screen;
         check(session);

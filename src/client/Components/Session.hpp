@@ -12,8 +12,9 @@ namespace client {
 
 enum class Screen : std::uint8_t {
     Connect, // Connection form (also shows "connecting" and errors)
+    Home, // Main page, once logged in
     WaitingRoom, // GAME_STATE = WAITING_FOR_PLAYERS
-    Game, // Playing (the server spawned our ship, or GAME_STATE = RUNNING)
+    Game, // Playing (JOIN_RESULT accepted, or GAME_STATE = RUNNING)
     GameOver, // GAME_STATE = GAME_OVER
 };
 
@@ -22,7 +23,9 @@ enum class Request : std::uint8_t {
     None,
     Login,
     CreateAccount,
-    Leave, // Back to the connection screen
+    Leave, // Log out: back to the connection screen
+    Play, // Enter the game
+    LeaveGame, // Back to the main page
     Quit, // Close the client
 };
 
@@ -49,12 +52,15 @@ struct Session {
     std::string address;
     std::string port;
     std::string status; // "Connecting... attempt 3 / 10", "Logging in..."
-    std::string error; // Why the last attempt or session failed
+    std::string error; // Why the last attempt or session failed, or why the game refused us
+
+    // Main page
+    bool joining{false}; // JOIN_GAME sent, JOIN_RESULT not received yet
 
     // Game
-    std::optional<std::uint8_t> playerId; // Ours, from CONNECT_ACCEPT
+    std::optional<std::uint8_t> playerId; // Ours, from JOIN_RESULT: only while in the game
     std::array<PlayerSlot, network::protocol::MaxPlayers> players{};
-    // From AUTH_RESULT to the next reliable event: the PLAYER_JOINED received
+    // From JOIN_RESULT to the next reliable event: the PLAYER_JOINED received
     // meanwhile are the players already there (§8.1), not arrivals to announce
     bool catchingUp{false};
     std::uint32_t score{0}; // Team score from GAME_STATE

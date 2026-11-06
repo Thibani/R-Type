@@ -122,6 +122,7 @@ void closeSettings(Session& session)
 {
     session.settingsOpen = false;
     session.capturing.reset();
+    static_assert(layout::HomeSettingsButton == layout::MenuSettingsButton);
     session.focus
         = session.screen == Screen::Connect ? layout::SettingsButton : layout::MenuSettingsButton;
 }
@@ -225,9 +226,18 @@ void activate(Session& session, Settings& settings, int index, ecs::GameLoop& lo
             session.focus = index; // A field: just focus it
         }
         break;
+    case Screen::Home:
+        if (index == layout::PlayButton) {
+            session.request = Request::Play;
+        } else if (index == layout::HomeSettingsButton) {
+            openSettings(session);
+        } else {
+            session.request = Request::Leave;
+        }
+        break;
     case Screen::WaitingRoom:
     case Screen::GameOver:
-        session.request = Request::Leave;
+        session.request = Request::LeaveGame;
         break;
     case Screen::Game:
         if (index == layout::ResumeButton) {
@@ -235,7 +245,7 @@ void activate(Session& session, Settings& settings, int index, ecs::GameLoop& lo
         } else if (index == layout::MenuSettingsButton) {
             openSettings(session);
         } else {
-            session.request = Request::Leave;
+            session.request = Request::LeaveGame;
         }
         break;
     }
@@ -273,7 +283,8 @@ void capturePad(Session& session, Settings& settings, Action action, unsigned bu
     }
 }
 
-/// Esc: closes the settings or the menu, leaves the screen, or quits.
+/// Esc: closes the settings or the menu, leaves the screen, or quits. Nothing on the
+/// main page: logging out takes its own button.
 void escape(Session& session, ecs::GameLoop& loop)
 {
     if (session.settingsOpen) {
@@ -284,8 +295,8 @@ void escape(Session& session, ecs::GameLoop& loop)
     } else if (session.screen == Screen::Game) {
         session.menuOpen = !session.menuOpen;
         session.focus = 0;
-    } else {
-        session.request = Request::Leave;
+    } else if (session.screen != Screen::Home) {
+        session.request = Request::LeaveGame;
     }
 }
 

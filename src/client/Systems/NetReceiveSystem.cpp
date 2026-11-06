@@ -24,7 +24,7 @@ void NetReceiveSystem::update(ecs::World& world, const ecs::Time& time)
 
     Session& session = singleton<Session>(world);
     if (!wasConnected && _connection.status() == ServerConnection::Status::Connected) {
-        startSession(world, *_connection.accepted(), session.name);
+        startSession(world);
         session.password.clear();
     }
     for (const auto& payload : payloads) {
