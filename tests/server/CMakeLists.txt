@@ -3,6 +3,7 @@
 rtype_add_test(server_tests
     SOURCES
         ServerOptionsTests.cpp
+        AccountStoreTests.cpp
         NetReceiveSystemTests.cpp
         SessionTests.cpp
         GameStateTests.cpp

@@ -63,3 +63,19 @@ TEST(ServerOptions, UnknownArgumentIsRejected)
     ASSERT_FALSE(options.has_value());
     EXPECT_NE(options.error().find("--verbose"), std::string::npos);
 }
+
+TEST(ServerOptions, AccountsFileHasADefaultAndCanBeChosen)
+{
+    const auto byDefault = parse({});
+    ASSERT_TRUE(byDefault.has_value());
+    EXPECT_EQ(byDefault->accountsFile.string(), "accounts.txt");
+
+    const auto chosen = parse({"--accounts", "players.txt"});
+    ASSERT_TRUE(chosen.has_value());
+    EXPECT_EQ(chosen->accountsFile.string(), "players.txt");
+}
+
+TEST(ServerOptions, AccountsNeedsAFile)
+{
+    EXPECT_FALSE(parse({"--accounts"}).has_value());
+}

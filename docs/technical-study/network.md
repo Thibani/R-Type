@@ -316,8 +316,54 @@ bounds**, because an attacker controls what we receive:
 | Reliability state per client   | 1024 sent records + 64 early messages     |
 | Sessions                       | 4 players                                 |
 
-Persistent data (accounts, scores) belongs to Part 2 (#73, #91) and will be
-studied there.
+### Accounts (#73)
+
+The server keeps the accounts in a text file, with one account per line
+(`--accounts`, default `accounts.txt`):
+
+```text
+<kibibytes> <passes> <salt in hex> <hash in hex> <name>
+```
+
+| Criterion          | Text file (chosen)                  | SQLite                         | One JSON file               |
+|--------------------|-------------------------------------|--------------------------------|-----------------------------|
+| Dependency         | None                                | A library, on Linux and Windows | A library, or our own parser |
+| Reading            | Loaded once, then a `std::map` in memory | SQL queries               | Loaded once                 |
+| Writing            | The whole file, for each new account | One row                       | The whole file              |
+| Crash during a write | Temporary file, then rename: the old file stays intact | Built in (journal) | Same as the text file   |
+| Reading it by hand | Yes                                 | With a tool                    | Yes                         |
+
+For a game server with few accounts, a new account is rare and small: rewriting
+the file, the only disk access, on the game thread, takes 0.5 ms with 1,000 accounts
+and 1.6 ms with 5,000 (measured on our VM). The drawback appears with many accounts or frequent writes: leaderboards
+or friends (#91, #126) may justify moving to SQLite. `AccountStore` is the only
+code that knows the format, so that change would stay inside it.
+
+Known limits: the rename protects against a crash of the server, not fully
+against a power cut, since the file is not forced to disk (`fsync` is not portable
+in standard C++); the last account created could be lost, not the older ones.
+
+**Reliability.** A missing file is created at startup, and a file that cannot be
+read or written stops the server there rather than at the first sign-up. A damaged
+line is skipped and the file is first copied to `<file>.damaged`, since the next
+save would remove that line for good.
+
+**Password hashing.** We compared how long one hash takes an attacker:
+
+| Algorithm                 | Cost for an attacker                       | Decision |
+|---------------------------|--------------------------------------------|----------|
+| SHA-256, BLAKE2b          | Fast: built for speed, cheap on a GPU      | Rejected |
+| bcrypt                    | Slow, but no memory cost; another library  | Rejected |
+| **Argon2id** (Monocypher) | Slow and memory-hard, already in the project | Chosen |
+
+Cost: 64 MiB and 3 passes, 130 ms measured on our VM (`-O2`), above the OWASP minimum (19 MiB,
+2 passes). It is stored with each account, so raising it later does not break the
+accounts that exist. Each account has a random salt: two identical passwords give
+two different hashes. Hashes are compared in constant time.
+
+The hash runs on its own thread, one at a time, so the game never waits for it and
+a client cannot make the server use more than 64 MiB for hashing. At most 4 are
+waiting, since there is one per session.
 
 ---
 
@@ -334,6 +380,11 @@ studied there.
 | One client floods the server        | 120 packets/s per address                          | Done |
 | Reliable-buffer exhaustion          | 64 early messages, then disconnect (`PROTOCOL_ERROR`) | Done |
 | Eavesdropping, tampering, replay    | Authenticated encryption per session (#97)         | Done (active attacker during the connection: not covered, protocol §3.3) |
+| Password read on the network        | `AUTH_REQUEST` always encrypted, fixed size (#73)  | Done, except against an active attacker during the connection (protocol §3.3) |
+| Stolen accounts file                | Salted Argon2id hashes only, readable by the server's user only (#73) | Done |
+| Guessing passwords online           | One attempt per connection + slow hash + 120 packets/s per address. No limit per account | Partly |
+| Finding which names have an account | Same answer and same delay at login. `NAME_TAKEN` still reveals a name at sign-up, which is unavoidable | Partly |
+| Keeping a player slot without an account | Session closed after 10 s without login (#73) | Done |
 
 Main weaknesses of the technologies themselves:
 

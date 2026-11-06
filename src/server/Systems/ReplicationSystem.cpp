@@ -60,7 +60,7 @@ void ReplicationSystem::update(ecs::World& world, const ecs::Time& /*time*/)
     });
 
     const std::uint32_t score = singleton<TeamScore>(world).value;
-    world.query<NetClient>([&](ecs::Entity /*entity*/, NetClient& client) {
+    world.query<NetClient, LoggedIn>([&](ecs::Entity /*entity*/, NetClient& client, LoggedIn&) {
         for (const PlayerDied& death : _deaths) {
             client.channel.queueReliable(death);
         }

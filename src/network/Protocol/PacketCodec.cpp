@@ -112,6 +112,18 @@ namespace {
         return true;
     }
 
+    bool validate(const AuthRequest& packet) noexcept
+    {
+        return inRange(packet.mode, AuthMode::Login, AuthMode::Register)
+            && packet.password.size() <= MaxPasswordSize && !packet.password.contains('\0')
+            && isValidUtf8(packet.password);
+    }
+
+    bool validate(const AuthResult& packet) noexcept
+    {
+        return inRange(packet.code, AuthCode::Ok, AuthCode::ServerError);
+    }
+
     bool validate(const Input& packet) noexcept
     {
         if (packet.count < 1 || packet.count > MaxInputMasks) {
@@ -162,49 +174,51 @@ namespace {
         return inRange(packet.phase, GamePhase::WaitingForPlayers, GamePhase::GameOver);
     }
 
-    // --- Names (§2.2) ---------------------------------------------------------
+    // --- Names and passwords (§2.2) ------------------------------------------
 
-    /// Writes `name` as a 16-byte zero-padded field. `name` must be valid.
-    void writeName(ByteWriter& writer, std::string_view name) noexcept
+    /// Writes `text` as a zero-padded field of `Size` bytes. `text` must be valid.
+    template <std::size_t Size>
+    void writeText(ByteWriter& writer, std::string_view text) noexcept
     {
-        std::array<std::byte, NameSize> field{};
-        for (std::size_t i = 0; i < name.size() && i < NameSize; ++i) {
-            field[i] = static_cast<std::byte>(name[i]);
+        std::array<std::byte, Size> field{};
+        for (std::size_t i = 0; i < text.size() && i < Size; ++i) {
+            field[i] = static_cast<std::byte>(text[i]);
         }
         writer.writeBytes(field);
     }
 
-    /// Reads a 16-byte name field. Returns false if the field is not valid
+    /// Reads a text field of `Size` bytes. Returns false if the field is not valid
     /// zero-padded UTF-8. A truncated field is left to the caller (reader not ok).
-    bool readName(ByteReader& reader, std::string& name)
+    template <std::size_t Size>
+    bool readText(ByteReader& reader, std::string& text)
     {
-        std::array<std::byte, NameSize> field{};
+        std::array<std::byte, Size> field{};
         if (!reader.readBytes(field)) {
             return true;
         }
 
         std::size_t length = 0;
-        while (length < NameSize && field[length] != std::byte{0}) {
+        while (length < Size && field[length] != std::byte{0}) {
             ++length;
         }
-        for (std::size_t i = length; i < NameSize; ++i) {
+        for (std::size_t i = length; i < Size; ++i) {
             if (field[i] != std::byte{0}) {
                 return false; // Data after the padding started
             }
         }
 
-        name.resize(length);
+        text.resize(length);
         for (std::size_t i = 0; i < length; ++i) {
-            name[i] = static_cast<char>(std::to_integer<unsigned char>(field[i]));
+            text[i] = static_cast<char>(std::to_integer<unsigned char>(field[i]));
         }
-        return isValidUtf8(name);
+        return isValidUtf8(text);
     }
 
     // --- Payload writers ------------------------------------------------------
 
     void writePayload(ByteWriter& writer, const ConnectRequest& packet) noexcept
     {
-        writeName(writer, packet.name);
+        writeText<NameSize>(writer, packet.name);
         writer.writeBytes(packet.publicKey);
     }
 
@@ -228,6 +242,17 @@ namespace {
     }
 
     void writePayload(ByteWriter& /*writer*/, const Heartbeat& /*packet*/) noexcept { }
+
+    void writePayload(ByteWriter& writer, const AuthRequest& packet) noexcept
+    {
+        writer.write(std::to_underlying(packet.mode));
+        writeText<MaxPasswordSize>(writer, packet.password);
+    }
+
+    void writePayload(ByteWriter& writer, const AuthResult& packet) noexcept
+    {
+        writer.write(std::to_underlying(packet.code));
+    }
 
     void writePayload(ByteWriter& writer, const Input& packet) noexcept
     {
@@ -283,7 +308,7 @@ namespace {
     void writePayload(ByteWriter& writer, const PlayerJoined& packet) noexcept
     {
         writer.write(packet.playerId);
-        writeName(writer, packet.name);
+        writeText<NameSize>(writer, packet.name);
     }
 
     void writePayload(ByteWriter& writer, const PlayerLeft& packet) noexcept
@@ -314,7 +339,7 @@ namespace {
 
     ReadError readPayload(ByteReader& reader, ConnectRequest& packet)
     {
-        if (!readName(reader, packet.name)) {
+        if (!readText<NameSize>(reader, packet.name)) {
             return DecodeError::InvalidName;
         }
         // A failed read fails the reader: decodeAs() reports BadPayloadSize
@@ -346,6 +371,21 @@ namespace {
 
     ReadError readPayload(ByteReader& /*reader*/, Heartbeat& /*packet*/)
     {
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& reader, AuthRequest& packet)
+    {
+        packet.mode = static_cast<AuthMode>(reader.read<std::uint8_t>());
+        if (!readText<MaxPasswordSize>(reader, packet.password)) {
+            return DecodeError::InvalidValue;
+        }
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& reader, AuthResult& packet)
+    {
+        packet.code = static_cast<AuthCode>(reader.read<std::uint8_t>());
         return {};
     }
 
@@ -420,7 +460,7 @@ namespace {
     ReadError readPayload(ByteReader& reader, PlayerJoined& packet)
     {
         packet.playerId = reader.read<std::uint8_t>();
-        return readName(reader, packet.name) ? ReadError{} : DecodeError::InvalidName;
+        return readText<NameSize>(reader, packet.name) ? ReadError{} : DecodeError::InvalidName;
     }
 
     ReadError readPayload(ByteReader& reader, PlayerLeft& packet)
@@ -590,6 +630,10 @@ std::expected<Packet, DecodeError> decode(std::span<const std::byte> datagram, D
         return decodeAs<Disconnect>(*header, payload, direction);
     case PacketType::Heartbeat:
         return decodeAs<Heartbeat>(*header, payload, direction);
+    case PacketType::AuthRequest:
+        return decodeAs<AuthRequest>(*header, payload, direction);
+    case PacketType::AuthResult:
+        return decodeAs<AuthResult>(*header, payload, direction);
     case PacketType::Input:
         return decodeAs<Input>(*header, payload, direction);
     case PacketType::Snapshot:

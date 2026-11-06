@@ -49,9 +49,12 @@ void SessionCleanupSystem::update(ecs::World& world, const ecs::Time& time)
                     sendToClient(_socket, client, packet);
                 }
             }
+            leaving.push_back(entity);
+            if (!world.hasComponent<LoggedIn>(entity)) {
+                return; // It never joined: nobody knows about it
+            }
             std::cout << "r-type_server: player " << static_cast<int>(client.playerId) << " '"
                       << client.name << "' " << describe(disconnecting.reason) << '\n';
-            leaving.push_back(entity);
             announcements.push_back(
                 PlayerLeft{.playerId = client.playerId, .reason = disconnecting.reason});
         });
@@ -59,7 +62,7 @@ void SessionCleanupSystem::update(ecs::World& world, const ecs::Time& time)
     for (const ecs::Entity entity : leaving) {
         world.destroyEntity(entity);
     }
-    world.query<NetClient>([&](ecs::Entity /*entity*/, NetClient& client) {
+    world.query<NetClient, LoggedIn>([&](ecs::Entity /*entity*/, NetClient& client, LoggedIn&) {
         for (const PlayerLeft& left : announcements) {
             client.channel.queueReliable(left);
         }

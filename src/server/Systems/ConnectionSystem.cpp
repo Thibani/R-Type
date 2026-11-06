@@ -8,7 +8,6 @@
 #include "server/Network.hpp"
 
 #include <array>
-#include <iostream>
 #include <optional>
 #include <utility>
 #include <variant>
@@ -150,14 +149,6 @@ void ConnectionSystem::update(ecs::World& world, const ecs::Time& time)
             continue; // No honest client sends an invalid key: no answer
         }
 
-        // Everyone already here learns about the newcomer, and the other way round
-        const PlayerJoined newcomerJoined{.playerId = *playerId, .name = name};
-        std::vector<PlayerJoined> alreadyHere;
-        world.query<NetClient>([&](ecs::Entity /*entity*/, NetClient& other) {
-            other.channel.queueReliable(newcomerJoined);
-            alreadyHere.push_back(PlayerJoined{.playerId = other.playerId, .name = other.name});
-        });
-
         const std::uint32_t token = newToken(world);
         const ecs::Entity entity = world.createEntity();
         NetClient& client = world.addComponent(entity,
@@ -171,19 +162,15 @@ void ConnectionSystem::update(ecs::World& world, const ecs::Time& time)
                 = network::crypto::SessionCipher(*sessionKey, network::crypto::Role::Server),
                 .clientPublicKey = connectRequest.publicKey,
                 .serverPublicKey = keys.publicKey,
+                .connectedAt = now,
+                .loginRequested = false,
                 .lastReceived = now,
                 .lastSent = now,
                 .knownEntities = {},
                 .knownScore = std::nullopt,
             });
         trackRequest(client.channel, request.packet, now);
-        for (const PlayerJoined& other : alreadyHere) {
-            client.channel.queueReliable(other);
-        }
         accept(_socket, client, now);
-
-        std::cout << "r-type_server: player " << static_cast<int>(client.playerId) << " '"
-                  << client.name << "' joined from " << client.endpoint << '\n';
     }
 }
 

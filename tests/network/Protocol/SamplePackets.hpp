@@ -102,6 +102,10 @@ inline std::vector<Sample> all()
         toServer(makePacket(Disconnect{.reason = DisconnectReason::Timeout})),
         toClient(makePacket(Disconnect{.reason = DisconnectReason::ServerShutdown})),
         toServer(makePacket(Heartbeat{})),
+        toServer(makePacket(AuthRequest{.mode = AuthMode::Register, .password = "s3cret pass"})),
+        toServer(
+            makePacket(AuthRequest{.mode = AuthMode::Login, .password = std::string(64, 'x')})),
+        toClient(makePacket(AuthResult{.code = AuthCode::NameTaken}, 6)),
         toServer(makePacket(input)),
         toClient(makePacket(snapshot)),
         toClient(makePacket(emptySnapshot)),

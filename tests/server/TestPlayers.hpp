@@ -11,7 +11,7 @@
 /// Helpers for server tests that run systems on a plain World, without sockets.
 namespace testing_players {
 
-/// A connected player, as ConnectionSystem would create it.
+/// A connected and logged-in player, as ConnectionSystem and LoginSystem would make it.
 inline ecs::Entity addPlayer(ecs::World& world, std::uint8_t playerId)
 {
     const ecs::Entity player = world.createEntity();
@@ -25,11 +25,14 @@ inline ecs::Entity addPlayer(ecs::World& world, std::uint8_t playerId)
             .cipher = network::crypto::SessionCipher({}, network::crypto::Role::Server),
             .clientPublicKey = {},
             .serverPublicKey = {},
+            .connectedAt = {},
+            .loginRequested = true,
             .lastReceived = {},
             .lastSent = {},
             .knownEntities = {},
             .knownScore = std::nullopt,
         });
+    world.addComponent(player, server::LoggedIn{});
     return player;
 }
 

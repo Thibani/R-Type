@@ -24,19 +24,23 @@ constexpr bool isCompact(int interfaceSize) noexcept
 
 // Connection form: fields and buttons, in Tab order (Session::focus).
 inline constexpr int NameField = 0;
-inline constexpr int AddressField = 1;
-inline constexpr int PortField = 2;
-inline constexpr int ConnectButton = 3;
-inline constexpr int SettingsButton = 4;
-inline constexpr int QuitButton = 5;
+inline constexpr int PasswordField = 1;
+inline constexpr int AddressField = 2;
+inline constexpr int PortField = 3;
+inline constexpr int LoginButton = 4;
+inline constexpr int CreateAccountButton = 5;
+inline constexpr int SettingsButton = 6;
+inline constexpr int QuitButton = 7;
 
 inline constexpr sf::FloatRect ConnectPanel{{668.0F, 132.0F}, {532.0F, 456.0F}};
-inline constexpr sf::FloatRect NameInput{{700.0F, 245.0F}, {468.0F, 48.0F}};
-inline constexpr sf::FloatRect AddressInput{{700.0F, 367.0F}, {306.0F, 48.0F}};
-inline constexpr sf::FloatRect PortInput{{1024.0F, 367.0F}, {144.0F, 48.0F}};
-inline constexpr sf::FloatRect Connect{{700.0F, 437.0F}, {208.0F, 56.0F}};
-inline constexpr sf::FloatRect OpenSettings{{920.0F, 437.0F}, {128.0F, 56.0F}};
-inline constexpr sf::FloatRect Quit{{1056.0F, 437.0F}, {112.0F, 56.0F}};
+inline constexpr sf::FloatRect NameInput{{700.0F, 218.0F}, {226.0F, 48.0F}};
+inline constexpr sf::FloatRect PasswordInput{{942.0F, 218.0F}, {226.0F, 48.0F}};
+inline constexpr sf::FloatRect AddressInput{{700.0F, 324.0F}, {306.0F, 48.0F}};
+inline constexpr sf::FloatRect PortInput{{1024.0F, 324.0F}, {144.0F, 48.0F}};
+inline constexpr sf::FloatRect Login{{700.0F, 384.0F}, {226.0F, 56.0F}};
+inline constexpr sf::FloatRect CreateAccount{{942.0F, 384.0F}, {226.0F, 56.0F}};
+inline constexpr sf::FloatRect OpenSettings{{700.0F, 448.0F}, {226.0F, 56.0F}};
+inline constexpr sf::FloatRect Quit{{942.0F, 448.0F}, {226.0F, 56.0F}};
 
 // Waiting room
 [[nodiscard]]
@@ -114,7 +118,8 @@ inline std::vector<sf::FloatRect> focusables(const Session& session, int interfa
     }
     switch (session.screen) {
     case Screen::Connect:
-        return {NameInput, AddressInput, PortInput, Connect, OpenSettings, Quit};
+        return {NameInput, PasswordInput, AddressInput, PortInput, Login, CreateAccount,
+            OpenSettings, Quit};
     case Screen::WaitingRoom:
         return {leave(interfaceSize)};
     case Screen::Game:

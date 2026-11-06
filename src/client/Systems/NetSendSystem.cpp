@@ -19,11 +19,19 @@ using namespace network::protocol;
 namespace {
 
 /// Checks the form, then starts connecting. Errors are shown under the form.
-void connect(
-    Session& session, ServerConnection& connection, ServerConnection::Clock::time_point now)
+void connect(Session& session, ServerConnection& connection, AuthMode mode,
+    ServerConnection::Clock::time_point now)
 {
+    if (connection.status() == ServerConnection::Status::LoggingIn) {
+        return; // Answer on its way: a second connection would be refused
+    }
     if (session.name.empty() || !isValidName(session.name)) {
         session.error = "Enter a name of 1 to 16 characters.";
+        return;
+    }
+    if (session.password.empty()
+        || (mode == AuthMode::Register && session.password.size() < MinPasswordSize)) {
+        session.error = "Enter a password of 8 to 64 characters.";
         return;
     }
     const auto port = parsePort(session.port);
@@ -32,7 +40,8 @@ void connect(
         return;
     }
     session.error.clear();
-    connection.connect(session.address, *port, session.name, now);
+    connection.connect(session.address, *port,
+        {.name = session.name, .password = session.password, .mode = mode}, now);
 }
 
 } // namespace
@@ -47,8 +56,10 @@ void NetSendSystem::update(ecs::World& world, const ecs::Time& /*time*/)
     const auto now = ServerConnection::Clock::now();
     Session& session = singleton<Session>(world);
 
-    if (session.request == Request::Connect) {
-        connect(session, _connection, now);
+    if (session.request == Request::Login) {
+        connect(session, _connection, AuthMode::Login, now);
+    } else if (session.request == Request::CreateAccount) {
+        connect(session, _connection, AuthMode::Register, now);
     } else if (session.request == Request::Leave) {
         _connection.disconnect(now);
         clearSession(world);

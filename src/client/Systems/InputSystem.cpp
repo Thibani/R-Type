@@ -70,6 +70,8 @@ std::string* focusedField(Session& session)
     switch (session.focus) {
     case layout::NameField:
         return &session.name;
+    case layout::PasswordField:
+        return &session.password;
     case layout::AddressField:
         return &session.address;
     case layout::PortField:
@@ -90,6 +92,12 @@ void type(Session& session, char32_t c)
         std::string longer = *field;
         appendUtf8(longer, c);
         if (isValidName(longer)) { // At most 16 bytes of UTF-8 (protocol §2.2)
+            *field = longer;
+        }
+    } else if (session.focus == layout::PasswordField) {
+        std::string longer = *field;
+        appendUtf8(longer, c);
+        if (longer.size() <= MaxPasswordSize) {
             *field = longer;
         }
     } else if (session.focus == layout::AddressField) {
@@ -183,8 +191,10 @@ void activate(Session& session, Settings& settings, int index, ecs::GameLoop& lo
         if (index == layout::QuitButton) {
             session.request = Request::Quit;
             loop.stop();
-        } else if (index == layout::ConnectButton) {
-            session.request = Request::Connect;
+        } else if (index == layout::LoginButton) {
+            session.request = Request::Login;
+        } else if (index == layout::CreateAccountButton) {
+            session.request = Request::CreateAccount;
         } else if (index == layout::SettingsButton) {
             openSettings(session);
         } else {
@@ -274,11 +284,11 @@ void onKey(Session& session, Settings& settings, const sf::Event::KeyPressed& ke
         if (!inMenu) {
             break;
         }
-        // In the form, Enter connects from any field
+        // In the form, Enter logs in from any field
         activate(session, settings,
             !session.settingsOpen && session.screen == Screen::Connect
-                    && session.focus < layout::ConnectButton
-                ? layout::ConnectButton
+                    && session.focus < layout::LoginButton
+                ? layout::LoginButton
                 : session.focus,
             loop);
         break;

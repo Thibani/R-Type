@@ -23,8 +23,9 @@ void NetReceiveSystem::update(ecs::World& world, const ecs::Time& time)
     const auto payloads = _connection.receive(now);
 
     Session& session = singleton<Session>(world);
-    if (!wasConnected && _connection.accepted()) {
+    if (!wasConnected && _connection.status() == ServerConnection::Status::Connected) {
         startSession(world, *_connection.accepted(), session.name);
+        session.password.clear();
     }
     for (const auto& payload : payloads) {
         applyPayload(world, payload, time.elapsedSeconds());
@@ -34,6 +35,9 @@ void NetReceiveSystem::update(ecs::World& world, const ecs::Time& time)
     case ServerConnection::Status::Connecting:
         session.status = "Connecting... attempt " + std::to_string(_connection.attempts()) + " / "
             + std::to_string(ServerConnection::MaxAttempts);
+        break;
+    case ServerConnection::Status::LoggingIn:
+        session.status = "Logging in...";
         break;
     case ServerConnection::Status::Failed:
         // Here, or detected by update() last frame: back to the form with the reason

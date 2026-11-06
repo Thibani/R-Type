@@ -3,6 +3,7 @@
 #include "ecs/Loop/GameLoop.hpp"
 #include "ecs/World/World.hpp"
 #include "network/Transport/NetworkThread.hpp"
+#include "server/AccountStore.hpp"
 #include "server/Network.hpp"
 #include "server/ServerOptions.hpp"
 #include "server/ServerSystems.hpp"
@@ -40,6 +41,17 @@ int run(std::span<const std::string_view> arguments)
         return 0;
     }
 
+    auto accounts = server::AccountStore::load(options->accountsFile);
+    if (!accounts) {
+        std::cerr << "r-type_server: " << accounts.error() << '\n';
+        return ExitFailure;
+    }
+    if (accounts->damagedLines() > 0) {
+        std::cerr << "r-type_server: warning: " << accounts->damagedLines()
+                  << " damaged line(s) in the accounts file, copied to "
+                  << options->accountsFile.string() << ".damaged\n";
+    }
+
     // The network thread starts here; the game runs on this one
     auto socket = network::NetworkThread::open(options->port);
     if (!socket) {
@@ -50,7 +62,7 @@ int run(std::span<const std::string_view> arguments)
 
     ecs::World world;
     ecs::GameLoop loop(world, {.sleepUntilNextStep = true});
-    server::installSystems(world, loop, **socket);
+    server::installSystems(world, loop, **socket, *accounts);
 
     runningLoop = &loop;
     std::signal(SIGINT, onStopSignal);
