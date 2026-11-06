@@ -111,6 +111,7 @@ Pass them at configure time, e.g. `cmake --preset debug -DRTYPE_BUILD_TESTS=OFF`
 ./build/debug/r-type_server              # listens on UDP port 4242
 ./build/debug/r-type_server -p 5000      # another port
 ./build/debug/r-type_server --accounts players.txt  # accounts file (default accounts.txt)
+./build/debug/r-type_server --friends pals.txt      # friends file (default friends.txt)
 ./build/debug/r-type_server --help
 ```
 

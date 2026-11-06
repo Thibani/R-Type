@@ -367,6 +367,16 @@ waiting, since there is one per session.
 
 ---
 
+### Friends (#126)
+
+Friends use a second text file (`--friends`, default `friends.txt`), for the reasons above.
+It is apart from the accounts so that a mistake on friends can never damage a password hash.
+The difference is when it is written: creating an account costs a slow hash, so a client cannot
+do it often, but a friend request costs nothing, and the server accepts 120 packets per second
+per address. Rewriting the whole file for each one would make the game wait for the disk. So
+changes stay in memory and the file is written at most once per second, and when the server
+stops. The price: a crash can lose the last second of changes, which a player can simply redo.
+
 ## 11. Security
 
 | Threat                              | Mitigation                                         | Status |
