@@ -743,6 +743,45 @@ TEST(InterfaceSize, TheFriendsPanelFitsAtEverySizeAndCoversNothing)
     }
 }
 
+TEST(GroupParts, OnlyTheLeaderHasTheLeadersButtons)
+{
+    namespace layout = client::layout;
+    client::Session session;
+    session.screen = client::Screen::Home;
+    session.name = "Max";
+    session.group.code = "ABC234";
+    session.group.members = {{.name = "Lea", .ready = false, .inGame = false},
+        {.name = "Max", .ready = false, .inGame = false}};
+    const auto usable = [&](int part) {
+        return layout::focusables(session, 100).at(static_cast<std::size_t>(part)).size.x > 0.0F;
+    };
+
+    EXPECT_FALSE(usable(layout::NewGroupCodeButton));
+    EXPECT_FALSE(usable(layout::DeleteGroupCodeButton));
+    EXPECT_FALSE(usable(layout::FirstKickButton));
+    EXPECT_FALSE(usable(layout::FirstPromoteButton + 1));
+    EXPECT_TRUE(usable(layout::LeaveGroupButton));
+
+    session.group.leader = 1;
+    EXPECT_TRUE(usable(layout::NewGroupCodeButton));
+    EXPECT_TRUE(usable(layout::DeleteGroupCodeButton));
+    EXPECT_TRUE(usable(layout::FirstKickButton)); // On Lea
+    EXPECT_FALSE(usable(layout::FirstKickButton + 1)); // Not on themselves
+    EXPECT_TRUE(usable(layout::FirstPromoteButton));
+    EXPECT_FALSE(usable(layout::FirstKickButton + 2)); // Nobody there
+}
+
+TEST(GroupParts, LeavingNeedsSomeoneElseInTheGroup)
+{
+    client::Session session;
+    session.screen = client::Screen::Home;
+    session.name = "Max";
+    session.group.members = {{.name = "Max", .ready = false, .inGame = false}};
+
+    EXPECT_LE(
+        client::layout::focusables(session, 100).at(client::layout::LeaveGroupButton).size.x, 0.0F);
+}
+
 TEST(FriendsPanel, ClosedUnlessTheMouseOrTheFocusIsThere)
 {
     client::Session session;
