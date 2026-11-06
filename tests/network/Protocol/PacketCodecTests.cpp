@@ -74,7 +74,7 @@ TEST(PacketCodec, MatchesTheSpecificationExample)
     };
 
     const auto expected = bytes({
-        0x52, 0x54, 0x04, 0x01, 0x00, 0x00, 0x00, 0x30, // magic, version, type, flags, reserved, size
+        0x52, 0x54, 0x05, 0x01, 0x00, 0x00, 0x00, 0x30, // magic, version, type, flags, reserved, size
         0x00, 0x00, 0x00, 0x00, // sessionToken
         0x00, 0x00, 0x00, 0x00, // sequence, ack
         0x00, 0x00, 0x00, 0x00, // ackBits
@@ -122,7 +122,7 @@ TEST(PacketCodec, EncodesHeaderFields)
     const auto datagram = encodeOrFail(packet);
 
     const auto expected = bytes({
-        0x52, 0x54, 0x04, 0x25, // magic, version, PLAYER_DIED
+        0x52, 0x54, 0x05, 0x25, // magic, version, PLAYER_DIED
         0x03, 0x00, 0x00, 0x05, // RELIABLE | HAS_ACK, reserved, payloadSize 5
         0xCA, 0xFE, 0xBA, 0xBE, // sessionToken
         0x00, 0x2A, 0x00, 0x29, // sequence 42, ack 41
@@ -158,6 +158,11 @@ TEST(PacketCodec, PayloadSizesMatchTheSpecification)
         {.payload = JoinGame(), .size = 2},
         {.payload = LeaveGame(), .size = 2},
         {.payload = JoinResult{.code = JoinCode::Ok, .playerId = 0}, .size = 4},
+        {.payload = FriendRequest{.name = "a"}, .size = 18},
+        {.payload = FriendAnswer{.name = "a", .reply = FriendReply::Accept}, .size = 19},
+        {.payload = FriendRemove{.name = "a"}, .size = 18},
+        {.payload = FriendResult(), .size = 3},
+        {.payload = FriendEntry{.name = "a", .state = FriendState::Online}, .size = 19},
     };
 
     for (const auto& [payload, size] : cases) {
@@ -445,6 +450,14 @@ TEST(PacketCodecEncoding, RefusesInvalidPayloads)
         JoinResult{.code = JoinCode::Ok, .playerId = 4},
         JoinResult{.code = JoinCode::GameFull, .playerId = 0},
         JoinResult{.code = static_cast<JoinCode>(2), .playerId = NoPlayer},
+        FriendRequest{.name = ""},
+        FriendRequest{.name = "seventeen bytes!!"},
+        FriendAnswer{.name = "", .reply = FriendReply::Accept},
+        FriendAnswer{.name = "a", .reply = static_cast<FriendReply>(2)},
+        FriendRemove{.name = ""},
+        FriendResult{.code = static_cast<FriendCode>(5)},
+        FriendEntry{.name = "", .state = FriendState::Online},
+        FriendEntry{.name = "a", .state = static_cast<FriendState>(5)},
         Input{.firstTick = 0, .count = 0, .masks = {}},
         Input{.firstTick = 0, .count = 9, .masks = {}},
         Snapshot{.serverTick = 0, .lastInputTick = 0, .partIndex = 0, .partCount = 1, .entities = std::vector<EntityState>(MaxSnapshotEntities + 1)},

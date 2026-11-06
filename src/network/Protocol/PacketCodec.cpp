@@ -143,6 +143,22 @@ namespace {
         return true;
     }
 
+    bool validate(const FriendRequest& packet) noexcept
+    {
+        return !packet.name.empty() && isValidName(packet.name);
+    }
+
+    bool validate(const FriendAnswer& packet) noexcept
+    {
+        return !packet.name.empty() && isValidName(packet.name)
+            && inRange(packet.reply, FriendReply::Refuse, FriendReply::Accept);
+    }
+
+    bool validate(const FriendRemove& packet) noexcept
+    {
+        return !packet.name.empty() && isValidName(packet.name);
+    }
+
     bool validate(const Snapshot& packet) noexcept
     {
         if (packet.partCount == 0 || packet.partIndex >= packet.partCount
@@ -190,6 +206,17 @@ namespace {
             return isValidPlayer(packet.playerId);
         }
         return packet.code == JoinCode::GameFull && packet.playerId == NoPlayer;
+    }
+
+    bool validate(const FriendResult& packet) noexcept
+    {
+        return inRange(packet.code, FriendCode::Ok, FriendCode::LimitReached);
+    }
+
+    bool validate(const FriendEntry& packet) noexcept
+    {
+        return !packet.name.empty() && isValidName(packet.name)
+            && inRange(packet.state, FriendState::Offline, FriendState::Removed);
     }
 
     // --- Names and passwords (§2.2) ------------------------------------------
@@ -285,6 +312,22 @@ namespace {
 
     void writePayload(ByteWriter& /*writer*/, const LeaveGame& /*packet*/) noexcept { }
 
+    void writePayload(ByteWriter& writer, const FriendRequest& packet) noexcept
+    {
+        writeText<NameSize>(writer, packet.name);
+    }
+
+    void writePayload(ByteWriter& writer, const FriendAnswer& packet) noexcept
+    {
+        writeText<NameSize>(writer, packet.name);
+        writer.write(std::to_underlying(packet.reply));
+    }
+
+    void writePayload(ByteWriter& writer, const FriendRemove& packet) noexcept
+    {
+        writeText<NameSize>(writer, packet.name);
+    }
+
     void writeEntityState(ByteWriter& writer, const EntityState& entity) noexcept
     {
         writer.write(entity.netId);
@@ -355,6 +398,17 @@ namespace {
     {
         writer.write(std::to_underlying(packet.code));
         writer.write(packet.playerId);
+    }
+
+    void writePayload(ByteWriter& writer, const FriendResult& packet) noexcept
+    {
+        writer.write(std::to_underlying(packet.code));
+    }
+
+    void writePayload(ByteWriter& writer, const FriendEntry& packet) noexcept
+    {
+        writeText<NameSize>(writer, packet.name);
+        writer.write(std::to_underlying(packet.state));
     }
 
     // --- Payload readers ------------------------------------------------------
@@ -442,6 +496,25 @@ namespace {
         return {};
     }
 
+    ReadError readPayload(ByteReader& reader, FriendRequest& packet)
+    {
+        return readText<NameSize>(reader, packet.name) ? ReadError{} : DecodeError::InvalidName;
+    }
+
+    ReadError readPayload(ByteReader& reader, FriendAnswer& packet)
+    {
+        if (!readText<NameSize>(reader, packet.name)) {
+            return DecodeError::InvalidName;
+        }
+        packet.reply = static_cast<FriendReply>(reader.read<std::uint8_t>());
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& reader, FriendRemove& packet)
+    {
+        return readText<NameSize>(reader, packet.name) ? ReadError{} : DecodeError::InvalidName;
+    }
+
     EntityState readEntityState(ByteReader& reader) noexcept
     {
         EntityState entity;
@@ -526,6 +599,21 @@ namespace {
     {
         packet.code = static_cast<JoinCode>(reader.read<std::uint8_t>());
         packet.playerId = reader.read<std::uint8_t>();
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& reader, FriendResult& packet)
+    {
+        packet.code = static_cast<FriendCode>(reader.read<std::uint8_t>());
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& reader, FriendEntry& packet)
+    {
+        if (!readText<NameSize>(reader, packet.name)) {
+            return DecodeError::InvalidName;
+        }
+        packet.state = static_cast<FriendState>(reader.read<std::uint8_t>());
         return {};
     }
 
@@ -687,6 +775,16 @@ std::expected<Packet, DecodeError> decode(std::span<const std::byte> datagram, D
         return decodeAs<LeaveGame>(*header, payload, direction);
     case PacketType::JoinResult:
         return decodeAs<JoinResult>(*header, payload, direction);
+    case PacketType::FriendRequest:
+        return decodeAs<FriendRequest>(*header, payload, direction);
+    case PacketType::FriendAnswer:
+        return decodeAs<FriendAnswer>(*header, payload, direction);
+    case PacketType::FriendRemove:
+        return decodeAs<FriendRemove>(*header, payload, direction);
+    case PacketType::FriendResult:
+        return decodeAs<FriendResult>(*header, payload, direction);
+    case PacketType::FriendEntry:
+        return decodeAs<FriendEntry>(*header, payload, direction);
     case PacketType::Snapshot:
         return decodeAs<Snapshot>(*header, payload, direction);
     case PacketType::EntitySpawn:

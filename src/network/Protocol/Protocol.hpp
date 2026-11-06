@@ -6,14 +6,14 @@
 #include <cstdint>
 #include <limits>
 
-/// Constants and enumerations of the R-Type network protocol, version 4.
+/// Constants and enumerations of the R-Type network protocol, version 5.
 /// The reference is docs/protocol.md: section numbers below point to it.
 namespace network::protocol {
 
 // --- Sizes and identification (§2, §3) ---------------------------------------
 
 inline constexpr std::uint16_t Magic = 0x5254; // "RT"
-inline constexpr std::uint8_t Version = 4;
+inline constexpr std::uint8_t Version = 5;
 
 inline constexpr std::size_t HeaderSize = 20;
 inline constexpr std::size_t MaxDatagramSize = 1200;
@@ -62,6 +62,11 @@ enum class PacketType : std::uint8_t {
     JoinGame = 0x30,
     LeaveGame = 0x31,
     JoinResult = 0x32,
+    FriendRequest = 0x33,
+    FriendAnswer = 0x34,
+    FriendRemove = 0x35,
+    FriendResult = 0x36,
+    FriendEntry = 0x37,
 };
 
 /// Which way a packet travels. A receiver drops packets going the wrong way.
@@ -106,6 +111,28 @@ enum class AuthCode : std::uint8_t {
 enum class JoinCode : std::uint8_t {
     Ok = 0,
     GameFull = 1,
+};
+
+enum class FriendReply : std::uint8_t {
+    Refuse = 0,
+    Accept = 1,
+};
+
+enum class FriendCode : std::uint8_t {
+    Ok = 0,
+    UnknownName = 1, // No account has this name
+    AlreadyLinked = 2, // Already a friend, or already asked
+    Yourself = 3,
+    LimitReached = 4, // 50 friends, or 50 requests
+};
+
+/// What someone is to the player receiving FRIEND_ENTRY.
+enum class FriendState : std::uint8_t {
+    Offline = 0,
+    Online = 1,
+    RequestReceived = 2, // They asked the player
+    RequestSent = 3, // The player asked them
+    Removed = 4, // Nothing any more: forget them
 };
 
 enum class LeaveReason : std::uint8_t {
