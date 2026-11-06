@@ -2248,6 +2248,25 @@ TEST(Groups, EachPlayerStartsAloneAndLeading)
     EXPECT_EQ(state->members[0].name, "Lea");
 }
 
+TEST(Groups, ComingBackTellsTheGroupAgain)
+{
+    TestServer server;
+    {
+        TestClient first(server.address());
+        logInOrFail(server, first, "Lea");
+        ASSERT_TRUE(waitFor<GroupState>(server, first).has_value());
+        first.send(Disconnect{.reason = DisconnectReason::Quit});
+        deliver(server);
+        server.frame();
+    }
+
+    TestClient again(server.address());
+    (void)openSessionOrFail(server, again, "Lea");
+    ASSERT_EQ(authenticate(server, again, AuthMode::Login), AuthCode::Ok);
+
+    EXPECT_TRUE(waitFor<GroupState>(server, again).has_value());
+}
+
 TEST(Groups, ACodeLetsAPlayerIn)
 {
     TestServer server;

@@ -157,6 +157,17 @@ TEST(Groups, AnInvitationLiftsAKick)
     EXPECT_TRUE(three.groups.of("Lea")->hasMember("Max"));
 }
 
+TEST(Groups, AfterAnInvitationTheCodeWorksForThemAgain)
+{
+    Three three;
+    (void)three.groups.kick("Lea", "Max");
+    (void)three.groups.invite("Lea", "Max");
+    (void)three.groups.accept("Max", "Lea");
+    (void)three.groups.leave("Max");
+
+    EXPECT_EQ(three.groups.join("Max", "ABC234"), std::nullopt);
+}
+
 TEST(Groups, PromoteNeedsTheLeaderAndAMember)
 {
     Three three;
