@@ -1,4 +1,4 @@
-# R-Type Network Protocol — Version 6
+# R-Type Network Protocol — Version 7
 
 | Status   | Implemented                 |
 |----------|-----------------------------|
@@ -39,9 +39,10 @@ are to be interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/
    | <----------- AUTH_RESULT (reliable) -- |
    |    if OK, the player is on the main    |
    |    page: connected, not in the game    |
-   | -- JOIN_GAME (reliable) -------------> |  the player chooses to play
-   | <----------- JOIN_RESULT (reliable) -- |  a place in the game, or GAME_FULL
-   | <-------- PLAYER_JOINED (reliable) --- |  one per player already in game
+   | <------- GROUP_STATE (reliable) ------ |  alone in a new group, leading it
+   | -- JOIN_GAME (reliable) -------------> |  the leader starts the game
+   | <----------- JOIN_RESULT (reliable) -- |  a place in the game, after the countdown
+   | <-------- PLAYER_JOINED (reliable) --- |  one per other player of the group
    | <-------- ENTITY_SPAWN  (reliable) --- |  one per existing entity
    |                                        |
    | -- INPUT (every client frame) -------> |
@@ -118,7 +119,7 @@ Every datagram starts with this 20-byte header.
 | Offset | Size | Field          | Description                                                  |
 |-------:|-----:|----------------|--------------------------------------------------------------|
 | 0      | 2    | `magic`        | Always `0x5254` (`"RT"`). Filters out stray traffic.          |
-| 2      | 1    | `version`      | Protocol version. This document describes version `6`.       |
+| 2      | 1    | `version`      | Protocol version. This document describes version `7`.       |
 | 3      | 1    | `type`         | Packet type, see [§4](#4-packet-types).                       |
 | 4      | 1    | `flags`        | Bit field, see below.                                         |
 | 5      | 1    | `reserved`     | **MUST** be `0`.                                              |
@@ -134,7 +135,7 @@ Every datagram starts with this 20-byte header.
 |----:|------------|----------------------------------------------------------------------|
 | 0   | `RELIABLE` | The payload starts with a `u16 reliableId` and must be acknowledged. |
 | 1   | `HAS_ACK`  | `ack` and `ackBits` are meaningful. Clear until a packet is received.|
-| 2–7 | —          | Reserved, **MUST** be `0` in version 6.                              |
+| 2–7 | —          | Reserved, **MUST** be `0` in version 7.                              |
 
 ### 3.2 Versioning
 
@@ -231,8 +232,19 @@ Sizes are payload sizes, header excluded. Reliable packets include their
 | `0x39` | `PRIVATE_SEND`    | C → S     | **yes**  | 20 … 219 (`19 + size`) |
 | `0x3A` | `CHAT_MESSAGE`    | S → C     | **yes**  | 21 … 220 (`20 + size`) |
 | `0x3B` | `CHAT_REFUSED`    | S → C     | **yes**  | 3                  |
+| `0x3C` | `GROUP_CODE`      | C → S     | **yes**  | 3                  |
+| `0x3D` | `GROUP_JOIN`      | C → S     | **yes**  | 8                  |
+| `0x3E` | `GROUP_LEAVE`     | C → S     | **yes**  | 2                  |
+| `0x3F` | `GROUP_KICK`      | C → S     | **yes**  | 18                 |
+| `0x40` | `GROUP_PROMOTE`   | C → S     | **yes**  | 18                 |
+| `0x41` | `GROUP_INVITE`    | C → S     | **yes**  | 18                 |
+| `0x42` | `GROUP_ANSWER`    | C → S     | **yes**  | 19                 |
+| `0x43` | `GROUP_READY`     | C → S     | **yes**  | 3                  |
+| `0x44` | `GROUP_STATE`     | S → C     | **yes**  | 11 + 17 × count    |
+| `0x45` | `GROUP_RESULT`    | S → C     | **yes**  | 3                  |
+| `0x46` | `GROUP_INVITED`   | S → C     | **yes**  | 18                 |
 
-Ranges `0x00`, `0x08–0x0F`, `0x11–0x1F`, `0x27–0x2F` and `0x3C–0xFF` are reserved.
+Ranges `0x00`, `0x08–0x0F`, `0x11–0x1F`, `0x27–0x2F` and `0x47–0xFF` are reserved.
 
 These sizes are before encryption: every type except `CONNECT_REQUEST`,
 `CONNECT_ACCEPT` and `CONNECT_REJECT` adds 24 bytes on the network
@@ -315,7 +327,7 @@ Reliable, and always the first reliable message of a session.
 #### `JOIN_GAME` (`0x30`) and `LEAVE_GAME` (`0x31`)
 
 Reliable, and their only field is `reliableId`. Before the login, the server
-ignores them. It also ignores `JOIN_GAME` from a player in the game, and
+ignores them. It also ignores `JOIN_GAME` from a player in a game, and
 `LEAVE_GAME` from a player who is not ([§8.4](#84-main-page-and-game)).
 
 #### `FRIEND_REQUEST` (`0x33`), `FRIEND_ANSWER` (`0x34`), `FRIEND_REMOVE` (`0x35`)
@@ -341,6 +353,20 @@ last in its packet, after a `u8` count that **MUST** match the bytes left.
 | 2      | 16   | `name`       | `PRIVATE_SEND` only: the exact name of a friend     |
 | …      | 1    | `size`       | Bytes of `text`                                     |
 | …      | size | `text`       |                                                     |
+
+#### Group orders (`0x3C`–`0x43`)
+
+Each starts with `reliableId`. The server ignores them before the login and from a player
+in a game ([§8.7](#87-groups)). `GROUP_LEAVE` has no other field.
+
+| Packet          | Offset | Size | Field    | Values                                     |
+|-----------------|-------:|-----:|----------|--------------------------------------------|
+| `GROUP_CODE`    | 2      | 1    | `action` | `0` GENERATE, `1` DELETE                   |
+| `GROUP_JOIN`    | 2      | 6    | `code`   | 6 signs of `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` |
+| `GROUP_KICK`, `GROUP_PROMOTE`, `GROUP_INVITE` | 2 | 16 | `name` | Exact name, not empty |
+| `GROUP_ANSWER`  | 2      | 16   | `name`   | Who invited                                |
+|                 | 18     | 1    | `reply`  | `0` REFUSE, `1` ACCEPT                     |
+| `GROUP_READY`   | 2      | 1    | `ready`  | `0` or `1`                                 |
 
 #### `INPUT` (`0x10`)
 
@@ -468,7 +494,7 @@ newcomer once for every player already connected.
 | Offset | Size | Field        | Values                                        |
 |-------:|-----:|--------------|-----------------------------------------------|
 | 0      | 2    | `reliableId` |                                               |
-| 2      | 1    | `code`       | `0` OK, `1` GAME_FULL                         |
+| 2      | 1    | `code`       | `0` OK, `1` NOT_LEADER, `2` NOT_READY         |
 | 3      | 1    | `playerId`   | `0`–`3` if OK, `0xFF` otherwise               |
 
 ---
@@ -506,6 +532,26 @@ newcomer once for every player already connected.
 |-------:|-----:|--------------|-----------------------------------------------------|
 | 0      | 2    | `reliableId` |                                                     |
 | 2      | 1    | `reason`     | `0` TOO_FAST, `1` NOT_FRIEND, `2` MAILBOX_FULL      |
+
+`GROUP_STATE` (`0x44`) — the player's whole group, whenever something in it changes.
+
+| Offset | Size | Field        | Values                                              |
+|-------:|-----:|--------------|-----------------------------------------------------|
+| 0      | 2    | `reliableId` |                                                     |
+| 2      | 6    | `code`       | Zero bytes: no code                                 |
+| 8      | 1    | `countdown`  | Seconds before the game; `0`: none                  |
+| 9      | 1    | `leader`     | Index in the members                                |
+| 10     | 1    | `count`      | `1`–`4`                                             |
+| 11     | 17 × count | members | 16 bytes of `name`, then 1 byte: bit 0 READY, bit 1 IN_GAME |
+
+`GROUP_RESULT` (`0x45`) — what came of an order, when it needs saying.
+
+| Offset | Size | Field        | Values                                              |
+|-------:|-----:|--------------|-----------------------------------------------------|
+| 0      | 2    | `reliableId` |                                                     |
+| 2      | 1    | `outcome`    | `0` INVITED, `1` UNKNOWN_CODE, `2` GROUP_FULL, `3` KICKED, `4` GROUP_IN_GAME, `5` NOT_LEADER, `6` NOT_MEMBER, `7` ALONE, `8` TOO_MANY_TRIES, `9` NOT_AVAILABLE, `10` INVITATION_GONE, `11` REMOVED_FROM_GROUP |
+
+`GROUP_INVITED` (`0x46`) — a leader invites this player. After `reliableId`, 16 bytes: their name.
 
 ---
 
@@ -579,7 +625,7 @@ of an enemy, `CONNECT_ACCEPT`).
   messages wait until the window moves. Without this rule, losing a single
   message while many others are in flight would disconnect a healthy peer.
 
-The client sends reliable messages too (`JOIN_GAME`, `LEAVE_GAME`, friends, chat), with the same rules.
+The client sends reliable messages too (`JOIN_GAME`, `LEAVE_GAME`, friends, chat, groups), with the same rules.
 
 ---
 
@@ -598,8 +644,8 @@ and drops the datagram at the first failure:
 6. `payloadSize` equals the datagram size minus 20.
 7. `RELIABLE` is set exactly for the reliable types of [§4](#4-packet-types).
 8. The payload size matches the type: exact for fixed-size types, and
-   `5 + count` / `11 + 13 × count` for `INPUT` / `SNAPSHOT`, with `count`
-   within its range.
+   `5 + count` / `11 + 13 × count` / `11 + 17 × count` for `INPUT` /
+   `SNAPSHOT` / `GROUP_STATE`, with `count` within its range.
 9. Every enumeration value is in its range; names are valid UTF-8.
 10. `sessionToken` matches the session of the sender's address (or is `0`
     for `CONNECT_REQUEST`).
@@ -630,6 +676,8 @@ against the remaining bytes first (rule 8).
   password takes a new connection. A session not logged in after 10 seconds
   is closed. An unknown name is hashed like a known one, so the delay of the
   answer does not reveal which names exist.
+- **Group codes.** A player can try 5 wrong codes per 30 seconds. Beyond them, even the
+  right code gets `TOO_MANY_TRIES`, so that an answer tells nothing while it is blocked.
 - **Input sanity.** `INPUT` ticks more than 120 ticks ahead of the last
   processed one are ignored.
 
@@ -680,19 +728,19 @@ A logged-in player is on the main page: the session is open, and nothing of the 
 is sent to it. The other players do not know about it. Any number of players can be
 there, up to the 64 sessions of the server.
 
-- `JOIN_GAME`, with a free place among the 4: the server sends `JOIN_RESULT (OK)` with
-  a `playerId`. Then, reliably and in this order: `PLAYER_JOINED` for every other
-  player, `ENTITY_SPAWN` for every existing entity, then `GAME_STATE`. It sends
-  `PLAYER_JOINED` for the newcomer to every other player.
-- `JOIN_GAME`, with no free place: `JOIN_RESULT (GAME_FULL)`, and the player stays on
-  the main page. A place freed in a frame can only be taken from the next one.
-- `LEAVE_GAME`: the player goes back to the main page and frees their place. The server
-  destroys their ship, and sends `PLAYER_LEFT (QUIT)` to the other players. Coming
-  back is a new `JOIN_GAME`, which sends everything again.
+- A game holds the players of one group ([§8.7](#87-groups)), and the server runs as many
+  games as it has groups playing: each has its own entities, ticks and score. It ends with
+  its last player.
+- When a game starts, each player gets `JOIN_RESULT (OK)` with a `playerId`, their place in
+  the group. Then, reliably and in this order: `PLAYER_JOINED` for every other player,
+  `ENTITY_SPAWN` for every existing entity, then `GAME_STATE`.
+- `LEAVE_GAME`: the player goes back to the main page. The server destroys their ship, and
+  sends `PLAYER_LEFT (QUIT)` to the other players of that game.
 
 Events and snapshots sent before the server read `LEAVE_GAME` may still arrive: a client
-**MUST** ignore them until `JOIN_RESULT`. The input ticks and snapshot ticks of a session
-keep growing across games, so nothing late from one game counts in the next.
+**MUST** ignore them until `JOIN_RESULT`. The input ticks of a session and the snapshot ticks it
+receives keep growing across games, so nothing late from one game counts in the next: a game
+starts its ticks at the server's elapsed time × 60.
 
 ### 8.5 Friends
 
@@ -717,8 +765,8 @@ once per second, so a crash can lose the last second of changes. The file is not
 
 ### 8.6 Chat
 
-- `CHAT_SEND` from a player in the game: every player of the game gets a `CHAT_MESSAGE
-  (GAME)`, the author too. From a player who is not in a game, it is ignored.
+- `CHAT_SEND`: every member of the player's group gets a `CHAT_MESSAGE (GAME)`, the author
+  too, on the main page and in a game alike.
 - `PRIVATE_SEND` to a friend, online or not: if online, they get a `CHAT_MESSAGE (RECEIVED)`;
   if offline, the server keeps the message and delivers it at their next login, oldest first,
   then forgets it. The author gets a `CHAT_MESSAGE (SENT)`. To anybody else: `CHAT_REFUSED
@@ -733,6 +781,31 @@ read them. It is saved at most once per second, so a crash can lose the last sec
 deliver a message a second time. A message is forgotten once sent to its reader, even if
 they crash before receiving it. The server keeps no other history: the client's goes when it
 logs out.
+
+### 8.7 Groups
+
+Each player online is in exactly one group, alone and leading it at first, with no code. A
+group has 1 to 4 members, and lives in the server's memory until its last member goes offline.
+Each member gets `GROUP_STATE` whenever something in it changes, the first time at login.
+
+- **The leader** alone can: ask for a code or delete it (`GROUP_CODE`), remove a member
+  (`GROUP_KICK`), give the role (`GROUP_PROMOTE`), invite a friend online (`GROUP_INVITE`), and
+  start the game (`JOIN_GAME`). From anyone else: `NOT_LEADER`.
+- **The code** lets anyone in with `GROUP_JOIN`. A new code replaces the old one. A player
+  already in a group leaves it. Refused with `UNKNOWN_CODE`, `GROUP_FULL`, `GROUP_IN_GAME`, or
+  `KICKED` for a player the leader removed: only an invitation lets them back.
+- **An invitation** reaches the friend as `GROUP_INVITED`, and is answered by `GROUP_ANSWER`.
+  It ends with that answer, or if the one who invited left the group (`INVITATION_GONE`).
+- **Leaving:** `GROUP_LEAVE` gives the player a new group, alone. From a player already alone:
+  `ALONE`. When the leader leaves or goes offline, the first of the other members leads.
+- **Starting:** the other members say `GROUP_READY`. `JOIN_GAME` needs them all ready and no
+  member in a game (otherwise `JOIN_RESULT (NOT_READY)`). Then `countdown` runs for 3 seconds,
+  and any change among the members, their readiness or the leader stops it. At the end the game
+  starts ([§8.4](#84-main-page-and-game)), and nobody is ready any more. A member who left the
+  game waits on the main page for the others.
+
+Known limits: the 5 wrong codes are per account, so many accounts can try more of the billion
+codes. Anyone who reads a code can use it, until it is replaced or deleted.
 
 ---
 
@@ -762,7 +835,7 @@ that is about **40 KB/s per client** downstream, events excluded. Upstream, `INP
 
 ```text
 52 54             magic "RT"
-06                version 6
+07                version 7
 01                type CONNECT_REQUEST
 00                flags: none (nothing received yet, so no HAS_ACK)
 00                reserved
@@ -781,8 +854,8 @@ Total: 68 bytes.
 
 ## 11. Possible extensions
 
-Kept out of version 6, but the header leaves room for them:
+Kept out of version 7, but the header leaves room for them:
 
 - a `COMPRESSED` flag bit for LZ4 or zlib payloads;
 - delta snapshots relative to the last acknowledged snapshot;
-- rooms and lobbies, as new packet types in the `0x3C–0x4F` range (#71, #72).
+- matchmaking and game modes, as new packet types in the `0x47–0x4F` range (#72, #130).

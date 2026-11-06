@@ -7,7 +7,8 @@ reusable Entity-Component-System (ECS) game engine.
 > with the graphical client, fly their ships, shoot the Bydos that come in
 > waves and shoot back, and share a team score. A client that crashes or
 > leaves does not stop the game. Players can set the volume and their keys, and
-> play with an account kept by the server. Next: more accessibility options, chat, friends and a lobby, then
+> play with an account kept by the server. They have friends, a chat, and groups joined by code or
+> invitation, and the server runs several games at once. Next: more accessibility options, then
 > game phases, levels, bosses and the endless, campaign and versus modes.
 
 ---
