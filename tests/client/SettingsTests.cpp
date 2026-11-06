@@ -712,3 +712,95 @@ TEST(Layout, EveryFocusablePartIsInsideTheCanvasAndNoneOverlaps)
     settings.settingsOpen = true;
     check(settings);
 }
+
+TEST(InterfaceSize, TheFriendsPanelFitsAtEverySizeAndCoversNothing)
+{
+    using network::protocol::FriendState;
+    for (const int size : Settings::InterfaceSizes) {
+        client::Session session;
+        session.screen = client::Screen::Home;
+        session.friendsHovered = true;
+        for (int i = 0; i < 50; ++i) {
+            session.friends.push_back({.name = "Friend" + std::to_string(i),
+                .state = i < 25 ? FriendState::RequestReceived : FriendState::Online});
+        }
+        const sf::FloatRect area = client::layout::visibleArea(session, size);
+        const auto parts = client::layout::focusables(session, size);
+        ASSERT_GT(parts.size(), 5U);
+        for (std::size_t a = 0; a < parts.size(); ++a) {
+            EXPECT_TRUE(contains(area, parts.at(a))) << "size " << size << ", part " << a;
+            for (std::size_t b = a + 1; b < parts.size(); ++b) {
+                EXPECT_FALSE(parts.at(a).findIntersection(parts.at(b)).has_value())
+                    << "size " << size << ": " << a << ", " << b;
+            }
+        }
+    }
+}
+
+TEST(FriendsPanel, ClosedUnlessTheMouseOrTheFocusIsThere)
+{
+    client::Session session;
+    session.screen = client::Screen::Home;
+    EXPECT_FALSE(client::layout::friendsOpen(session));
+
+    session.friendsHovered = true;
+    EXPECT_TRUE(client::layout::friendsOpen(session));
+
+    session.friendsHovered = false;
+    session.focus = client::layout::FriendNameField;
+    EXPECT_TRUE(client::layout::friendsOpen(session));
+
+    session.settingsOpen = true;
+    EXPECT_FALSE(client::layout::friendsOpen(session));
+}
+
+TEST(FriendsPanel, OnlyOnTheMainPage)
+{
+    using client::Screen;
+    for (const Screen screen :
+        {Screen::Connect, Screen::WaitingRoom, Screen::Game, Screen::GameOver}) {
+        client::Session session;
+        session.screen = screen;
+        session.friendsHovered = true;
+        session.focus = client::layout::FriendNameField;
+        EXPECT_FALSE(client::layout::friendsOpen(session));
+    }
+}
+
+TEST(FriendsPanel, ARequestHasTwoButtonsAndTheOthersOne)
+{
+    using client::layout::FriendAction;
+    using network::protocol::FriendState;
+    client::Session session;
+    session.friends = {{.name = "Asks", .state = FriendState::RequestReceived},
+        {.name = "Pal", .state = FriendState::Online},
+        {.name = "Sent", .state = FriendState::RequestSent}};
+    const sf::FloatRect bar = client::layout::friendsBar({{0.0F, 0.0F}, {1280.0F, 720.0F}}, true);
+
+    const auto buttons = client::layout::friendButtons(session, bar);
+
+    ASSERT_EQ(buttons.size(), 4U);
+    EXPECT_EQ(buttons.at(0).action, FriendAction::Accept);
+    EXPECT_EQ(buttons.at(1).action, FriendAction::Refuse);
+    EXPECT_EQ(buttons.at(2).action, FriendAction::Remove);
+    EXPECT_EQ(buttons.at(2).row, 1U);
+    EXPECT_EQ(buttons.at(3).row, 2U);
+}
+
+TEST(FriendsPanel, OnlyTheRowsShownHaveButtons)
+{
+    using network::protocol::FriendState;
+    client::Session session;
+    for (int i = 0; i < 50; ++i) {
+        session.friends.push_back({.name = "F" + std::to_string(i), .state = FriendState::Online});
+    }
+    const sf::FloatRect bar = client::layout::friendsBar({{0.0F, 0.0F}, {1280.0F, 720.0F}}, true);
+    const std::size_t shown = client::layout::friendRowsShown(bar);
+    session.friendScroll = 10;
+
+    const auto buttons = client::layout::friendButtons(session, bar);
+
+    ASSERT_EQ(buttons.size(), shown);
+    EXPECT_EQ(buttons.front().row, 10U);
+    EXPECT_EQ(buttons.back().row, 10U + shown - 1U);
+}

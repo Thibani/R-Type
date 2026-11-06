@@ -65,7 +65,13 @@ void eraseLast(std::string& text)
 
 std::string* focusedField(Session& session)
 {
-    if (session.screen != Screen::Connect || session.settingsOpen) {
+    if (session.settingsOpen) {
+        return nullptr;
+    }
+    if (session.screen == Screen::Home) {
+        return session.focus == layout::FriendNameField ? &session.friendName : nullptr;
+    }
+    if (session.screen != Screen::Connect) {
         return nullptr;
     }
     switch (session.focus) {
@@ -89,7 +95,7 @@ void type(Session& session, char32_t c)
     if (field == nullptr || c < 0x20 || c == 0x7F) {
         return; // Control characters (Enter, Tab, Backspace) are keys, not text
     }
-    if (session.focus == layout::NameField) {
+    if (session.screen == Screen::Home || session.focus == layout::NameField) {
         std::string longer = *field;
         appendUtf8(longer, c);
         if (isValidName(longer)) { // At most 16 bytes of UTF-8 (protocol §2.2)
@@ -204,6 +210,45 @@ void activateSettings(Session& session, Settings& settings, int index)
     }
 }
 
+/// Asks for the name typed in the panel. Nothing if it is empty.
+void askFriend(Session& session)
+{
+    if (!session.friendName.empty()) {
+        session.friendMessage.clear();
+        session.outgoing.emplace_back(FriendRequest{.name = session.friendName});
+    }
+}
+
+/// Does what a button of a row of the friends panel does.
+void activateFriendButton(Session& session, const layout::FriendButton& button)
+{
+    const std::string& name = session.friends.at(button.row).name;
+    switch (button.action) {
+    case layout::FriendAction::Accept:
+        session.outgoing.emplace_back(FriendAnswer{.name = name, .reply = FriendReply::Accept});
+        break;
+    case layout::FriendAction::Refuse:
+        session.outgoing.emplace_back(FriendAnswer{.name = name, .reply = FriendReply::Refuse});
+        break;
+    case layout::FriendAction::Remove:
+        session.outgoing.emplace_back(FriendRemove{.name = name});
+        break;
+    }
+}
+
+/// Moves the rows of the panel; they cannot go past either end of the list.
+void scrollFriends(Session& session, int interfaceSize, int step)
+{
+    const sf::FloatRect bar = layout::friendsBar(layout::visibleArea(session, interfaceSize), true);
+    const std::size_t shown = layout::friendRowsShown(bar);
+    const std::size_t last = session.friends.size() > shown ? session.friends.size() - shown : 0;
+    if (step < 0) {
+        session.friendScroll = session.friendScroll > 0 ? session.friendScroll - 1 : 0;
+    } else {
+        session.friendScroll = std::min(session.friendScroll + 1, last);
+    }
+}
+
 /// Does what the focused (or clicked) element of the screen does.
 void activate(Session& session, Settings& settings, int index, ecs::GameLoop& loop)
 {
@@ -231,8 +276,16 @@ void activate(Session& session, Settings& settings, int index, ecs::GameLoop& lo
             session.request = Request::Play;
         } else if (index == layout::HomeSettingsButton) {
             openSettings(session);
-        } else {
+        } else if (index == layout::LogOutButton) {
             session.request = Request::Leave;
+        } else if (index == layout::FriendAddButton) {
+            askFriend(session);
+        } else if (index >= layout::FirstFriendButton) {
+            const sf::FloatRect bar
+                = layout::friendsBar(layout::visibleArea(session, settings.interfaceSize), true);
+            activateFriendButton(session,
+                layout::friendButtons(session, bar)
+                    .at(static_cast<std::size_t>(index - layout::FirstFriendButton)));
         }
         break;
     case Screen::WaitingRoom:
@@ -283,8 +336,8 @@ void capturePad(Session& session, Settings& settings, Action action, unsigned bu
     }
 }
 
-/// Esc: closes the settings or the menu, leaves the screen, or quits. Nothing on the
-/// main page: logging out takes its own button.
+/// Esc: closes the settings, the menu or the friends panel, leaves the screen, or
+/// quits. Nothing else on the main page: logging out takes its own button.
 void escape(Session& session, ecs::GameLoop& loop)
 {
     if (session.settingsOpen) {
@@ -295,14 +348,24 @@ void escape(Session& session, ecs::GameLoop& loop)
     } else if (session.screen == Screen::Game) {
         session.menuOpen = !session.menuOpen;
         session.focus = 0;
-    } else if (session.screen != Screen::Home) {
+    } else if (session.screen == Screen::Home) {
+        if (session.focus >= layout::FriendNameField) {
+            session.focus = layout::PlayButton;
+        }
+    } else {
         session.request = Request::LeaveGame;
     }
 }
 
-/// Enter, or A on a pad: activates the focus. In the form, logs in from any field.
+/// Enter, or A on a pad: activates the focus. In the form, logs in from any field;
+/// in the friends panel, asks from the name field.
 void confirm(Session& session, Settings& settings, ecs::GameLoop& loop)
 {
+    if (!session.settingsOpen && session.screen == Screen::Home
+        && session.focus == layout::FriendNameField) {
+        askFriend(session);
+        return;
+    }
     activate(session, settings,
         !session.settingsOpen && session.screen == Screen::Connect
                 && session.focus < layout::LoginButton
@@ -369,6 +432,12 @@ void onKey(
             navigate(session, settings, key.code == Key::Right ? 1 : -1, 0);
         }
         break;
+    case Key::PageUp:
+    case Key::PageDown:
+        if (layout::friendsOpen(session)) {
+            scrollFriends(session, settings.interfaceSize, key.code == Key::PageDown ? 1 : -1);
+        }
+        break;
     case Key::Enter:
         if (menu) {
             confirm(session, settings, loop);
@@ -433,8 +502,10 @@ void InputSystem::update(ecs::World& world, const ecs::Time& /*time*/)
                 letterboxed(
                     layout::visibleArea(session, settings.interfaceSize), _window.getSize()));
             const auto targets = layout::focusables(session, settings.interfaceSize);
+            bool hit = false;
             for (std::size_t i = 0; i < targets.size(); ++i) {
                 if (targets.at(i).contains(point)) {
+                    hit = true;
                     session.focus = static_cast<int>(i);
                     if (!clickSettings(session, settings, point)) {
                         activate(session, settings, session.focus, _loop);
@@ -442,7 +513,33 @@ void InputSystem::update(ecs::World& world, const ecs::Time& /*time*/)
                     break;
                 }
             }
+            // A click beside the panel closes it, unless the mouse is over it
+            if (!hit && !session.friendsHovered && !session.settingsOpen
+                && session.screen == Screen::Home && session.focus >= layout::FriendNameField) {
+                session.focus = layout::PlayButton;
+            }
+        } else if (const auto* mouse = event->getIf<sf::Event::MouseMoved>()) {
+            const sf::FloatRect area = layout::visibleArea(session, settings.interfaceSize);
+            const sf::Vector2f point
+                = _window.mapPixelToCoords(mouse->position, letterboxed(area, _window.getSize()));
+            session.friendsHovered
+                = layout::friendsBar(area, layout::friendsOpen(session)).contains(point);
+        } else if (const auto* wheel = event->getIf<sf::Event::MouseWheelScrolled>()) {
+            if (layout::friendsOpen(session) && wheel->delta != 0.0F) {
+                scrollFriends(session, settings.interfaceSize, wheel->delta < 0.0F ? 1 : -1);
+            }
         }
+    }
+    if (session.screen == Screen::Home && !session.settingsOpen) {
+        // A row may have gone since the last frame: the focus and the scroll must still exist
+        const int count
+            = static_cast<int>(layout::focusables(session, settings.interfaceSize).size());
+        session.focus = std::min(session.focus, count - 1);
+        const std::size_t shown = layout::friendRowsShown(
+            layout::friendsBar(layout::visibleArea(session, settings.interfaceSize), true));
+        const std::size_t last
+            = session.friends.size() > shown ? session.friends.size() - shown : 0;
+        session.friendScroll = std::min(session.friendScroll, last);
     }
     // Held keys and pads only steer the ship in the game itself, never through a menu
     std::uint8_t mask = 0;

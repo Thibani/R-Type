@@ -13,6 +13,8 @@
 
 #include <cstddef>
 #include <optional>
+#include <string>
+#include <vector>
 
 using namespace network::protocol;
 
@@ -356,4 +358,83 @@ TEST(MainPage, LoggingOutForgetsTheSessionToo)
 
     EXPECT_FALSE(client::singleton<client::NetRegistry>(world).newestTick.has_value());
     EXPECT_EQ(client::singleton<client::InputHistory>(world).firstTick, 0U);
+}
+
+// --- Friends (§8.5) -----------------------------------------------------------------
+
+TEST(Friends, TheListKeepsItsOrder)
+{
+    ecs::World world;
+    client::startSession(world);
+    client::applyPayload(
+        world, FriendEntry{.name = "Sent", .state = FriendState::RequestSent}, 0.0F);
+    client::applyPayload(world, FriendEntry{.name = "Zed", .state = FriendState::Offline}, 0.0F);
+    client::applyPayload(world, FriendEntry{.name = "Ann", .state = FriendState::Offline}, 0.0F);
+    client::applyPayload(world, FriendEntry{.name = "On", .state = FriendState::Online}, 0.0F);
+    client::applyPayload(
+        world, FriendEntry{.name = "Asks", .state = FriendState::RequestReceived}, 0.0F);
+
+    std::vector<std::string> names;
+    for (const client::FriendRow& row : client::singleton<client::Session>(world).friends) {
+        names.push_back(row.name);
+    }
+    EXPECT_EQ(names, (std::vector<std::string>{"Asks", "On", "Ann", "Zed", "Sent"}));
+}
+
+TEST(Friends, AChangeReplacesTheRowAndRemovedForgetsIt)
+{
+    ecs::World world;
+    client::startSession(world);
+    const auto& friends = client::singleton<client::Session>(world).friends;
+
+    client::applyPayload(world, FriendEntry{.name = "Ann", .state = FriendState::Offline}, 0.0F);
+    client::applyPayload(world, FriendEntry{.name = "Ann", .state = FriendState::Online}, 0.0F);
+    ASSERT_EQ(friends.size(), 1U);
+    EXPECT_EQ(friends.at(0).state, FriendState::Online);
+
+    client::applyPayload(world, FriendEntry{.name = "Ann", .state = FriendState::Removed}, 0.0F);
+    EXPECT_TRUE(friends.empty());
+}
+
+TEST(Friends, TheListLivesThroughAGameButNotALogOut)
+{
+    ecs::World world;
+    inGame(world);
+    client::applyPayload(world, FriendEntry{.name = "Ann", .state = FriendState::Online}, 0.0F);
+    const auto& session = client::singleton<client::Session>(world);
+    ASSERT_EQ(session.friends.size(), 1U);
+
+    client::leaveGame(world);
+    EXPECT_EQ(session.friends.size(), 1U);
+
+    client::clearSession(world);
+    EXPECT_TRUE(session.friends.empty());
+}
+
+TEST(Friends, AFriendComingOnlineDoesNotEndTheCatchingUp)
+{
+    // Otherwise a player already in the game would be announced as joining
+    ecs::World world;
+    inGame(world, 1, "B");
+    auto& session = client::singleton<client::Session>(world);
+
+    client::applyPayload(world, FriendEntry{.name = "Ann", .state = FriendState::Online}, 0.1F);
+    client::applyPayload(world, PlayerJoined{.playerId = 0, .name = "A"}, 0.1F);
+
+    EXPECT_TRUE(session.notice.empty());
+}
+
+TEST(Friends, ResultsSayWhatHappened)
+{
+    ecs::World world;
+    client::startSession(world);
+    auto& session = client::singleton<client::Session>(world);
+    session.friendName = "Ann";
+
+    client::applyPayload(world, FriendResult{.code = FriendCode::UnknownName}, 0.0F);
+    EXPECT_EQ(session.friendMessage, "No player has this name.");
+    EXPECT_EQ(session.friendName, "Ann"); // A typing mistake can be corrected
+
+    client::applyPayload(world, FriendResult{.code = FriendCode::Ok}, 0.0F);
+    EXPECT_TRUE(session.friendName.empty());
 }

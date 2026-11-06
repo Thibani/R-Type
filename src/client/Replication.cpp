@@ -8,9 +8,11 @@
 #include "client/Singleton.hpp"
 #include "game/Components/Motion.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <iterator>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -190,6 +192,66 @@ void apply(ecs::World& world, const JoinResult& result, float /*now*/)
     }
 }
 
+/// Requests received first, then who can be played with, then the requests sent.
+int rankOf(FriendState state) noexcept
+{
+    switch (state) {
+    case FriendState::RequestReceived:
+        return 0;
+    case FriendState::Online:
+        return 1;
+    case FriendState::Offline:
+    case FriendState::Removed:
+        return 2;
+    case FriendState::RequestSent:
+        return 3;
+    }
+    return 2;
+}
+
+void apply(ecs::World& world, const FriendEntry& entry, float /*now*/)
+{
+    auto& friends = singleton<Session>(world).friends;
+    std::erase_if(friends, [&](const FriendRow& row) { return row.name == entry.name; });
+    if (entry.state != FriendState::Removed) {
+        friends.push_back(FriendRow{.name = entry.name, .state = entry.state});
+    }
+    std::ranges::sort(friends, [](const FriendRow& a, const FriendRow& b) {
+        return std::pair{rankOf(a.state), a.name} < std::pair{rankOf(b.state), b.name};
+    });
+}
+
+void apply(ecs::World& world, const FriendResult& result, float /*now*/)
+{
+    Session& session = singleton<Session>(world);
+    switch (result.code) {
+    case FriendCode::Ok:
+        session.friendMessage = "Done.";
+        session.friendName.clear();
+        break;
+    case FriendCode::UnknownName:
+        session.friendMessage = "No player has this name.";
+        break;
+    case FriendCode::AlreadyLinked:
+        session.friendMessage = "Already a friend, or already asked.";
+        break;
+    case FriendCode::Yourself:
+        session.friendMessage = "That is your own name.";
+        break;
+    case FriendCode::LimitReached:
+        session.friendMessage = "Limit reached: 50 friends, 50 requests.";
+        break;
+    }
+}
+
+/// True for what has nothing to do with a game: it counts on the main page too,
+/// and says nothing about the order of the game's events.
+bool isAboutFriends(const Payload& payload) noexcept
+{
+    return std::holds_alternative<FriendEntry>(payload)
+        || std::holds_alternative<FriendResult>(payload);
+}
+
 template <typename Other>
 void apply(ecs::World& /*world*/, const Other& /*payload*/, float /*now*/)
 {
@@ -201,6 +263,10 @@ void apply(ecs::World& /*world*/, const Other& /*payload*/, float /*now*/)
 void applyPayload(ecs::World& world, const Payload& payload, float now)
 {
     const Session& session = singleton<Session>(world);
+    if (isAboutFriends(payload)) {
+        std::visit([&](const auto& packet) { apply(world, packet, now); }, payload);
+        return;
+    }
     if (!session.playerId && !std::holds_alternative<JoinResult>(payload)) {
         return; // On the main page: late events of a game we left
     }
@@ -237,6 +303,7 @@ void enterGame(ecs::World& world, std::uint8_t playerId)
     session.screen = Screen::Game;
     session.catchingUp = true;
     session.focus = 0;
+    session.friendsHovered = false;
     session.error.clear();
 }
 
@@ -266,6 +333,13 @@ void clearSession(ecs::World& world)
     leaveGame(world);
     singleton<NetRegistry>(world) = NetRegistry{};
     singleton<InputHistory>(world) = InputHistory{}; // A new session counts ticks from 0
+
+    Session& session = singleton<Session>(world);
+    session.friends.clear();
+    session.friendName.clear();
+    session.friendMessage.clear();
+    session.friendScroll = 0;
+    session.outgoing.clear();
 }
 
 } // namespace client

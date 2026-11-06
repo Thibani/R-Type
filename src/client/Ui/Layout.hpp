@@ -6,7 +6,10 @@
 #include <SFML/Graphics/Rect.hpp>
 #include <SFML/System/Vector2.hpp>
 
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -199,7 +202,8 @@ inline int neighbour(const std::vector<sf::FloatRect>& rects, int from, int dx, 
     std::tuple<bool, float, float> bestRank{};
     for (std::size_t i = 0; i < rects.size(); ++i) {
         const sf::Vector2f offset = rects.at(i).getCenter() - current.getCenter();
-        const float along = (offset.x * static_cast<float>(dx)) + (offset.y * static_cast<float>(dy));
+        const float along
+            = (offset.x * static_cast<float>(dx)) + (offset.y * static_cast<float>(dy));
         if (along <= 1.0F) {
             continue; // Not that way
         }
@@ -213,6 +217,95 @@ inline int neighbour(const std::vector<sf::FloatRect>& rects, int from, int dx, 
         }
     }
     return best;
+}
+
+// Friends bar, on the right of the main page, whatever the interface size. In focus
+// order after the buttons of the page: the name field, Add, then the buttons of the rows.
+// Closed, the bar itself takes the place of the field: moving the focus to it opens it.
+inline constexpr int FriendNameField = 3;
+inline constexpr int FriendAddButton = 4;
+inline constexpr int FirstFriendButton = 5;
+inline constexpr float FriendsClosedWidth = 56.0F;
+inline constexpr float FriendsOpenWidth = 300.0F;
+inline constexpr float FriendsPadding = 16.0F;
+inline constexpr float FriendRowsTop = 158.0F; // From the top of the bar
+inline constexpr float FriendRowHeight = 50.0F;
+inline constexpr float FriendsBottomLine = 28.0F; // "PgUp / PgDn" under the rows
+
+/// Open while the mouse is over it, or while the focus is inside.
+[[nodiscard]]
+constexpr bool friendsOpen(const Session& session) noexcept
+{
+    return session.screen == Screen::Home && !session.settingsOpen
+        && (session.friendsHovered || session.focus >= FriendNameField);
+}
+
+[[nodiscard]]
+constexpr sf::FloatRect friendsBar(sf::FloatRect area, bool open) noexcept
+{
+    const float width = open ? FriendsOpenWidth : FriendsClosedWidth;
+    return {{area.position.x + area.size.x - width, area.position.y}, {width, area.size.y}};
+}
+
+[[nodiscard]]
+constexpr sf::FloatRect friendNameInput(sf::FloatRect bar) noexcept
+{
+    return {bar.position + sf::Vector2f{FriendsPadding, 76.0F}, {192.0F, 44.0F}};
+}
+
+[[nodiscard]]
+constexpr sf::FloatRect friendAdd(sf::FloatRect bar) noexcept
+{
+    return {bar.position + sf::Vector2f{FriendsPadding + 200.0F, 76.0F}, {68.0F, 44.0F}};
+}
+
+/// How many rows fit in this bar (at least one).
+[[nodiscard]]
+constexpr std::size_t friendRowsShown(sf::FloatRect bar) noexcept
+{
+    const float room = bar.size.y - FriendRowsTop - FriendsBottomLine;
+    return room < FriendRowHeight ? 1 : static_cast<std::size_t>(room / FriendRowHeight);
+}
+
+[[nodiscard]]
+constexpr sf::FloatRect friendRow(sf::FloatRect bar, std::size_t rowOnScreen) noexcept
+{
+    return {bar.position
+            + sf::Vector2f{0.0F,
+                FriendRowsTop + (static_cast<float>(rowOnScreen) * FriendRowHeight)},
+        {bar.size.x, FriendRowHeight}};
+}
+
+/// What a button of a row does.
+enum class FriendAction : std::uint8_t { Accept, Refuse, Remove };
+
+struct FriendButton {
+    sf::FloatRect rect;
+    FriendAction action{FriendAction::Remove};
+    std::size_t row{0}; // In `Session::friends`
+};
+
+/// The buttons of the rows on screen, in focus order. Depends on the state of each row.
+[[nodiscard]]
+inline std::vector<FriendButton> friendButtons(const Session& session, sf::FloatRect bar)
+{
+    using network::protocol::FriendState;
+    constexpr sf::Vector2f Size{62.0F, 30.0F};
+    const auto last = std::min(session.friends.size(), session.friendScroll + friendRowsShown(bar));
+    std::vector<FriendButton> buttons;
+    for (std::size_t row = session.friendScroll; row < last; ++row) {
+        const sf::FloatRect line = friendRow(bar, row - session.friendScroll);
+        const sf::Vector2f right{
+            line.position.x + line.size.x - FriendsPadding - Size.x, line.position.y + 10.0F};
+        if (session.friends.at(row).state == FriendState::RequestReceived) {
+            buttons.push_back(
+                {{right - sf::Vector2f{Size.x + 6.0F, 0.0F}, Size}, FriendAction::Accept, row});
+            buttons.push_back({{right, Size}, FriendAction::Refuse, row});
+        } else {
+            buttons.push_back({{right, Size}, FriendAction::Remove, row});
+        }
+    }
+    return buttons;
 }
 
 /// The focusable parts of the current screen, in focus order.
@@ -230,8 +323,25 @@ inline std::vector<sf::FloatRect> focusables(const Session& session, int interfa
     case Screen::Connect:
         return {NameInput, PasswordInput, AddressInput, PortInput, Login, CreateAccount,
             OpenSettings, Quit};
-    case Screen::Home:
-        return {play(interfaceSize), homeSettings(interfaceSize), logOut(interfaceSize)};
+    case Screen::Home: {
+        std::vector<sf::FloatRect> parts{
+            play(interfaceSize), homeSettings(interfaceSize), logOut(interfaceSize)};
+        const sf::FloatRect area = visibleArea(session, interfaceSize);
+        if (!friendsOpen(session)) {
+            // One unit inside the bar, which itself touches the edges of the view
+            const sf::FloatRect bar = friendsBar(area, false);
+            parts.push_back(
+                {bar.position + sf::Vector2f{1.0F, 1.0F}, bar.size - sf::Vector2f{2.0F, 2.0F}});
+            return parts;
+        }
+        const sf::FloatRect bar = friendsBar(area, true);
+        parts.push_back(friendNameInput(bar));
+        parts.push_back(friendAdd(bar));
+        for (const FriendButton& button : friendButtons(session, bar)) {
+            parts.push_back(button.rect);
+        }
+        return parts;
+    }
     case Screen::WaitingRoom:
         return {leave(interfaceSize)};
     case Screen::Game:
