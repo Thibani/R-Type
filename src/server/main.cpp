@@ -5,6 +5,7 @@
 #include "network/Transport/NetworkThread.hpp"
 #include "server/AccountStore.hpp"
 #include "server/FriendStore.hpp"
+#include "server/MessageStore.hpp"
 #include "server/Network.hpp"
 #include "server/ServerOptions.hpp"
 #include "server/ServerSystems.hpp"
@@ -64,6 +65,17 @@ int run(std::span<const std::string_view> arguments)
                   << options->friendsFile.string() << ".damaged\n";
     }
 
+    auto messages = server::MessageStore::load(options->messagesFile);
+    if (!messages) {
+        std::cerr << "r-type_server: " << messages.error() << '\n';
+        return ExitFailure;
+    }
+    if (messages->damagedLines() > 0) {
+        std::cerr << "r-type_server: warning: " << messages->damagedLines()
+                  << " damaged line(s) in the messages file, copied to "
+                  << options->messagesFile.string() << ".damaged\n";
+    }
+
     // The network thread starts here; the game runs on this one
     auto socket = network::NetworkThread::open(options->port);
     if (!socket) {
@@ -74,7 +86,7 @@ int run(std::span<const std::string_view> arguments)
 
     ecs::World world;
     ecs::GameLoop loop(world, {.sleepUntilNextStep = true});
-    server::installSystems(world, loop, **socket, *accounts, *friends);
+    server::installSystems(world, loop, **socket, *accounts, *friends, *messages);
 
     runningLoop = &loop;
     std::signal(SIGINT, onStopSignal);
@@ -87,6 +99,9 @@ int run(std::span<const std::string_view> arguments)
     runningLoop = nullptr;
     if (!friends->save()) { // The last second of changes (FriendSystem)
         std::cerr << "r-type_server: cannot save the friends file\n";
+    }
+    if (!messages->save()) { // Same for the messages (ChatSystem)
+        std::cerr << "r-type_server: cannot save the messages file\n";
     }
     // The channels only use time for round-trip statistics: any recent value works
     server::notifyShutdown(world, **socket, server::toTimePoint(loop.simulationTime()));

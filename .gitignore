@@ -77,5 +77,6 @@ out/
 # Players' accounts, created by r-type_server where it runs
 accounts.txt
 friends.txt*
+messages.txt*
 accounts.txt.tmp
 accounts.txt.damaged

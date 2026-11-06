@@ -4,9 +4,9 @@
 #include "network/Protocol/Packets.hpp"
 #include "server/Components/ClientMessage.hpp"
 #include "server/Components/NetClient.hpp"
+#include "server/OnlinePlayers.hpp"
 
 #include <iostream>
-#include <map>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -18,68 +18,32 @@ using namespace network::protocol;
 
 namespace {
 
-/// The channels of the players online, by name.
-class Online {
-public:
-    explicit Online(ecs::World& world)
-    {
-        world.query<NetClient, LoggedIn>(
-            [&](ecs::Entity entity, NetClient& client, LoggedIn& /*loggedIn*/) {
-                if (!world.hasComponent<Disconnecting>(entity)) {
-                    _channels.emplace(client.name, &client.channel);
-                }
-            });
-    }
+/// Tells `name` that `other` is `state`. Nothing if `name` is offline: they get their
+/// whole list when they come back.
+void entry(const OnlinePlayers& online, const std::string& name, const std::string& other,
+    FriendState state)
+{
+    online.tell(name, FriendEntry{.name = other, .state = state});
+}
 
-    [[nodiscard]]
-    bool contains(const std::string& name) const
-    {
-        return _channels.contains(name);
-    }
+FriendState stateOf(const OnlinePlayers& online, const std::string& name)
+{
+    return online.contains(name) ? FriendState::Online : FriendState::Offline;
+}
 
-    /// Nothing if `name` is offline: they get their whole list when they come back.
-    void tell(const std::string& name, const Payload& payload) const
-    {
-        if (const auto found = _channels.find(name); found != _channels.end()) {
-            found->second->queueReliable(payload);
-        }
-    }
+/// Tells both that they are now friends, each with the other's status.
+void tellFriends(const OnlinePlayers& online, const std::string& first, const std::string& second)
+{
+    entry(online, first, second, stateOf(online, second));
+    entry(online, second, first, stateOf(online, first));
+}
 
-    /// Tells `name` that `other` is `state`.
-    void entry(const std::string& name, const std::string& other, FriendState state) const
-    {
-        tell(name, FriendEntry{.name = other, .state = state});
-    }
-
-    /// Tells both that they are now friends, each with the other's status.
-    void friends(const std::string& first, const std::string& second) const
-    {
-        entry(first, second, stateOf(second));
-        entry(second, first, stateOf(first));
-    }
-
-    /// Tells both that they no longer have anything to do with each other.
-    void removed(const std::string& first, const std::string& second) const
-    {
-        entry(first, second, FriendState::Removed);
-        entry(second, first, FriendState::Removed);
-    }
-
-    [[nodiscard]]
-    FriendState stateOf(const std::string& name) const
-    {
-        return contains(name) ? FriendState::Online : FriendState::Offline;
-    }
-
-    [[nodiscard]]
-    const std::map<std::string, network::ReliableChannel*>& channels() const noexcept
-    {
-        return _channels;
-    }
-
-private:
-    std::map<std::string, network::ReliableChannel*> _channels;
-};
+/// Tells both that they no longer have anything to do with each other.
+void tellRemoved(const OnlinePlayers& online, const std::string& first, const std::string& second)
+{
+    entry(online, first, second, FriendState::Removed);
+    entry(online, second, first, FriendState::Removed);
+}
 
 FriendCode codeOf(FriendStore::RequestResult result) noexcept
 {
@@ -97,7 +61,7 @@ FriendCode codeOf(FriendStore::RequestResult result) noexcept
     return FriendCode::LimitReached;
 }
 
-void handle(const Online& online, const AccountStore& accounts, FriendStore& friends,
+void handle(const OnlinePlayers& online, const AccountStore& accounts, FriendStore& friends,
     const std::string& name, const FriendRequest& request)
 {
     if (accounts.find(request.name) == nullptr) {
@@ -107,35 +71,35 @@ void handle(const Online& online, const AccountStore& accounts, FriendStore& fri
     const auto result = friends.request(name, request.name);
     online.tell(name, FriendResult{.code = codeOf(result)});
     if (result == FriendStore::RequestResult::Sent) {
-        online.entry(name, request.name, FriendState::RequestSent);
-        online.entry(request.name, name, FriendState::RequestReceived);
+        entry(online, name, request.name, FriendState::RequestSent);
+        entry(online, request.name, name, FriendState::RequestReceived);
     } else if (result == FriendStore::RequestResult::BecameFriends) {
-        online.friends(name, request.name);
+        tellFriends(online, name, request.name);
     }
 }
 
-void handle(const Online& online, const AccountStore& /*accounts*/, FriendStore& friends,
+void handle(const OnlinePlayers& online, const AccountStore& /*accounts*/, FriendStore& friends,
     const std::string& name, const FriendAnswer& answer)
 {
     if (answer.reply == FriendReply::Refuse) {
         if (friends.dropRequest(answer.name, name)) {
-            online.removed(name, answer.name);
+            tellRemoved(online, name, answer.name);
         }
         return;
     }
     const auto result = friends.accept(answer.name, name);
     if (result == FriendStore::AcceptResult::Accepted) {
-        online.friends(name, answer.name);
+        tellFriends(online, name, answer.name);
     } else if (result == FriendStore::AcceptResult::LimitReached) {
         online.tell(name, FriendResult{.code = FriendCode::LimitReached});
     }
 }
 
-void handle(const Online& online, const AccountStore& /*accounts*/, FriendStore& friends,
+void handle(const OnlinePlayers& online, const AccountStore& /*accounts*/, FriendStore& friends,
     const std::string& name, const FriendRemove& remove)
 {
     if (friends.removeFriend(name, remove.name) || friends.dropRequest(name, remove.name)) {
-        online.removed(name, remove.name);
+        tellRemoved(online, name, remove.name);
     }
 }
 
@@ -156,21 +120,21 @@ void FriendSystem::update(ecs::World& world, const ecs::Time& time)
 
 void FriendSystem::updateOnline(ecs::World& world)
 {
-    const Online online(world);
+    const OnlinePlayers online(world);
 
     for (const auto& [name, channel] : online.channels()) {
         if (_online.contains(name)) {
             continue;
         }
         for (const std::string& other : _friends.friendsOf(name)) {
-            online.entry(name, other, online.stateOf(other));
-            online.entry(other, name, FriendState::Online);
+            entry(online, name, other, stateOf(online, other));
+            entry(online, other, name, FriendState::Online);
         }
         for (const std::string& other : _friends.requestsTo(name)) {
-            online.entry(name, other, FriendState::RequestReceived);
+            entry(online, name, other, FriendState::RequestReceived);
         }
         for (const std::string& other : _friends.requestsFrom(name)) {
-            online.entry(name, other, FriendState::RequestSent);
+            entry(online, name, other, FriendState::RequestSent);
         }
     }
     for (const std::string& name : _online) {
@@ -178,7 +142,7 @@ void FriendSystem::updateOnline(ecs::World& world)
             continue;
         }
         for (const std::string& other : _friends.friendsOf(name)) {
-            online.entry(other, name, FriendState::Offline);
+            entry(online, other, name, FriendState::Offline);
         }
     }
 
@@ -199,7 +163,7 @@ void FriendSystem::handleMessages(ecs::World& world)
         }
     });
 
-    const Online online(world);
+    const OnlinePlayers online(world);
     for (const ecs::Entity entity : messages) {
         const ClientMessage message = world.getComponent<ClientMessage>(entity);
         world.destroyEntity(entity);

@@ -81,4 +81,7 @@ TEST(ServerOptions, AccountsNeedsAFile)
     EXPECT_EQ(parse({})->friendsFile.string(), "friends.txt");
     EXPECT_EQ(parse({"--friends", "pals.txt"})->friendsFile.string(), "pals.txt");
     EXPECT_FALSE(parse({"--friends"}).has_value());
+    EXPECT_EQ(parse({})->messagesFile.string(), "messages.txt");
+    EXPECT_EQ(parse({"--messages", "mail.txt"})->messagesFile.string(), "mail.txt");
+    EXPECT_FALSE(parse({"--messages"}).has_value());
 }
