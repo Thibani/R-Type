@@ -45,6 +45,44 @@ inline constexpr sf::FloatRect CreateAccount{{958.0F, 402.0F}, {226.0F, 52.0F}};
 inline constexpr sf::FloatRect OpenSettings{{716.0F, 466.0F}, {226.0F, 52.0F}};
 inline constexpr sf::FloatRect Quit{{958.0F, 466.0F}, {226.0F, 52.0F}};
 
+// Main page: Play (0), Settings (1), Log out (2). The right of the screen stays free.
+inline constexpr int PlayButton = 0;
+inline constexpr int HomeSettingsButton = 1;
+inline constexpr int LogOutButton = 2;
+
+[[nodiscard]]
+constexpr sf::FloatRect homeBanner(int interfaceSize) noexcept
+{
+    return isCompact(interfaceSize) ? sf::FloatRect{{554.0F, 130.0F}, {172.0F, 280.0F}}
+                                    : sf::FloatRect{{528.0F, 130.0F}, {224.0F, 365.0F}};
+}
+
+[[nodiscard]]
+constexpr sf::FloatRect homeMessage(int interfaceSize) noexcept
+{
+    return {{528.0F, isCompact(interfaceSize) ? 424.0F : 560.0F}, {224.0F, 40.0F}};
+}
+
+[[nodiscard]]
+constexpr sf::FloatRect play(int interfaceSize) noexcept
+{
+    return {{528.0F, isCompact(interfaceSize) ? 474.0F : 620.0F}, {224.0F, 52.0F}};
+}
+
+[[nodiscard]]
+constexpr sf::FloatRect homeSettings(int interfaceSize) noexcept
+{
+    return {{isCompact(interfaceSize) ? 240.0F : 64.0F, isCompact(interfaceSize) ? 410.0F : 556.0F},
+        {224.0F, 52.0F}};
+}
+
+[[nodiscard]]
+constexpr sf::FloatRect logOut(int interfaceSize) noexcept
+{
+    return {{isCompact(interfaceSize) ? 240.0F : 64.0F, isCompact(interfaceSize) ? 474.0F : 620.0F},
+        {224.0F, 52.0F}};
+}
+
 // Waiting room and game over: up to 4 banners side by side
 [[nodiscard]]
 constexpr sf::Vector2f bannerSize(int interfaceSize) noexcept
@@ -149,6 +187,8 @@ inline std::vector<sf::FloatRect> focusables(const Session& session, int interfa
     case Screen::Connect:
         return {NameInput, PasswordInput, AddressInput, PortInput, Login, CreateAccount,
             OpenSettings, Quit};
+    case Screen::Home:
+        return {play(interfaceSize), homeSettings(interfaceSize), logOut(interfaceSize)};
     case Screen::WaitingRoom:
         return {leave(interfaceSize)};
     case Screen::Game:

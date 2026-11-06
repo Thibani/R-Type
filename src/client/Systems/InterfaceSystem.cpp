@@ -169,6 +169,39 @@ void drawConnect(sf::RenderTarget& target, const Assets& assets, ColourMode mode
         compact ? sf::Vector2f{716.0F, 545.0F} : sf::Vector2f{64.0F, 682.0F});
 }
 
+/// The main page: who we are, and the way into the game. No "P1" on the banner:
+/// a place in the game only exists once in it.
+void drawHome(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
+    const Session& session, int interfaceSize)
+{
+    const bool compact = layout::isCompact(interfaceSize);
+    if (!compact) {
+        screenDecoration(target, assets);
+    }
+    const sf::FloatRect rect = layout::homeBanner(interfaceSize);
+    const float scale = rect.size.x / 224.0F;
+    const auto at = [&](float x, float y) { return rect.position + (sf::Vector2f{x, y} * scale); };
+    const auto sized = [&](float w, float h) { return sf::Vector2f{w, h} * scale; };
+    widgets::banner(target, rect, theme::Surface, theme::Gold);
+    widgets::ship(target, assets, mode, {at(32.0F, 108.0F), sized(160.0F, 80.0F)}, 0);
+    const sf::FloatRect nameArea{at(20.0F, 231.0F), sized(184.0F, 48.0F)};
+    centredText(target, assets.bodyBold, session.name,
+        widgets::fittedSize(
+            assets.bodyBold, session.name, static_cast<unsigned>(26.0F * scale), nameArea.size.x),
+        theme::Text, nameArea);
+
+    if (!session.error.empty()) {
+        errorBox(target, assets, layout::homeMessage(interfaceSize), session.error);
+    }
+    widgets::button(target, assets, layout::play(interfaceSize),
+        session.joining ? "Joining..." : "Play", true, session.focus == layout::PlayButton);
+    widgets::button(target, assets, layout::homeSettings(interfaceSize), "Settings", false,
+        session.focus == layout::HomeSettingsButton);
+    widgets::button(target, assets, layout::logOut(interfaceSize), "Log out", false,
+        session.focus == layout::LogOutButton);
+    centredHelp(target, assets, "Tab: next  ·  Enter: select", compact ? 538.0F : 690.0F);
+}
+
 /// Up to 4 banners, centred.
 void drawBanners(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
     const Session& session, std::span<const std::size_t> players, float y, int interfaceSize)
@@ -495,6 +528,9 @@ void InterfaceSystem::update(ecs::World& world, const ecs::Time& time)
     switch (session.screen) {
     case Screen::Connect:
         drawConnect(_window, _assets, mode, session, layout::isCompact(size));
+        break;
+    case Screen::Home:
+        drawHome(_window, _assets, mode, session, size);
         break;
     case Screen::WaitingRoom:
         drawWaitingRoom(_window, _assets, mode, session, size);

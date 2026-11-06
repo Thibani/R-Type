@@ -179,6 +179,17 @@ void apply(ecs::World& world, const GameState& state, float /*now*/)
     }
 }
 
+void apply(ecs::World& world, const JoinResult& result, float /*now*/)
+{
+    Session& session = singleton<Session>(world);
+    session.joining = false;
+    if (result.code == JoinCode::Ok) {
+        enterGame(world, result.playerId);
+    } else {
+        session.error = "The game is full.";
+    }
+}
+
 template <typename Other>
 void apply(ecs::World& /*world*/, const Other& /*payload*/, float /*now*/)
 {
@@ -189,7 +200,11 @@ void apply(ecs::World& /*world*/, const Other& /*payload*/, float /*now*/)
 
 void applyPayload(ecs::World& world, const Payload& payload, float now)
 {
-    // §8.1: the PLAYER_JOINED of the players already there come first. Any other
+    const Session& session = singleton<Session>(world);
+    if (!session.playerId && !std::holds_alternative<JoinResult>(payload)) {
+        return; // On the main page: late events of a game we left
+    }
+    // §8.4: the PLAYER_JOINED of the players already there come first. Any other
     // reliable event ends them; a SNAPSHOT does not (unreliable, it can overtake one)
     if (!std::holds_alternative<PlayerJoined>(payload)
         && !std::holds_alternative<Snapshot>(payload)) {
@@ -198,25 +213,34 @@ void applyPayload(ecs::World& world, const Payload& payload, float now)
     std::visit([&](const auto& packet) { apply(world, packet, now); }, payload);
 }
 
-void startSession(ecs::World& world, const ConnectAccept& accept, const std::string& name)
+void startSession(ecs::World& world)
 {
     clearSession(world);
     Session& session = singleton<Session>(world);
-    session.playerId = accept.playerId;
-    if (accept.playerId < MaxPlayers) {
-        session.players.at(accept.playerId)
-            = PlayerSlot{.present = true, .left = false, .down = false, .name = name};
-    }
-    // The current server spawns our ship at once and may never send GAME_STATE:
-    // play now. A GAME_STATE (WAITING_FOR_PLAYERS) moves us to the waiting room.
-    session.screen = Screen::Game;
-    session.catchingUp = true;
+    session.screen = Screen::Home;
     session.focus = 0;
     session.status.clear();
     session.error.clear();
 }
 
-void clearSession(ecs::World& world)
+void enterGame(ecs::World& world, std::uint8_t playerId)
+{
+    Session& session = singleton<Session>(world);
+    session.playerId = playerId;
+    session.players = {};
+    if (playerId < MaxPlayers) {
+        session.players.at(playerId)
+            = PlayerSlot{.present = true, .left = false, .down = false, .name = session.name};
+    }
+    // The server spawns our ship at once and may never send GAME_STATE: play now.
+    // A GAME_STATE (WAITING_FOR_PLAYERS) moves us to the waiting room.
+    session.screen = Screen::Game;
+    session.catchingUp = true;
+    session.focus = 0;
+    session.error.clear();
+}
+
+void leaveGame(ecs::World& world)
 {
     std::vector<ecs::Entity> networked;
     world.query<NetEntity>(
@@ -224,15 +248,24 @@ void clearSession(ecs::World& world)
     for (const ecs::Entity entity : networked) {
         world.destroyEntity(entity);
     }
-    singleton<NetRegistry>(world) = NetRegistry{};
-    singleton<InputHistory>(world) = InputHistory{}; // A new session counts ticks from 0
+    singleton<NetRegistry>(world).entities.clear();
 
     Session& session = singleton<Session>(world);
+    session.screen = Screen::Home;
+    session.focus = 0;
+    session.joining = false;
     session.playerId.reset();
     session.players = {};
     session.score = 0;
     session.menuOpen = false;
     session.notice.clear();
+}
+
+void clearSession(ecs::World& world)
+{
+    leaveGame(world);
+    singleton<NetRegistry>(world) = NetRegistry{};
+    singleton<InputHistory>(world) = InputHistory{}; // A new session counts ticks from 0
 }
 
 } // namespace client
