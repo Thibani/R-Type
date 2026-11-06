@@ -1,12 +1,15 @@
 #pragma once
 
 #include "client/Components/Settings.hpp"
+#include "network/Protocol/Packets.hpp"
 #include "network/Protocol/Protocol.hpp"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace client {
 
@@ -37,6 +40,12 @@ struct PlayerSlot {
     std::string name;
 };
 
+/// One line of the friends panel, as told by FRIEND_ENTRY.
+struct FriendRow {
+    std::string name;
+    network::protocol::FriendState state{network::protocol::FriendState::Offline};
+};
+
 /// Singleton: everything the interface shows that is not an entity.
 struct Session {
     Screen screen{Screen::Connect};
@@ -56,6 +65,14 @@ struct Session {
 
     // Main page
     bool joining{false}; // JOIN_GAME sent, JOIN_RESULT not received yet
+
+    // Friends panel, on the main page. The list stays up to date during a game
+    std::vector<FriendRow> friends; // Requests received, online, offline, requests sent
+    std::string friendName; // What is typed in the panel
+    std::string friendMessage; // Answer to the last request
+    std::size_t friendScroll{0}; // First row shown
+    bool friendsHovered{false}; // The mouse is over the bar
+    std::vector<network::protocol::Payload> outgoing; // Reliable, sent by NetSendSystem
 
     // Game
     std::optional<std::uint8_t> playerId; // Ours, from JOIN_RESULT: only while in the game

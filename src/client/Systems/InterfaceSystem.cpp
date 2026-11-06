@@ -202,6 +202,104 @@ void drawHome(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
     centredHelp(target, assets, "Tab: next  ·  Enter: select", compact ? 538.0F : 690.0F);
 }
 
+/// A small button of the friends panel.
+void rowButton(sf::RenderTarget& target, const Assets& assets, sf::FloatRect rect,
+    std::string_view label, bool focused)
+{
+    box(target, rect, theme::Surface, focused ? theme::Blue : theme::Hull, focused ? 2.0F : 1.0F);
+    centredText(target, assets.bodyBold, label, 13, theme::Text, rect);
+}
+
+std::string_view friendStatus(network::protocol::FriendState state) noexcept
+{
+    using network::protocol::FriendState;
+    switch (state) {
+    case FriendState::Online:
+        return "Online";
+    case FriendState::RequestReceived:
+        return "Wants to be your friend";
+    case FriendState::RequestSent:
+        return "Request sent";
+    case FriendState::Offline:
+    case FriendState::Removed:
+        break;
+    }
+    return "Offline";
+}
+
+/// Closed: the name of the bar, friends online and requests waiting, in words and numbers.
+void drawFriendsClosed(
+    sf::RenderTarget& target, const Assets& assets, const Session& session, sf::FloatRect bar)
+{
+    using network::protocol::FriendState;
+    const auto count = [&](FriendState state) {
+        return std::ranges::count(session.friends, state, &FriendRow::state);
+    };
+    box(target, bar, theme::Surface, theme::Hull, 1.0F);
+    centredText(target, assets.body, "Friends", 13, theme::Text,
+        {bar.position + sf::Vector2f{0.0F, 16.0F}, {bar.size.x, 18.0F}});
+    centredText(target, assets.bodyBold, std::to_string(count(FriendState::Online)), 22,
+        theme::Green, {bar.position + sf::Vector2f{0.0F, 40.0F}, {bar.size.x, 28.0F}});
+    centredText(target, assets.body, "online", 12, theme::Muted,
+        {bar.position + sf::Vector2f{0.0F, 68.0F}, {bar.size.x, 16.0F}});
+    if (const auto requests = count(FriendState::RequestReceived); requests > 0) {
+        const sf::FloatRect badge{
+            bar.position + sf::Vector2f{8.0F, 96.0F}, {bar.size.x - 16.0F, 26.0F}};
+        box(target, badge, theme::ErrorBackground, theme::Red, 1.0F);
+        centredText(
+            target, assets.bodyBold, std::to_string(requests) + " new", 12, theme::Red, badge);
+    }
+}
+
+/// Open: adding a friend, then one row per person.
+void drawFriendsOpen(
+    sf::RenderTarget& target, const Assets& assets, const Session& session, sf::FloatRect bar)
+{
+    using network::protocol::FriendState;
+    box(target, bar, theme::Surface, theme::Hull, 1.0F);
+    text(target, assets.display, "Friends", 26, theme::Text,
+        bar.position + sf::Vector2f{layout::FriendsPadding, 10.0F});
+    widgets::field(target, assets, layout::friendNameInput(bar), "Exact name", session.friendName,
+        session.focus == layout::FriendNameField);
+    rowButton(
+        target, assets, layout::friendAdd(bar), "Add", session.focus == layout::FriendAddButton);
+    text(target, assets.body, session.friendMessage, 13, theme::Blue,
+        bar.position + sf::Vector2f{layout::FriendsPadding, 128.0F});
+
+    const auto buttons = layout::friendButtons(session, bar);
+    const auto last
+        = std::min(session.friends.size(), session.friendScroll + layout::friendRowsShown(bar));
+    for (std::size_t row = session.friendScroll; row < last; ++row) {
+        const FriendRow& person = session.friends.at(row);
+        const sf::FloatRect line = layout::friendRow(bar, row - session.friendScroll);
+        const bool asked = person.state == FriendState::RequestReceived;
+        const float room = bar.size.x - (2.0F * layout::FriendsPadding) - (asked ? 136.0F : 68.0F);
+        text(target, assets.bodyBold, person.name,
+            widgets::fittedSize(assets.bodyBold, person.name, 16, room), theme::Text,
+            line.position + sf::Vector2f{layout::FriendsPadding, 5.0F});
+        text(target, assets.body, asked ? "Asked you" : friendStatus(person.state), 13,
+            person.state == FriendState::Online ? theme::Green : theme::Muted,
+            line.position + sf::Vector2f{layout::FriendsPadding, 27.0F});
+    }
+    for (std::size_t i = 0; i < buttons.size(); ++i) {
+        const layout::FriendButton& button = buttons.at(i);
+        const bool focused = session.focus == layout::FirstFriendButton + static_cast<int>(i);
+        std::string_view label = "Remove";
+        if (button.action == layout::FriendAction::Accept) {
+            label = "Accept";
+        } else if (button.action == layout::FriendAction::Refuse) {
+            label = "Refuse";
+        } else if (session.friends.at(button.row).state == FriendState::RequestSent) {
+            label = "Cancel";
+        }
+        rowButton(target, assets, button.rect, label, focused);
+    }
+    if (session.friends.size() > layout::friendRowsShown(bar)) {
+        text(target, assets.body, "PgUp / PgDn or wheel: more", 13, theme::Muted,
+            bar.position + sf::Vector2f{layout::FriendsPadding, bar.size.y - 24.0F});
+    }
+}
+
 /// Up to 4 banners, centred.
 void drawBanners(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
     const Session& session, std::span<const std::size_t> players, float y, int interfaceSize)
@@ -531,6 +629,15 @@ void InterfaceSystem::update(ecs::World& world, const ecs::Time& time)
         break;
     case Screen::Home:
         drawHome(_window, _assets, mode, session, size);
+        if (!session.settingsOpen) {
+            const bool open = layout::friendsOpen(session);
+            const sf::FloatRect bar = layout::friendsBar(area, open);
+            if (open) {
+                drawFriendsOpen(_window, _assets, session, bar);
+            } else {
+                drawFriendsClosed(_window, _assets, session, bar);
+            }
+        }
         break;
     case Screen::WaitingRoom:
         drawWaitingRoom(_window, _assets, mode, session, size);
