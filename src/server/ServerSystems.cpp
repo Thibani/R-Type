@@ -14,6 +14,7 @@
 #include "server/Systems/DamageSystem.hpp"
 #include "server/Systems/DiscardPacketsSystem.hpp"
 #include "server/Systems/InputSystem.hpp"
+#include "server/Systems/JoinSystem.hpp"
 #include "server/Systems/LoginSystem.hpp"
 #include "server/Systems/NetReceiveSystem.hpp"
 #include "server/Systems/NetSendSystem.hpp"
@@ -54,6 +55,7 @@ void installSystems(
     loop.frameStart().add<ConnectionSystem>(socket);
     loop.frameStart().add<SessionReceiveSystem>();
     loop.frameStart().add<LoginSystem>(accounts);
+    loop.frameStart().add<JoinSystem>();
     loop.frameStart().add<TimeoutSystem>();
     loop.frameStart().add<InputSystem>();
     loop.frameStart().add<PlayerShipSystem>();

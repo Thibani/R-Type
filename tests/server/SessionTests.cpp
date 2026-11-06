@@ -19,6 +19,7 @@
 #include "server/Components/Player.hpp"
 #include "server/Network.hpp"
 #include "server/ServerSystems.hpp"
+#include "server/Systems/ConnectionSystem.hpp"
 #include "server/Systems/LoginSystem.hpp"
 #include "server/Systems/NetReceiveSystem.hpp"
 #include "server/Systems/SessionReceiveSystem.hpp"
@@ -142,9 +143,9 @@ public:
     const server::PlayerInput* playerInput(std::uint8_t playerId)
     {
         const server::PlayerInput* found = nullptr;
-        _world.query<server::NetClient, server::PlayerInput>(
-            [&](ecs::Entity /*entity*/, server::NetClient& client, server::PlayerInput& input) {
-                if (client.playerId == playerId) {
+        _world.query<server::InGame, server::PlayerInput>(
+            [&](ecs::Entity /*entity*/, server::InGame& player, server::PlayerInput& input) {
+                if (player.playerId == playerId) {
                     found = &input;
                 }
             });
@@ -208,6 +209,16 @@ public:
     void send(Payload payload)
     {
         sendRaw(_channel.wrap(std::move(payload), ReliableChannel::Clock::now()));
+    }
+
+    /// Sends a reliable payload (JOIN_GAME, LEAVE_GAME), and what is due with it.
+    void sendReliable(Payload payload)
+    {
+        const auto now = ReliableChannel::Clock::now();
+        _channel.queueReliable(std::move(payload));
+        for (const Packet& packet : _channel.takeDue(now)) {
+            sendRaw(packet);
+        }
     }
 
     /// Sends `packet` as a real client would: sealed if it belongs to a session.
@@ -368,12 +379,29 @@ AuthCode authenticate(
     return result.value_or(AuthResult{.code = AuthCode::ServerError}).code;
 }
 
-/// A new account and a player in the game, as most tests need.
-ConnectAccept connectOrFail(TestServer& server, TestClient& client, const std::string& name)
+/// A new account, on the main page.
+void logInOrFail(TestServer& server, TestClient& client, const std::string& name)
 {
-    const ConnectAccept accepted = openSessionOrFail(server, client, name);
+    (void)openSessionOrFail(server, client, name);
     EXPECT_EQ(authenticate(server, client, AuthMode::Register), AuthCode::Ok);
-    return accepted;
+}
+
+/// What the server answers to JOIN_GAME.
+JoinResult joinOrFail(TestServer& server, TestClient& client)
+{
+    client.sendReliable(JoinGame{});
+    const auto result = waitFor<JoinResult>(server, client);
+    EXPECT_TRUE(result.has_value()) << "no JOIN_RESULT";
+    return result.value_or(JoinResult{.code = JoinCode::GameFull, .playerId = NoPlayer});
+}
+
+/// A new account and a player in the game, as most tests need.
+JoinResult connectOrFail(TestServer& server, TestClient& client, const std::string& name)
+{
+    logInOrFail(server, client, name);
+    const JoinResult joined = joinOrFail(server, client);
+    EXPECT_EQ(joined.code, JoinCode::Ok);
+    return joined;
 }
 
 } // namespace
@@ -385,9 +413,9 @@ TEST(Session, ConnectRequestIsAccepted)
     TestServer server;
     TestClient client(server.address());
 
-    const ConnectAccept accepted = connectOrFail(server, client, "Thibani");
+    const ConnectAccept accepted = openSessionOrFail(server, client, "Thibani");
 
-    EXPECT_EQ(accepted.playerId, 0);
+    EXPECT_EQ(accepted.playerId, NoPlayer); // A place in the game comes with JOIN_RESULT
     EXPECT_EQ(accepted.tickRate, 60);
     EXPECT_EQ(accepted.snapshotRate, 30);
     EXPECT_EQ(accepted.maxPlayers, 4);
@@ -423,23 +451,23 @@ TEST(Session, EveryoneLearnsAboutEveryone)
     EXPECT_EQ(*alreadyHere, (PlayerJoined{.playerId = 0, .name = "One"}));
 }
 
-TEST(Session, FifthPlayerIsRejected)
+TEST(Session, SessionsBeyondTheLimitAreRejected)
 {
     TestServer server;
-    std::vector<TestClient> players;
-    players.reserve(4);
-    for (int i = 0; i < 4; ++i) {
-        players.emplace_back(server.address());
-        (void)connectOrFail(server, players.back(), "Player" + std::to_string(i));
+    std::vector<TestClient> clients;
+    clients.reserve(server::ConnectionSystem::MaxSessions);
+    for (std::size_t i = 0; i < server::ConnectionSystem::MaxSessions; ++i) {
+        clients.emplace_back(server.address());
+        (void)openSessionOrFail(server, clients.back(), "Client" + std::to_string(i));
     }
-    TestClient fifth(server.address());
+    TestClient late(server.address());
 
-    fifth.connect("Late");
-    const auto rejected = waitFor<ConnectReject>(server, fifth);
+    late.connect("Late");
+    const auto rejected = waitFor<ConnectReject>(server, late);
 
     ASSERT_TRUE(rejected.has_value());
     EXPECT_EQ(rejected->reason, RejectReason::ServerFull);
-    EXPECT_EQ(server.sessionCount(), 4U);
+    EXPECT_EQ(server.sessionCount(), server::ConnectionSystem::MaxSessions);
 }
 
 TEST(Session, EmptyNameIsRejected)
@@ -483,7 +511,7 @@ TEST(Session, RepeatedRequestGetsTheSameAccept)
     // The first CONNECT_ACCEPT may be lost: the client asks again (§8.1)
     TestServer server;
     TestClient client(server.address());
-    const ConnectAccept first = connectOrFail(server, client, "Thibani");
+    const ConnectAccept first = openSessionOrFail(server, client, "Thibani");
     const std::uint32_t firstToken = client.token;
 
     // Still token 0: a client retries because it never saw the ACCEPT
@@ -510,8 +538,8 @@ TEST(SessionEncryption, EachSessionGetsItsOwnServerKey)
     TestClient first(server.address());
     TestClient second(server.address());
 
-    const ConnectAccept firstAccept = connectOrFail(server, first, "First");
-    const ConnectAccept secondAccept = connectOrFail(server, second, "Second");
+    const ConnectAccept firstAccept = openSessionOrFail(server, first, "First");
+    const ConnectAccept secondAccept = openSessionOrFail(server, second, "Second");
 
     EXPECT_NE(firstAccept.publicKey, secondAccept.publicKey);
 }
@@ -1003,7 +1031,7 @@ TEST(Session, FloodingAddressIsRateLimited)
 
 // --- Accounts (§8.1, issue #73) -------------------------------------------------
 
-TEST(Login, CreatingAnAccountPutsThePlayerInTheGame)
+TEST(Login, CreatingAnAccountOpensTheMainPage)
 {
     TestServer server;
     TestClient client(server.address());
@@ -1012,7 +1040,8 @@ TEST(Login, CreatingAnAccountPutsThePlayerInTheGame)
     EXPECT_EQ(authenticate(server, client, AuthMode::Register), AuthCode::Ok);
     server.frame();
 
-    EXPECT_EQ(server.shipCount(), 1U);
+    EXPECT_EQ(server.sessionCount(), 1U);
+    EXPECT_EQ(server.shipCount(), 0U);
 }
 
 TEST(Login, CreatedAccountCanLogInAgain)
@@ -1220,22 +1249,6 @@ TEST(Login, NothingOfTheGameBeforeLoggingIn)
     }
 }
 
-TEST(Login, OthersLearnAboutAPlayerOnlyOnceLoggedIn)
-{
-    TestServer server;
-    TestClient first(server.address());
-    (void)connectOrFail(server, first, "One");
-    TestClient second(server.address());
-    (void)openSessionOrFail(server, second, "Two");
-    EXPECT_FALSE(waitFor<PlayerJoined>(server, first).has_value());
-
-    EXPECT_EQ(authenticate(server, second, AuthMode::Register), AuthCode::Ok);
-
-    const auto joined = waitFor<PlayerJoined>(server, first);
-    ASSERT_TRUE(joined.has_value());
-    EXPECT_EQ(joined->name, "Two");
-}
-
 TEST(Login, AuthResultComesBeforeEverythingElse)
 {
     TestServer server;
@@ -1245,22 +1258,18 @@ TEST(Login, AuthResultComesBeforeEverythingElse)
     (void)openSessionOrFail(server, second, "Two");
 
     second.send(AuthRequest{.mode = AuthMode::Register, .password = std::string(TestPassword)});
-    const auto hasJoined = [&] {
-        return std::ranges::any_of(second.inbox,
-            [](const Payload& payload) { return std::holds_alternative<PlayerJoined>(payload); });
+    const auto isEvent = [](const Payload& payload) {
+        return !std::holds_alternative<Heartbeat>(payload)
+            && !std::holds_alternative<Snapshot>(payload)
+            && !std::holds_alternative<ConnectAccept>(payload);
     };
-    for (int i = 0; i < 1000 && !hasJoined(); ++i) {
+    for (int i = 0; i < 1000 && !std::ranges::any_of(second.inbox, isEvent); ++i) {
         server.frame();
         second.poll();
         std::this_thread::sleep_for(1ms);
     }
-    ASSERT_TRUE(hasJoined());
 
-    // The inbox keeps the delivery order: the first event must be the result
-    const auto firstEvent = std::ranges::find_if(second.inbox, [](const Payload& payload) {
-        return !std::holds_alternative<Heartbeat>(payload)
-            && !std::holds_alternative<Snapshot>(payload);
-    });
+    const auto firstEvent = std::ranges::find_if(second.inbox, isEvent);
     ASSERT_NE(firstEvent, second.inbox.end());
     EXPECT_TRUE(std::holds_alternative<AuthResult>(*firstEvent));
 }
@@ -1325,4 +1334,283 @@ TEST(Login, TheGameDoesNotFreezeDuringTheHash)
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->code, AuthCode::Ok);
     EXPECT_LT(longestFrame, total / 2); // Hashing on the game thread: one frame would take it all
+}
+
+// --- Main page and game (§8.4) ---------------------------------------------------
+
+TEST(MainPage, MorePlayersThanTheGameCanBeConnected)
+{
+    TestServer server;
+    std::vector<TestClient> clients;
+    clients.reserve(6);
+    for (int i = 0; i < 6; ++i) {
+        clients.emplace_back(server.address());
+        logInOrFail(server, clients.back(), "Player" + std::to_string(i));
+    }
+
+    EXPECT_EQ(server.sessionCount(), 6U);
+    EXPECT_EQ(server.shipCount(), 0U);
+}
+
+TEST(MainPage, NothingOfTheGameReachesThePage)
+{
+    TestServer server;
+    TestClient player(server.address());
+    (void)connectOrFail(server, player, "Dave");
+    TestClient waiting(server.address());
+    logInOrFail(server, waiting, "Eve");
+
+    waiting.send(Input{.firstTick = 1, .count = 1, .masks = {input::Fire}});
+    for (int i = 0; i < 50; ++i) {
+        server.frame(0.05F); // Enough time for snapshots and spawns
+        std::this_thread::sleep_for(1ms);
+        waiting.poll();
+    }
+
+    EXPECT_FALSE(waiting.take<Snapshot>().has_value());
+    EXPECT_FALSE(waiting.take<EntitySpawn>().has_value());
+    EXPECT_FALSE(waiting.take<PlayerJoined>().has_value());
+    EXPECT_FALSE(waiting.take<GameState>().has_value());
+    EXPECT_EQ(server.playerInput(1), nullptr);
+    EXPECT_EQ(server.shipCount(), 1U);
+}
+
+TEST(MainPage, TheSessionStaysAliveOnThePage)
+{
+    TestServer server;
+    TestClient waiting(server.address());
+    logInOrFail(server, waiting, "Eve");
+
+    for (int second = 0; second < 8; ++second) {
+        waiting.send(Heartbeat{});
+        deliver(server, 1.0F);
+    }
+
+    EXPECT_EQ(server.sessionCount(), 1U);
+}
+
+TEST(MainPage, LeavingThePageIsNotAnnounced)
+{
+    TestServer server;
+    TestClient player(server.address());
+    (void)connectOrFail(server, player, "Dave");
+    TestClient waiting(server.address());
+    logInOrFail(server, waiting, "Eve");
+
+    waiting.send(Disconnect{.reason = DisconnectReason::Quit});
+    deliver(server);
+
+    EXPECT_EQ(server.sessionCount(), 1U);
+    EXPECT_FALSE(waitFor<PlayerLeft>(server, player).has_value());
+}
+
+TEST(JoinGame, PlayersLearnAboutANewcomerOnlyOnceInTheGame)
+{
+    TestServer server;
+    TestClient first(server.address());
+    (void)connectOrFail(server, first, "One");
+    TestClient second(server.address());
+    logInOrFail(server, second, "Two");
+    EXPECT_FALSE(waitFor<PlayerJoined>(server, first).has_value());
+
+    EXPECT_EQ(joinOrFail(server, second).playerId, 1);
+
+    const auto joined = waitFor<PlayerJoined>(server, first);
+    ASSERT_TRUE(joined.has_value());
+    EXPECT_EQ(joined->name, "Two");
+}
+
+TEST(JoinGame, ResultComesBeforeTheEventsOfTheGame)
+{
+    TestServer server;
+    TestClient first(server.address());
+    (void)connectOrFail(server, first, "One");
+    TestClient second(server.address());
+    logInOrFail(server, second, "Two");
+    second.inbox.clear();
+
+    second.sendReliable(JoinGame{});
+    ASSERT_TRUE(waitFor<GameState>(server, second).has_value());
+
+    const auto firstEvent = std::ranges::find_if(second.inbox,
+        [](const Payload& payload) { return !std::holds_alternative<Heartbeat>(payload); });
+    ASSERT_NE(firstEvent, second.inbox.end());
+    EXPECT_TRUE(std::holds_alternative<JoinResult>(*firstEvent));
+}
+
+TEST(JoinGame, FifthPlayerGetsGameFullAndStaysConnected)
+{
+    TestServer server;
+    FourPlayers game(server);
+    TestClient fifth(server.address());
+    logInOrFail(server, fifth, "Late");
+
+    const JoinResult result = joinOrFail(server, fifth);
+
+    EXPECT_EQ(result, (JoinResult{.code = JoinCode::GameFull, .playerId = NoPlayer}));
+    EXPECT_EQ(server.sessionCount(), 5U);
+    EXPECT_EQ(server.shipCount(), 4U);
+}
+
+TEST(JoinGame, PlaceFreedByALeaverCanBeTaken)
+{
+    TestServer server;
+    FourPlayers game(server);
+    TestClient fifth(server.address());
+    logInOrFail(server, fifth, "Late");
+    ASSERT_EQ(joinOrFail(server, fifth).code, JoinCode::GameFull);
+
+    game.players[1].sendReliable(LeaveGame{});
+    ASSERT_TRUE(waitFor<PlayerLeft>(server, game.players[0]).has_value());
+
+    EXPECT_EQ(joinOrFail(server, fifth), (JoinResult{.code = JoinCode::Ok, .playerId = 1}));
+}
+
+TEST(JoinGame, PlaceFreedInTheSameFrameIsNotGivenAway)
+{
+    // Otherwise the newcomer would inherit the ship of the player who left
+    TestServer server;
+    FourPlayers game(server);
+    TestClient fifth(server.address());
+    logInOrFail(server, fifth, "Late");
+
+    game.players[1].sendReliable(LeaveGame{});
+    fifth.sendReliable(JoinGame{});
+    std::this_thread::sleep_for(20ms);
+    const auto result = waitFor<JoinResult>(server, fifth);
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->code, JoinCode::GameFull);
+    EXPECT_EQ(server.shipCount(), 3U);
+}
+
+TEST(JoinGame, AskingTwiceGivesOneShipAndOneAnswer)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)connectOrFail(server, client, "Dave");
+
+    client.sendReliable(JoinGame{});
+    deliver(server);
+    deliver(server);
+    client.poll();
+
+    EXPECT_FALSE(client.take<JoinResult>().has_value());
+    EXPECT_EQ(server.shipCount(), 1U);
+}
+
+TEST(JoinGame, BeforeLoggingInItIsIgnored)
+{
+    TestServer server;
+    TestClient stranger(server.address());
+    (void)openSessionOrFail(server, stranger, "Stranger");
+
+    stranger.sendReliable(JoinGame{});
+    deliver(server);
+    deliver(server);
+    stranger.poll();
+
+    EXPECT_FALSE(stranger.take<JoinResult>().has_value());
+    EXPECT_EQ(server.shipCount(), 0U);
+}
+
+TEST(LeaveGame, ShipGoesAndTheOthersAreTold)
+{
+    TestServer server;
+    TestClient staying(server.address());
+    TestClient leaving(server.address());
+    (void)connectOrFail(server, staying, "Stays");
+    (void)connectOrFail(server, leaving, "Leaves");
+    server.frame();
+    ASSERT_EQ(server.shipCount(), 2U);
+
+    leaving.sendReliable(LeaveGame{});
+    const auto left = waitFor<PlayerLeft>(server, staying);
+
+    ASSERT_TRUE(left.has_value());
+    EXPECT_EQ(*left, (PlayerLeft{.playerId = 1, .reason = LeaveReason::Quit}));
+    EXPECT_EQ(server.sessionCount(), 2U);
+    EXPECT_EQ(server.shipCount(), 1U);
+}
+
+TEST(LeaveGame, NothingMoreIsSentAfterLeaving)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)connectOrFail(server, client, "Dave");
+    ASSERT_TRUE(waitFor<Snapshot>(server, client).has_value());
+
+    client.sendReliable(LeaveGame{});
+    for (int i = 0; i < 20; ++i) {
+        std::this_thread::sleep_for(1ms);
+        server.frame(1.0F / 60.0F);
+    }
+    client.poll();
+    client.inbox.clear(); // What was on its way when the server read LEAVE_GAME
+
+    for (int i = 0; i < 20; ++i) {
+        server.frame(0.05F);
+        std::this_thread::sleep_for(1ms);
+        client.poll();
+    }
+    EXPECT_FALSE(client.take<Snapshot>().has_value());
+    EXPECT_FALSE(client.take<EntitySpawn>().has_value());
+    EXPECT_FALSE(client.take<GameState>().has_value());
+}
+
+TEST(LeaveGame, OnTheMainPageItIsIgnored)
+{
+    TestServer server;
+    TestClient player(server.address());
+    (void)connectOrFail(server, player, "Dave");
+    TestClient waiting(server.address());
+    logInOrFail(server, waiting, "Eve");
+
+    waiting.sendReliable(LeaveGame{});
+
+    EXPECT_FALSE(waitFor<PlayerLeft>(server, player).has_value());
+    EXPECT_EQ(server.sessionCount(), 2U);
+}
+
+TEST(LeaveGame, ComingBackGivesEverythingAgain)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)connectOrFail(server, client, "Dave");
+    ASSERT_TRUE(waitFor<GameState>(server, client).has_value());
+
+    client.sendReliable(LeaveGame{});
+    deliver(server);
+    server.frame();
+    client.poll();
+    client.inbox.clear();
+
+    EXPECT_EQ(joinOrFail(server, client), (JoinResult{.code = JoinCode::Ok, .playerId = 0}));
+    const auto spawn = waitFor<EntitySpawn>(server, client);
+    const auto state = waitFor<GameState>(server, client);
+    EXPECT_TRUE(spawn.has_value());
+    EXPECT_TRUE(state.has_value());
+    EXPECT_EQ(server.shipCount(), 1U);
+}
+
+TEST(LeaveGame, TheNextGameStartsWithFreshInputs)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)connectOrFail(server, client, "Dave");
+    client.send(Input{.firstTick = 1000, .count = 1, .masks = {input::Right}});
+    deliver(server);
+    ASSERT_NE(server.playerInput(0), nullptr);
+
+    client.sendReliable(LeaveGame{});
+    deliver(server);
+    EXPECT_EQ(server.playerInput(0), nullptr);
+
+    EXPECT_EQ(joinOrFail(server, client).code, JoinCode::Ok);
+    client.send(Input{.firstTick = 1, .count = 1, .masks = {input::Up}}); // Lower tick
+    deliver(server);
+
+    const server::PlayerInput* input = server.playerInput(0);
+    ASSERT_NE(input, nullptr);
+    EXPECT_EQ(input->mask, input::Up);
 }

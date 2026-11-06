@@ -48,8 +48,8 @@ void InputSystem::update(ecs::World& world, const ecs::Time& /*time*/)
     for (const auto& [messageEntity, input] : inputs) {
         const ecs::Entity player = world.getComponent<ClientMessage>(messageEntity).client;
         world.destroyEntity(messageEntity);
-        if (!world.hasComponent<NetClient>(player)) {
-            continue; // The player left during this frame
+        if (!world.hasComponent<InGame>(player)) {
+            continue; // Left during this frame, or still on the main page
         }
         if (!world.hasComponent<PlayerInput>(player)) {
             world.addComponent(player, PlayerInput{});
