@@ -147,8 +147,8 @@ void drawConnect(sf::RenderTarget& target, const Assets& assets, ColourMode mode
     }
 
     widgets::panel(target, layout::ConnectPanel, theme::Surface, theme::Hull, 1.5F, 18.0F);
-    widgets::goldDetail(target, {716.0F, 142.0F}, 62.0F);
-    text(target, assets.display, "Join a game", 48, theme::Text, {716.0F, 154.0F});
+    widgets::goldDetail(target, {716.0F, 134.0F}, 62.0F);
+    text(target, assets.display, "Join a game", 44, theme::Text, {716.0F, 152.0F});
     widgets::field(target, assets, layout::NameInput, "Player name", session.name,
         session.focus == layout::NameField, "16 characters max");
     widgets::field(target, assets, layout::PasswordInput, "Password", hidden(session.password),
@@ -239,11 +239,54 @@ std::string controlsReminder(const Settings& settings)
         + (fire ? ", " + std::to_string(*fire) + ": fire" : std::string()) + ", Start: menu";
 }
 
+/// One player in the game: colour bar, tag, pattern, name, then health or state.
+void playerCard(sf::RenderTarget& target, const Assets& assets, ColourMode mode, sf::FloatRect card,
+    std::size_t player, const PlayerSlot& slot, bool isYou, std::uint8_t points)
+{
+    const sf::Vector2f origin = card.position;
+    const sf::Color colour = theme::Palettes.at(static_cast<std::size_t>(mode)).players.at(player);
+    widgets::panel(target, card, theme::Surface, theme::Hull, 1.5F, 10.0F);
+    box(target, {origin + sf::Vector2f{0.0F, 14.0F}, {3.0F, card.size.y - 28.0F}}, colour, colour,
+        0.0F);
+    text(target, assets.bodyBold, playerLabel(player), 15, theme::Text,
+        origin + sf::Vector2f{14.0F, 9.0F});
+    if (isYou) {
+        text(target, assets.bodyBold, "YOU", 14, theme::Blue, origin + sf::Vector2f{46.0F, 10.0F});
+    }
+    if (slot.present && !slot.down) {
+        widgets::pattern(target, assets, mode,
+            {origin + sf::Vector2f{card.size.x - 49.0F, 9.0F}, {36.0F, 20.0F}},
+            static_cast<std::uint8_t>(player));
+    }
+    constexpr unsigned NameSize = 20;
+    const float nameWidth = card.size.x - 28.0F;
+    text(target, assets.bodyBold, slot.name,
+        widgets::fittedSize(assets.bodyBold, slot.name, NameSize, nameWidth), theme::Text,
+        origin + sf::Vector2f{14.0F, 31.0F});
+
+    const sf::Vector2f state = origin + sf::Vector2f{14.0F, 62.0F};
+    if (slot.left) {
+        text(target, assets.body, "Disconnected", 14, theme::Muted, state);
+    } else if (slot.down) {
+        text(target, assets.bodyBold, "Down", 14, theme::Red, state);
+    } else {
+        text(target, assets.bodyBold, "HP", 14, theme::Text, state);
+        for (std::uint8_t pip = 0; pip < 3; ++pip) {
+            const sf::Color fill = pip >= points ? theme::InputBackground
+                : points == 1                    ? theme::Red
+                                                 : theme::Green;
+            box(target,
+                {state + sf::Vector2f{28.0F + (static_cast<float>(pip) * 26.0F), 3.0F},
+                    {22.0F, 10.0F}},
+                fill, theme::Hull, 1.0F);
+        }
+    }
+}
+
 void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
     const Session& session, float now, sf::FloatRect area)
 {
     constexpr float margin = 20.0F;
-    constexpr float rowHeight = 84.0F;
     const float left = area.position.x + margin;
     const float rightEdge = area.position.x + area.size.x - margin;
     const float firstRow = area.position.y + margin;
@@ -258,8 +301,8 @@ void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
     text(target, assets.bodyBold, "TEAM SCORE", 13, theme::Muted, {left + 18.0F, firstRow + 9.0F});
     text(target, assets.bodyBold, score, 32, theme::Text, {left + 18.0F, firstRow + 28.0F});
 
-    // One chip per player, right-aligned: swatch, name, health or state. On a
-    // new row when they would reach the score, or the left of the screen
+    // One card per player, right-aligned. On a new row when they would reach
+    // the score, or the left of the screen
     const auto health = shipHealth(world);
     const Settings& settings = singleton<Settings>(world);
     float right = rightEdge;
@@ -270,46 +313,20 @@ void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
         if (!slot.present && !slot.left) {
             continue;
         }
-        const std::string name = session.playerId == i ? slot.name + " (you)" : slot.name;
-        const float width
-            = 8.0F + 56.0F + 12.0F + std::max(104.0F, textWidth(assets.bodyBold, name, 15)) + 14.0F;
-        if (right - width < (row == firstRow ? left + scoreWidth + margin : left)) {
+        const sf::Vector2f size = layout::PlayerCard;
+        if (right - size.x < (row == firstRow ? left + scoreWidth + margin : left)) {
             right = rightEdge;
-            row += rowHeight;
+            row += size.y + margin;
         }
-        const sf::FloatRect chip{{right - width, row}, {width, 64.0F}};
-        right -= width + margin;
-        widgets::panel(target, chip, theme::Surface, theme::Hull, 1.5F, 10.0F);
-        widgets::swatch(target, assets, settings.colourMode,
-            {chip.position + sf::Vector2f{8.0F, 8.0F}, {56.0F, 48.0F}},
-            static_cast<std::uint8_t>(i), slot.present && !slot.down);
-        const sf::Vector2f column = chip.position + sf::Vector2f{76.0F, 10.0F};
-        text(target, assets.bodyBold, name, 15, theme::Text, column);
-        if (slot.left) {
-            text(target, assets.body, "Disconnected", 14, theme::Muted,
-                column + sf::Vector2f{0.0F, 26.0F});
-        } else if (slot.down) {
-            text(target, assets.bodyBold, "Down", 14, theme::Red,
-                column + sf::Vector2f{0.0F, 26.0F});
-        } else {
-            text(
-                target, assets.bodyBold, "HP", 14, theme::Text, column + sf::Vector2f{0.0F, 26.0F});
-            const std::uint8_t points = health.at(i);
-            for (std::uint8_t pip = 0; pip < 3; ++pip) {
-                const sf::Color fill = pip >= points ? theme::InputBackground
-                    : points == 1                    ? theme::Red
-                                                     : theme::Green;
-                box(target,
-                    {column + sf::Vector2f{26.0F + (static_cast<float>(pip) * 26.0F), 30.0F},
-                        {22.0F, 12.0F}},
-                    fill, theme::Hull, 1.0F);
-            }
-        }
+        playerCard(target, assets, settings.colourMode, {{right - size.x, row}, size}, i, slot,
+            session.playerId == i, health.at(i));
+        right -= size.x + 10.0F;
     }
 
+    // Under the score, away from the cards: they can change without hiding it
     if (!session.notice.empty() && now < session.noticeUntil) {
         const float width = textWidth(assets.bodyBold, session.notice, 16) + 28.0F;
-        const sf::FloatRect toast{{rightEdge - width, row + 102.0F}, {width, 40.0F}};
+        const sf::FloatRect toast{{left, firstRow + 84.0F}, {width, 40.0F}};
         widgets::panel(target, toast, theme::Surface, theme::Blue, 1.5F, 8.0F);
         text(target, assets.bodyBold, session.notice, 16, theme::Text,
             toast.position + sf::Vector2f{14.0F, 12.0F});

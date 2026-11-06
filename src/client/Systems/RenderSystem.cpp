@@ -28,7 +28,20 @@ void drawEntity(sf::RenderTarget& target, const Assets& assets, const Settings& 
     const game::Position& position, const Appearance& appearance)
 {
     const sf::Vector2f centre{position.x, position.y};
-    const auto frame = spriteFrame(assets, settings.colourMode, appearance.look, appearance.player);
+    if (appearance.look == Look::PlayerShip) {
+        const sf::Vector2f size{theme::ShipWidth, theme::ShipHeight};
+        widgets::ship(
+            target, assets, settings.colourMode, {centre - (size / 2.0F), size}, appearance.player);
+        if (appearance.player < theme::Players.size()) {
+            // The tag is interface: it follows the interface size, not the arena
+            const unsigned tagSize = 20U * static_cast<unsigned>(settings.interfaceSize) / 100U;
+            const float above = (size.y / 2.0F) + static_cast<float>(tagSize) + 2.0F;
+            widgets::tag(target, assets, "P" + std::to_string(appearance.player + 1),
+                centre - sf::Vector2f{0.0F, above}, tagSize);
+        }
+        return;
+    }
+    const auto frame = spriteFrame(assets, settings.colourMode, appearance.look);
     if (!frame) {
         // §5.2: a kind this client does not know is shown, never a crash
         const sf::Vector2f half{PlaceholderSize / 2.0F, PlaceholderSize / 2.0F};
@@ -42,15 +55,6 @@ void drawEntity(sf::RenderTarget& target, const Assets& assets, const Settings& 
     sprite.setScale({frame->scale, frame->scale});
     sprite.setPosition(centre);
     target.draw(sprite);
-
-    if (appearance.look == Look::PlayerShip && appearance.player < theme::Players.size()) {
-        // The tag is interface: it follows the interface size, not the arena
-        const unsigned size = 20U * static_cast<unsigned>(settings.interfaceSize) / 100U;
-        const float above = (static_cast<float>(frame->rect.size.y) * frame->scale / 2.0F)
-            + static_cast<float>(size) + 2.0F;
-        widgets::tag(target, assets, "P" + std::to_string(appearance.player + 1),
-            centre - sf::Vector2f{0.0F, above}, size);
-    }
 }
 
 } // namespace

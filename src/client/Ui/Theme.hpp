@@ -38,6 +38,10 @@ inline constexpr sf::Color GameBackground = Background;
 inline constexpr sf::Color Overlay{10, 14, 20, 209}; // GameBackground at 82 %
 inline constexpr sf::Color Letterbox{0x00, 0x00, 0x00};
 
+/// A ship in the arena, close to its hitbox: units, as drawn everywhere in these proportions.
+inline constexpr float ShipWidth = 72.0F;
+inline constexpr float ShipHeight = 26.0F;
+
 /// P1-P4: the colour of each ship. Never alone: each also has a pattern and
 /// a "P1"-"P4" tag, so colour-blind players can tell them apart.
 inline constexpr std::array<sf::Color, 4> Players{
