@@ -213,29 +213,24 @@ void pattern(sf::RenderTarget& target, const Assets& assets, ColourMode mode, sf
     target.draw(shape);
 }
 
-void swatch(sf::RenderTarget& target, const Assets& assets, ColourMode mode, sf::FloatRect rect,
-    std::uint8_t player, bool active)
-{
-    box(target, rect, theme::InputBackground, theme::Hull, 1.0F);
-    if (active) {
-        pattern(target, assets, mode, rect, player);
-    }
-    tag(target, assets, "P" + std::to_string(player + 1), rect.getCenter(), 18);
-}
-
 void ship(sf::RenderTarget& target, const Assets& assets, ColourMode mode, sf::FloatRect rect,
     std::uint8_t player)
 {
-    const auto frame = spriteFrame(assets, mode, Look::PlayerShip, player);
-    if (!frame) {
-        return;
-    }
-    sf::Sprite sprite(*frame->texture, frame->rect);
-    const sf::Vector2f size(frame->rect.size);
-    const float scale = std::min(rect.size.x / size.x, rect.size.y / size.y);
-    sprite.setScale({scale, scale});
-    sprite.setPosition(rect.getCenter() - size * scale / 2.0F);
-    target.draw(sprite);
+    const float fit = std::min(rect.size.x / theme::ShipWidth, rect.size.y / theme::ShipHeight);
+    const sf::Vector2f size{theme::ShipWidth * fit, theme::ShipHeight * fit};
+    const std::array<sf::Color, 4>& colours
+        = theme::Palettes.at(static_cast<std::size_t>(mode)).players;
+
+    const auto layer = [&](const sf::Texture& texture, sf::Color tint) {
+        sf::Sprite sprite(texture);
+        const sf::Vector2f pixels(texture.getSize());
+        sprite.setScale({size.x / pixels.x, size.y / pixels.y});
+        sprite.setPosition(rect.getCenter() - (size / 2.0F));
+        sprite.setColor(tint);
+        target.draw(sprite);
+    };
+    layer(assets.shipHull, sf::Color::White);
+    layer(assets.shipColour, colours.at(player < colours.size() ? player : 0));
 }
 
 } // namespace client::widgets

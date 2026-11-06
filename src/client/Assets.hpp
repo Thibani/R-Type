@@ -20,7 +20,6 @@ namespace client {
 
 /// The images of one colour mode.
 struct Skin {
-    sf::Texture ships; // r-typesheet42.gif: one row per ship colour
     sf::Texture bydos; // r-typesheet5.gif
     sf::Texture missiles; // r-typesheet1.gif: player and enemy missiles
     std::array<sf::Texture, 4> patterns; // P1-P4 swatch patterns (generated)
@@ -30,6 +29,8 @@ struct Skin {
 /// a reference: it must outlive the game loop.
 struct Assets {
     std::array<Skin, ColourModeCount> skins; // Indexed by `ColourMode`
+    sf::Texture shipHull; // The ship, the same for everyone
+    sf::Texture shipColour; // Its parts drawn on top in the player's colour
     sf::Font display; // Bebas Neue: titles only, it has few accents (names use `bodyBold`)
     sf::Font body; // Atkinson Hyperlegible: readable text, numbers, names and tags
     sf::Font bodyBold;
@@ -51,11 +52,10 @@ struct SpriteFrame {
     float scale;
 };
 
-/// The frame of `look` (for a ship, `player` selects the colour row).
-/// Unknown looks have no frame: they are drawn as a "?" placeholder.
+/// The frame of `look`. Ships (`widgets::ship`) and unknown looks have none:
+/// unknown ones are drawn as a "?" placeholder.
 [[nodiscard]]
-std::optional<SpriteFrame> spriteFrame(
-    const Assets& assets, ColourMode mode, Look look, std::uint8_t player);
+std::optional<SpriteFrame> spriteFrame(const Assets& assets, ColourMode mode, Look look);
 
 /// The `assets/` folder: next to the executable, else in the current folder.
 [[nodiscard]]

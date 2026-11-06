@@ -64,6 +64,9 @@ constexpr sf::FloatRect leave(int interfaceSize) noexcept
     return {{528.0F, isCompact(interfaceSize) ? 474.0F : 620.0F}, {224.0F, 52.0F}};
 }
 
+// In the game
+inline constexpr sf::Vector2f PlayerCard{151.0F, 92.0F};
+
 // Esc menu over the game: Resume (0), Settings (1), Leave game (2)
 inline constexpr int ResumeButton = 0;
 inline constexpr int MenuSettingsButton = 1;

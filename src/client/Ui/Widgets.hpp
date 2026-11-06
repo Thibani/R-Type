@@ -64,12 +64,7 @@ void tag(sf::RenderTarget& target, const Assets& assets, std::string_view label,
 void pattern(sf::RenderTarget& target, const Assets& assets, ColourMode mode, sf::FloatRect rect,
     std::uint8_t player);
 
-/// Player swatch: colour + pattern + tag, so players differ without colour.
-void swatch(sf::RenderTarget& target, const Assets& assets, ColourMode mode, sf::FloatRect rect,
-    std::uint8_t player,
-    bool active);
-
-/// The ship of `player`, enlarged to fit `rect`.
+/// The ship of `player`, in their colour, as large as `rect` allows.
 void ship(sf::RenderTarget& target, const Assets& assets, ColourMode mode, sf::FloatRect rect,
     std::uint8_t player);
 

@@ -87,7 +87,7 @@ apply at once and are saved.
 
 **Interface size** keeps every position on the 1280 × 720 canvas: the view
 shows more or less of it (`layout::visibleArea()`), and clicks use the same view.
-The HUD stays in the corners and wraps its chips. Above 100 %, the connection
+The HUD stays in the corners and wraps its player cards. Above 100 %, the connection
 form, waiting room and game over use a compact form. 150 % is the maximum because
 it is the largest size at which every screen still fits.
 
@@ -148,6 +148,8 @@ key.fire = Space
 1. Add a value to `Look` and a case to `lookOf()` in `Components/Appearance.hpp`.
 2. Give it a frame in `spriteFrame()` (`Assets.cpp`): texture, rectangle in
    the sheet, scale. A new sheet goes in `assets/sprites/` and in `Assets`.
+   Ships are the exception: `widgets::ship` draws `assets/ship/hull.png`, then
+   `colour.png` tinted with the player's colour of the current mode.
 3. Until then, the kind is drawn as a "?": nothing else to change, the
    network code already creates the entity.
 

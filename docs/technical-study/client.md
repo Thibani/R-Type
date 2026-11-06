@@ -125,6 +125,8 @@ The screens follow a Figma mockup (dark panels, cut corners, banners) with the s
 | Panels and banners as `sf::ConvexShape` | Sharp at any window size, recoloured by one constant | Images: blurred when scaled, redone at each change of the mockup |
 | Moving background from the existing stars, plus 7 gold lines | Already simulated with time; a few rectangles per frame | A video or a particle system: heavier, for a discreet effect |
 | No gold lines during the game | Nothing in the background may look like a shot | The same background everywhere |
+| Ship in two images: a fixed hull, then its plating tinted with the player's colour | One drawing for four players and four colour modes, tinted when drawn | One image per colour and mode: 16 files to export again at each change |
+| Ship drawn 72 × 26 units, for a 64 × 32 hitbox | Taller than the drawing's own proportions, so hits look fair | Exact proportions: 72 × 20, so missiles would hit 6 units from the hull |
 | Dark text on the orange button | Contrast 6.2:1; white would give about 3:1 | White text, as in the mockup |
 
 `tests/client/SettingsTests.cpp` checks the contrast of every text colour (WCAG, at least
