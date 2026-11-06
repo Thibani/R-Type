@@ -126,7 +126,7 @@ std::expected<void, std::string> Assets::load(Assets& assets, const std::filesys
     }
 
     const std::filesystem::path fonts = folder / "fonts";
-    for (const auto& [font, file] : {std::pair{&assets.display, "PixelifySans.ttf"},
+    for (const auto& [font, file] : {std::pair{&assets.display, "BebasNeue-Regular.ttf"},
              std::pair{&assets.body, "AtkinsonHyperlegible-Regular.ttf"},
              std::pair{&assets.bodyBold, "AtkinsonHyperlegible-Bold.ttf"}}) {
         if (!font->openFromFile(fonts / file)) {

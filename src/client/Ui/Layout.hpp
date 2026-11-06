@@ -4,11 +4,12 @@
 #include "client/Ui/Theme.hpp"
 
 #include <SFML/Graphics/Rect.hpp>
+#include <SFML/System/Vector2.hpp>
 
 #include <vector>
 
 /// Where the clickable parts of each screen are, on the 1280 × 720 interface
-/// canvas (positions taken from the Hangar mockup). The input system uses
+/// canvas (positions taken from the Figma mockup). The input system uses
 /// them for clicks, the interface system to draw: both always agree.
 ///
 /// Interface size: positions stay on this canvas, and the view shows more or
@@ -32,60 +33,89 @@ inline constexpr int CreateAccountButton = 5;
 inline constexpr int SettingsButton = 6;
 inline constexpr int QuitButton = 7;
 
-inline constexpr sf::FloatRect ConnectPanel{{668.0F, 132.0F}, {532.0F, 456.0F}};
-inline constexpr sf::FloatRect NameInput{{700.0F, 218.0F}, {226.0F, 48.0F}};
-inline constexpr sf::FloatRect PasswordInput{{942.0F, 218.0F}, {226.0F, 48.0F}};
-inline constexpr sf::FloatRect AddressInput{{700.0F, 324.0F}, {306.0F, 48.0F}};
-inline constexpr sf::FloatRect PortInput{{1024.0F, 324.0F}, {144.0F, 48.0F}};
-inline constexpr sf::FloatRect Login{{700.0F, 384.0F}, {226.0F, 56.0F}};
-inline constexpr sf::FloatRect CreateAccount{{942.0F, 384.0F}, {226.0F, 56.0F}};
-inline constexpr sf::FloatRect OpenSettings{{700.0F, 448.0F}, {226.0F, 56.0F}};
-inline constexpr sf::FloatRect Quit{{942.0F, 448.0F}, {226.0F, 56.0F}};
+inline constexpr sf::FloatRect ConnectPanel{{684.0F, 124.0F}, {532.0F, 472.0F}};
+inline constexpr sf::FloatRect NameInput{{716.0F, 236.0F}, {226.0F, 44.0F}};
+inline constexpr sf::FloatRect PasswordInput{{958.0F, 236.0F}, {226.0F, 44.0F}};
+inline constexpr sf::FloatRect AddressInput{{716.0F, 318.0F}, {306.0F, 44.0F}};
+inline constexpr sf::FloatRect PortInput{{1040.0F, 318.0F}, {144.0F, 44.0F}};
+inline constexpr sf::Vector2f ConnectStatus{716.0F, 374.0F}; // Between the fields and the buttons
+inline constexpr float ConnectStatusWidth = 468.0F;
+inline constexpr sf::FloatRect Login{{716.0F, 402.0F}, {226.0F, 52.0F}};
+inline constexpr sf::FloatRect CreateAccount{{958.0F, 402.0F}, {226.0F, 52.0F}};
+inline constexpr sf::FloatRect OpenSettings{{716.0F, 466.0F}, {226.0F, 52.0F}};
+inline constexpr sf::FloatRect Quit{{958.0F, 466.0F}, {226.0F, 52.0F}};
 
-// Waiting room
+// Waiting room and game over: up to 4 banners side by side
+[[nodiscard]]
+constexpr sf::Vector2f bannerSize(int interfaceSize) noexcept
+{
+    return isCompact(interfaceSize) ? sf::Vector2f{172.0F, 280.0F} : sf::Vector2f{224.0F, 365.0F};
+}
+
+[[nodiscard]]
+constexpr float bannerGap(int interfaceSize) noexcept
+{
+    return isCompact(interfaceSize) ? 16.0F : 24.0F;
+}
+
 [[nodiscard]]
 constexpr sf::FloatRect leave(int interfaceSize) noexcept
 {
-    return {isCompact(interfaceSize) ? sf::Vector2f{270.0F, 400.0F} : sf::Vector2f{80.0F, 608.0F},
-        {112.0F, 56.0F}};
+    return {{528.0F, isCompact(interfaceSize) ? 474.0F : 620.0F}, {224.0F, 52.0F}};
 }
 
 // Esc menu over the game: Resume (0), Settings (1), Leave game (2)
 inline constexpr int ResumeButton = 0;
 inline constexpr int MenuSettingsButton = 1;
 inline constexpr int LeaveButton = 2;
-inline constexpr sf::FloatRect MenuPanel{{430.0F, 214.0F}, {420.0F, 366.0F}};
-inline constexpr sf::FloatRect Resume{{462.0F, 342.0F}, {356.0F, 56.0F}};
-inline constexpr sf::FloatRect MenuSettings{{462.0F, 416.0F}, {356.0F, 56.0F}};
-inline constexpr sf::FloatRect LeaveGame{{462.0F, 490.0F}, {356.0F, 56.0F}};
+inline constexpr sf::FloatRect MenuPanel{{420.0F, 155.0F}, {440.0F, 410.0F}};
+inline constexpr sf::FloatRect Resume{{460.0F, 305.0F}, {360.0F, 52.0F}};
+inline constexpr sf::FloatRect MenuSettings{{460.0F, 373.0F}, {360.0F, 52.0F}};
+inline constexpr sf::FloatRect LeaveGame{{460.0F, 441.0F}, {360.0F, 52.0F}};
 
 // Settings, over any screen, on two columns so they fit at every size. Left:
 // volume, colours, interface size and two buttons. Right: one row per action.
+// Rows keep the focus order.
 inline constexpr int VolumeRow = 0;
 inline constexpr int ColourRow = 1;
 inline constexpr int InterfaceSizeRow = 2;
 inline constexpr int FirstKeyRow = 3; // + Action index
 inline constexpr int ResetRow = FirstKeyRow + static_cast<int>(ActionCount);
 inline constexpr int BackRow = ResetRow + 1;
-inline constexpr sf::FloatRect SettingsPanel{{223.0F, 124.0F}, {834.0F, 420.0F}};
+inline constexpr sf::FloatRect SettingsPanel{{223.0F, 124.0F}, {834.0F, 472.0F}};
+inline constexpr sf::FloatRect VolumeTrack{{261.0F, 238.0F}, {353.0F, 4.0F}};
+inline constexpr sf::FloatRect ColourSelector{{434.0F, 268.0F}, {180.0F, 40.0F}};
+inline constexpr sf::FloatRect InterfaceSizeSelector{{434.0F, 322.0F}, {180.0F, 40.0F}};
 
 [[nodiscard]]
 constexpr sf::FloatRect settingsRow(int row) noexcept
 {
-    const auto at = [](float x, int line) -> sf::FloatRect {
-        return {{x, 184.0F + (static_cast<float>(line) * 52.0F)}, {385.0F, 46.0F}};
-    };
-    if (row < FirstKeyRow) {
-        return at(245.0F, row);
+    constexpr float Left = 245.0F;
+    constexpr float Width = 385.0F;
+    if (row == VolumeRow) {
+        return {{Left, 178.0F}, {Width, 80.0F}};
     }
-    if (row < ResetRow) {
-        return at(650.0F, row - FirstKeyRow);
+    if (row == ColourRow) {
+        return {{Left, 262.0F}, {Width, 52.0F}};
     }
-    return at(245.0F, row - ResetRow + FirstKeyRow);
+    if (row == InterfaceSizeRow) {
+        return {{Left, 316.0F}, {Width, 52.0F}};
+    }
+    if (row == ResetRow) {
+        return {{Left, 380.0F}, {Width, 52.0F}};
+    }
+    if (row == BackRow) {
+        return {{Left, 444.0F}, {Width, 52.0F}};
+    }
+    return {{650.0F, 228.0F + (static_cast<float>(row - FirstKeyRow) * 54.0F)}, {385.0F, 44.0F}};
 }
 
 // Game over
-inline constexpr sf::FloatRect BackToMenu{{530.0F, 612.0F}, {220.0F, 56.0F}};
+[[nodiscard]]
+constexpr sf::FloatRect backToMenu(int interfaceSize) noexcept
+{
+    return {{500.0F, isCompact(interfaceSize) ? 526.0F : 636.0F}, {280.0F, 52.0F}};
+}
 
 /// The part of the canvas shown at this interface size, around what the screen
 /// needs. Larger than the canvas below 100 %, smaller above.
@@ -95,12 +125,8 @@ constexpr sf::FloatRect visibleArea(const Session& session, int interfaceSize) n
     const float ratio = 100.0F / static_cast<float>(interfaceSize);
     const sf::Vector2f size{theme::UiWidth * ratio, theme::UiHeight * ratio};
     sf::Vector2f centre{theme::UiWidth / 2.0F, theme::UiHeight / 2.0F};
-    if (isCompact(interfaceSize) && !session.settingsOpen) {
-        if (session.screen == Screen::Connect) {
-            centre.x = ConnectPanel.position.x + (ConnectPanel.size.x / 2.0F);
-        } else if (session.screen == Screen::GameOver) {
-            centre.y = 440.0F; // From the title to the button
-        }
+    if (isCompact(interfaceSize) && !session.settingsOpen && session.screen == Screen::Connect) {
+        centre.x = ConnectPanel.position.x + (ConnectPanel.size.x / 2.0F);
     }
     return {{centre.x - (size.x / 2.0F), centre.y - (size.y / 2.0F)}, size};
 }
@@ -128,7 +154,7 @@ inline std::vector<sf::FloatRect> focusables(const Session& session, int interfa
         }
         return {};
     case Screen::GameOver:
-        return {BackToMenu};
+        return {backToMenu(interfaceSize)};
     }
     return {};
 }

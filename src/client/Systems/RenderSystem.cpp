@@ -64,11 +64,9 @@ RenderSystem::RenderSystem(sf::RenderWindow& window, const Assets& assets) noexc
 void RenderSystem::update(ecs::World& world, const ecs::Time& /*time*/)
 {
     _window.clear(theme::Letterbox);
-    if (singleton<Session>(world).screen != Screen::Game) {
-        return; // The other screens are pure interface
-    }
     _window.setView(letterboxed({game::arena::Width, game::arena::Height}, _window.getSize()));
 
+    // Every screen has the moving sky. The interface is drawn over it
     sf::RectangleShape space({game::arena::Width, game::arena::Height});
     space.setFillColor(theme::GameBackground);
     _window.draw(space);
@@ -82,6 +80,20 @@ void RenderSystem::update(ecs::World& world, const ecs::Time& /*time*/)
             dot.setFillColor(sf::Color(255, 255, 255, static_cast<std::uint8_t>(60 * star.size)));
             _window.draw(dot);
         });
+
+    if (singleton<Session>(world).screen != Screen::Game) {
+        // Not during the game itself: nothing there may look like a shot
+        sf::RectangleShape line;
+        line.setFillColor(theme::Streak);
+        line.setRotation(sf::degrees(-45.0F));
+        world.query<Streak, game::Position>(
+            [&](ecs::Entity /*entity*/, Streak& streak, game::Position& position) {
+                line.setSize({streak.length, 2.0F});
+                line.setPosition({position.x, position.y});
+                _window.draw(line);
+            });
+        return; // The other screens are pure interface
+    }
 
     const Settings& settings = singleton<Settings>(world);
     world.query<game::Position, Appearance>(

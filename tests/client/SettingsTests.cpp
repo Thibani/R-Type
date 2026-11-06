@@ -1,5 +1,6 @@
 // The settings file and the key bindings: no window, files in a temporary folder.
 
+#include "client/Components/Session.hpp"
 #include "client/Components/Settings.hpp"
 #include "client/Settings.hpp"
 #include "client/Singleton.hpp"
@@ -477,4 +478,69 @@ TEST(Settings, WithoutAFolderTheSettingsAreNotSaved)
     system.update(world, ecs::Time{});
 
     EXPECT_FALSE(client::singleton<Settings>(world).saveError.empty()); // The player is told
+}
+
+// --- Theme and layout -----------------------------------------------------------
+
+namespace {
+
+/// WCAG contrast ratio: 4.5 is the minimum for normal text.
+double contrast(sf::Color first, sf::Color second)
+{
+    const auto luminance = [](sf::Color colour) {
+        const auto linear = [](std::uint8_t channel) {
+            const double value = channel / 255.0;
+            return value <= 0.03928 ? value / 12.92 : std::pow((value + 0.055) / 1.055, 2.4);
+        };
+        return (0.2126 * linear(colour.r)) + (0.7152 * linear(colour.g))
+            + (0.0722 * linear(colour.b));
+    };
+    const double a = luminance(first);
+    const double b = luminance(second);
+    return (std::max(a, b) + 0.05) / (std::min(a, b) + 0.05);
+}
+
+} // namespace
+
+TEST(Theme, EveryTextIsReadableOnItsBackground)
+{
+    using namespace client::theme;
+    constexpr double readable = 4.5;
+    for (const sf::Color background : {Surface, Background, InputBackground}) {
+        for (const sf::Color text : {Text, Muted, Blue, Red, Gold}) {
+            EXPECT_GE(contrast(text, background), readable);
+        }
+    }
+    EXPECT_GE(contrast(OnPrimary, Primary), readable);
+    EXPECT_GE(contrast(Red, ErrorBackground), readable);
+}
+
+TEST(Layout, EveryFocusablePartIsInsideTheCanvasAndNoneOverlaps)
+{
+    using client::Screen;
+    const sf::FloatRect canvas{{0.0F, 0.0F}, {client::theme::UiWidth, client::theme::UiHeight}};
+    const auto check = [&](const client::Session& session) {
+        const auto parts = client::layout::focusables(session, 100);
+        for (std::size_t a = 0; a < parts.size(); ++a) {
+            EXPECT_TRUE(canvas.contains(parts.at(a).position)
+                && canvas.contains(parts.at(a).position + parts.at(a).size))
+                << a;
+            for (std::size_t b = a + 1; b < parts.size(); ++b) {
+                EXPECT_FALSE(parts.at(a).findIntersection(parts.at(b)).has_value())
+                    << a << ", " << b;
+            }
+        }
+    };
+    for (const Screen screen : {Screen::Connect, Screen::WaitingRoom, Screen::GameOver}) {
+        client::Session session;
+        session.screen = screen;
+        check(session);
+    }
+    client::Session menu;
+    menu.screen = Screen::Game;
+    menu.menuOpen = true;
+    check(menu);
+    client::Session settings;
+    settings.settingsOpen = true;
+    check(settings);
 }

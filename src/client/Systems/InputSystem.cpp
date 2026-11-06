@@ -17,6 +17,7 @@
 #include <SFML/Window/Mouse.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -157,7 +158,34 @@ void adjustSettings(const Session& session, Settings& settings, int direction)
         changeInterfaceSize(settings, direction);
     }
 }
- 
+
+/// A click on the volume sets it where the track was clicked, and the left half
+/// of a selector goes back. False for any other click.
+bool clickSettings(const Session& session, Settings& settings, sf::Vector2f point)
+{
+    if (!session.settingsOpen) {
+        return false;
+    }
+    if (session.focus == layout::VolumeRow) {
+        const float ratio = std::clamp(
+            (point.x - layout::VolumeTrack.position.x) / layout::VolumeTrack.size.x, 0.0F, 1.0F);
+        const float steps = ratio * static_cast<float>(Settings::MaxVolume / Settings::VolumeStep);
+        settings.volume = static_cast<int>(std::lround(steps)) * Settings::VolumeStep;
+        settings.dirty = true;
+        return true;
+    }
+    if (session.focus == layout::ColourRow && point.x < layout::ColourSelector.getCenter().x) {
+        changeColourMode(settings, -1);
+        return true;
+    }
+    if (session.focus == layout::InterfaceSizeRow
+        && point.x < layout::InterfaceSizeSelector.getCenter().x) {
+        changeInterfaceSize(settings, -1);
+        return true;
+    }
+    return false;
+}
+
 /// Does what the focused (or clicked) row of the settings does.
 void activateSettings(Session& session, Settings& settings, int index)
 {
@@ -349,7 +377,9 @@ void InputSystem::update(ecs::World& world, const ecs::Time& /*time*/)
             for (std::size_t i = 0; i < targets.size(); ++i) {
                 if (targets.at(i).contains(point)) {
                     session.focus = static_cast<int>(i);
-                    activate(session, settings, session.focus, _loop);
+                    if (!clickSettings(session, settings, point)) {
+                        activate(session, settings, session.focus, _loop);
+                    }
                     break;
                 }
             }

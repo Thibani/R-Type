@@ -35,7 +35,7 @@ Technology choices: [`docs/technical-study/client.md`](../../docs/technical-stud
 | `Components/Controls.hpp`          | `PlayerControls` (keys held), `InputHistory` (last 8 ticks)|
 | `Components/SoundEvent.hpp`        | A sound to play this frame                                 |
 | `Components/Settings.hpp`          | `Settings` (volume, colour mode, interface size, key bindings), `Action`                |
-| `Ui/`                              | Hangar theme, screen layout, drawing helpers, letterboxing |
+| `Ui/`                              | Dark theme, screen layout, drawing helpers, letterboxing |
 
 Everything except `main.cpp` is the `rtype_client` library, so the tests can
 use it directly (`tests/client/`, no window needed).
@@ -71,6 +71,9 @@ other, they share components. `RenderSystem` only reads `Position` and
 | Game          | After AUTH_RESULT (OK): a single player can play at once          |
 | Waiting room  | Only if the server sends GAME_STATE = WAITING_FOR_PLAYERS         |
 | Game over     | GAME_STATE = GAME_OVER: team score and crew                       |
+
+Every screen has the moving sky of `StarfieldSystem` behind it. The screens without
+gameplay also have slow gold streaks: never in the game, where they could look like shots.
 
 Esc opens the in-game menu (the game keeps running) or leaves the other
 screens. Players are told apart by colour, pattern and P1-P4 tag. Each colour mode has
