@@ -14,15 +14,17 @@
 #include "ecs/Time/Time.hpp"
 #include "ecs/World/World.hpp"
 
-#include <SFML/Graphics/RectangleShape.hpp>
+#include <SFML/Window/Keyboard.hpp>
 
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace client {
 
@@ -48,64 +50,69 @@ std::string playerLabel(std::size_t player)
     return "P" + std::to_string(player + 1);
 }
 
-/// Light background with the 64 px grid of the mockups.
-void drawLightBackground(sf::RenderTarget& target, sf::FloatRect area)
+/// A big title in the display font, centred on the screen.
+void centredTitle(
+    sf::RenderTarget& target, const Assets& assets, std::string_view label, unsigned size, float y)
 {
-    box(target, area, theme::Background, theme::Background, 0.0F);
-    constexpr float cell = 64.0F;
-    const sf::Vector2f end = area.position + area.size;
-    sf::RectangleShape line;
-    line.setFillColor(theme::Grid);
-    line.setSize({2.0F, area.size.y});
-    const float firstX = std::floor(area.position.x / cell) * cell;
-    for (int column = 0; firstX + (static_cast<float>(column) * cell) < end.x; ++column) {
-        line.setPosition({firstX + (static_cast<float>(column) * cell), area.position.y});
-        target.draw(line);
-    }
-    line.setSize({area.size.x, 2.0F});
-    const float firstY = std::floor(area.position.y / cell) * cell;
-    for (int row = 0; firstY + (static_cast<float>(row) * cell) < end.y; ++row) {
-        line.setPosition({area.position.x, firstY + (static_cast<float>(row) * cell)});
-        target.draw(line);
-    }
+    text(target, assets.display, label, size, theme::Text,
+        {(theme::UiWidth - textWidth(assets.display, label, size)) / 2.0F, y});
 }
 
-/// Big title in the display font with its hard light-blue shadow.
-void title(sf::RenderTarget& target, const Assets& assets, std::string_view label, unsigned size,
-    sf::Vector2f position)
+/// Small game name and gold lines in the corners of a full screen.
+void screenDecoration(sf::RenderTarget& target, const Assets& assets)
 {
-    const float shadow = size >= 100 ? 6.0F : 4.0F;
-    text(target, assets.display, label, size, theme::LightBlue,
-        position + sf::Vector2f{shadow, shadow});
-    text(target, assets.display, label, size, theme::Blue, position);
+    widgets::goldDetail(target, {48.0F, 40.0F}, 110.0F);
+    text(target, assets.display, "R-TYPE", 30, theme::Text, {48.0F, 61.0F});
+    widgets::goldDetail(target, {1122.0F, 660.0F}, 110.0F);
+}
+
+void centredHelp(sf::RenderTarget& target, const Assets& assets, std::string_view help, float y)
+{
+    text(target, assets.body, help, 15, theme::Muted,
+        {(theme::UiWidth - textWidth(assets.body, help, 15)) / 2.0F, y});
 }
 
 void errorBox(
     sf::RenderTarget& target, const Assets& assets, sf::FloatRect rect, std::string_view message)
 {
-    box(target, rect, theme::ErrorBackground, theme::Red, 3.0F);
+    box(target, rect, theme::ErrorBackground, theme::Red, 1.0F);
     text(target, assets.bodyBold, message, 16, theme::Red,
-        rect.position + sf::Vector2f{14.0F, 13.0F});
+        rect.position + sf::Vector2f{14.0F, 9.0F});
 }
 
-/// The coloured top of a player card: pattern, tag, and "YOU" for us.
-void cardHead(sf::RenderTarget& target, const Assets& assets, ColourMode mode, sf::FloatRect rect,
-    std::size_t player, bool filled, bool isYou)
+/// The banner of one player: tag, pattern and ship if present, "Waiting..." if not.
+/// Everything follows the banner's width, 224 on the normal screens.
+/// Names use the body font: the display font has few accents.
+void crewBanner(sf::RenderTarget& target, const Assets& assets, ColourMode mode, sf::FloatRect rect,
+    std::size_t player, const PlayerSlot& slot, bool isYou)
 {
-    if (filled) {
-        widgets::swatch(target, assets, mode, rect, static_cast<std::uint8_t>(player), true);
-    } else {
-        box(target, rect, theme::InputBackground, theme::InputBackground, 0.0F);
-        widgets::tag(target, assets, playerLabel(player), rect.getCenter(), 18);
+    const float scale = rect.size.x / 224.0F;
+    const auto at = [&](float x, float y) { return rect.position + (sf::Vector2f{x, y} * scale); };
+    const auto sized = [&](float w, float h) { return sf::Vector2f{w, h} * scale; };
+    const auto font
+        = [&](unsigned size) { return static_cast<unsigned>(static_cast<float>(size) * scale); };
+
+    const auto id = static_cast<std::uint8_t>(player);
+    const sf::Color colour = theme::Palettes.at(static_cast<std::size_t>(mode)).players.at(player);
+    widgets::banner(target, rect, theme::Surface, slot.present ? colour : theme::Hull);
+    text(target, assets.bodyBold, playerLabel(player), font(26),
+        slot.present ? theme::Text : theme::Muted, at(24.0F, 22.0F));
+    const sf::FloatRect nameArea{at(20.0F, 231.0F), sized(184.0F, 48.0F)};
+    if (!slot.present) {
+        centredText(target, assets.body, "+", font(32), theme::Muted,
+            {at(32.0F, 108.0F), sized(160.0F, 80.0F)});
+        centredText(target, assets.body, "Waiting...", font(22), theme::Text, nameArea);
+        return;
     }
-    box(target, {{rect.position.x, rect.position.y + rect.size.y}, {rect.size.x, 0.0F}},
-        theme::Hull, theme::Hull, 2.0F);
     if (isYou) {
-        const sf::FloatRect you{
-            {rect.position.x + rect.size.x - 60.0F, rect.position.y + 10.0F}, {48.0F, 24.0F}};
-        box(target, you, theme::Blue, theme::Blue, 0.0F);
-        centredText(target, assets.display, "YOU", 15, sf::Color::White, you);
+        text(target, assets.bodyBold, "YOU", 14, theme::Blue, at(82.0F, 29.0F));
     }
+    widgets::pattern(target, assets, mode, {at(162.0F, 26.0F), sized(36.0F, 24.0F)}, id);
+    widgets::ship(target, assets, mode, {at(32.0F, 108.0F), sized(160.0F, 80.0F)}, id);
+    centredText(target, assets.bodyBold, slot.name,
+        widgets::fittedSize(assets.bodyBold, slot.name, font(26), nameArea.size.x), theme::Text,
+        nameArea);
+    box(target, {at(88.0F, 300.0F), sized(48.0F, 3.0F)}, colour, colour, 0.0F);
 }
 
 /// One star per character of the password (a UTF-8 character can use several bytes).
@@ -117,46 +124,40 @@ std::string hidden(std::string_view password)
         static_cast<std::size_t>(std::ranges::count_if(password, isCharacterStart)), '*');
 }
 
-/// A small player card: head, ship and name, or "Free slot".
-void crewCard(sf::RenderTarget& target, const Assets& assets, ColourMode mode, sf::FloatRect card,
-    std::size_t player, const PlayerSlot& slot, bool isYou)
+/// The connection's state, or why it failed, on one line of the form.
+void connectMessage(sf::RenderTarget& target, const Assets& assets, const Session& session)
 {
-    box(target, card, theme::Surface, theme::Hull, slot.present ? 4.0F : 3.0F, slot.present);
-    cardHead(target, assets, mode, {card.position, {card.size.x, 52.0F}}, player, slot.present, isYou);
-    if (!slot.present) {
-        centredText(target, assets.body, "Free slot", 15, theme::Muted,
-            {card.position + sf::Vector2f{0.0F, 52.0F}, {card.size.x, card.size.y - 52.0F}});
-        return;
-    }
-    widgets::ship(target, assets, mode,
-        {{card.getCenter().x - 48.0F, card.position.y + 68.0F}, {96.0F, 36.0F}},
-        static_cast<std::uint8_t>(player));
-    centredText(target, assets.bodyBold, slot.name,
-        widgets::fittedSize(assets.bodyBold, slot.name, 15, card.size.x - 12.0F), theme::Text,
-        {{card.position.x, card.position.y + 118.0F}, {card.size.x, 24.0F}});
+    const bool failed = !session.error.empty();
+    const std::string& message = failed ? session.error : session.status;
+    // The longest messages only fit in a smaller size
+    const unsigned size
+        = textWidth(assets.body, message, 16) <= layout::ConnectStatusWidth ? 16 : 14;
+    text(target, assets.body, message, size, failed ? theme::Red : theme::Blue,
+        layout::ConnectStatus);
 }
 
 void drawConnect(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
-    const Session& session, sf::FloatRect area, bool compact)
+    const Session& session, bool compact)
 {
-    drawLightBackground(target, area);
     if (!compact) { // Then the view only shows the panel, with the hint inside it
-        title(target, assets, "R-TYPE", 150, {80.0F, 220.0F});
-        widgets::ship(target, assets, mode, {{80.0F, 417.0F}, {192.0F, 72.0F}}, 0);
+        widgets::goldDetail(target, {64.0F, 64.0F}, 136.0F);
+        text(target, assets.display, "R-TYPE", 152, theme::Text, {60.0F, 101.0F});
+        box(target, {{64.0F, 269.0F}, {590.0F, 1.0F}}, theme::Hull, theme::Hull, 0.0F);
+        widgets::ship(target, assets, mode, {{170.0F, 340.0F}, {320.0F, 160.0F}}, 0);
     }
 
-    box(target, layout::ConnectPanel, theme::Surface, theme::Hull, 4.0F, true);
-    text(target, assets.display, "Join a game", 32, theme::Text, {700.0F, 146.0F});
+    widgets::panel(target, layout::ConnectPanel, theme::Surface, theme::Hull, 1.5F, 18.0F);
+    widgets::goldDetail(target, {716.0F, 142.0F}, 62.0F);
+    text(target, assets.display, "Join a game", 48, theme::Text, {716.0F, 154.0F});
     widgets::field(target, assets, layout::NameInput, "Player name", session.name,
-        session.focus == layout::NameField);
-    text(target, assets.body, "16 characters max", 15, theme::Muted, {700.0F, 271.0F});
+        session.focus == layout::NameField, "16 characters max");
     widgets::field(target, assets, layout::PasswordInput, "Password", hidden(session.password),
-        session.focus == layout::PasswordField);
-    text(target, assets.body, "8 to 64 characters", 15, theme::Muted, {942.0F, 271.0F});
+        session.focus == layout::PasswordField, "8 to 64 characters");
     widgets::field(target, assets, layout::AddressInput, "Server address", session.address,
         session.focus == layout::AddressField);
     widgets::field(target, assets, layout::PortInput, "Port", session.port,
         session.focus == layout::PortField);
+    connectMessage(target, assets, session);
     widgets::button(
         target, assets, layout::Login, "Log in", true, session.focus == layout::LoginButton);
     widgets::button(target, assets, layout::CreateAccount, "Create account", false,
@@ -166,65 +167,42 @@ void drawConnect(sf::RenderTarget& target, const Assets& assets, ColourMode mode
     widgets::button(
         target, assets, layout::Quit, "Quit", false, session.focus == layout::QuitButton);
 
-    if (!session.error.empty()) {
-        errorBox(target, assets, {{700.0F, 515.0F}, {468.0F, 44.0F}}, session.error);
-    } else if (!session.status.empty()) {
-        text(target, assets.bodyBold, session.status, 17, theme::Blue, {700.0F, 527.0F});
-    }
     text(target, assets.body, "Tab: next field  ·  Enter: log in  ·  Esc: quit", 15, theme::Muted,
-        compact ? sf::Vector2f{700.0F, 566.0F} : sf::Vector2f{80.0F, 682.0F});
+        compact ? sf::Vector2f{716.0F, 545.0F} : sf::Vector2f{64.0F, 682.0F});
+}
+
+/// Up to 4 banners, centred.
+void drawBanners(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
+    const Session& session, std::span<const std::size_t> players, float y, int interfaceSize)
+{
+    const sf::Vector2f size = layout::bannerSize(interfaceSize);
+    const float gap = layout::bannerGap(interfaceSize);
+    const float step = size.x + gap;
+    const float total = (static_cast<float>(players.size()) * step) - gap;
+    for (std::size_t n = 0; n < players.size(); ++n) {
+        const float x = ((theme::UiWidth - total) / 2.0F) + (static_cast<float>(n) * step);
+        const std::size_t player = players[n];
+        crewBanner(target, assets, mode, {{x, y}, size}, player, session.players.at(player),
+            session.playerId == player);
+    }
 }
 
 void drawWaitingRoom(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
-    const Session& session, sf::FloatRect area, int interfaceSize)
+    const Session& session, int interfaceSize)
 {
     const bool compact = layout::isCompact(interfaceSize);
-    drawLightBackground(target, area);
-    const sf::Vector2f titleAt = compact ? sf::Vector2f{270.0F, 128.0F} : sf::Vector2f{80.0F, 56.0F};
-    title(target, assets, "Waiting room", compact ? 40U : 60U, titleAt);
-    const auto connected = std::ranges::count_if(
-        session.players, [](const PlayerSlot& slot) { return slot.present; });
-    text(target, assets.bodyBold,
-        std::to_string(connected) + " / " + std::to_string(session.players.size())
-            + " players connected. Waiting for the server to start the game...",
-        17, theme::Blue, {titleAt.x, compact ? 178.0F : 134.0F});
-
-    if (compact) {
-        constexpr float width = 167.0F;
-        constexpr float gap = 24.0F;
-        for (std::size_t i = 0; i < session.players.size(); ++i) {
-            crewCard(target, assets, mode,
-                {{270.0F + (static_cast<float>(i) * (width + gap)), 215.0F}, {width, 160.0F}}, i,
-                session.players.at(i), session.playerId == i);
-        }
-    } else {
-        constexpr float width = 259.0F;
-        constexpr float gap = 28.0F;
-        for (std::size_t i = 0; i < session.players.size(); ++i) {
-            const PlayerSlot& slot = session.players.at(i);
-            const sf::FloatRect card{
-                {80.0F + (static_cast<float>(i) * (width + gap)), 178.0F}, {width, 400.0F}};
-            box(target, card, theme::Surface, theme::Hull, slot.present ? 4.0F : 3.0F, slot.present);
-            cardHead(target, assets, mode, {card.position, {width, 88.0F}}, i, slot.present,
-                session.playerId == i);
-            if (slot.present) {
-                widgets::ship(target, assets, mode,
-                    {{card.position.x + 33.0F, 298.0F}, {192.0F, 72.0F}},
-                    static_cast<std::uint8_t>(i));
-                centredText(target, assets.bodyBold, slot.name,
-                    widgets::fittedSize(assets.bodyBold, slot.name, 24, width - 16.0F), theme::Text,
-                    {{card.position.x, 390.0F}, {width, 30.0F}});
-            } else {
-                centredText(target, assets.body, "Free slot", 15, theme::Muted,
-                    {{card.position.x, 266.0F}, {width, 312.0F}});
-            }
-        }
+    if (!compact) {
+        screenDecoration(target, assets);
     }
+    centredTitle(
+        target, assets, "Waiting for players", compact ? 44U : 64U, compact ? 126.0F : 76.0F);
+    constexpr std::array<std::size_t, 4> everyone{0, 1, 2, 3};
+    drawBanners(target, assets, mode, session, everyone, compact ? 182.0F : 204.0F, interfaceSize);
     widgets::button(
         target, assets, layout::leave(interfaceSize), "Leave", false, session.focus == 0);
-    const std::string server = "Server " + session.address + ":" + session.port + "  ·  Esc: leave";
-    text(target, assets.body, server, 15, theme::Muted,
-        {(compact ? 1010.0F : 1200.0F) - textWidth(assets.body, server, 15), compact ? 420.0F : 628.0F});
+    centredHelp(target, assets,
+        "Server " + session.address + ":" + session.port + "  ·  Esc: leave",
+        compact ? 538.0F : 690.0F);
 }
 
 /// Health of each player's ship, from the snapshots (0 if no ship).
@@ -243,15 +221,15 @@ std::array<std::uint8_t, 4> shipHealth(ecs::World& world)
 std::string controlsReminder(const Settings& settings)
 {
     const auto name = [&](Action action) {
-        return std::string(keyName(settings.keys.at(static_cast<std::size_t>(action))).value_or("?"));
+        return std::string(
+            keyName(settings.keys.at(static_cast<std::size_t>(action))).value_or("?"));
     };
     constexpr std::size_t moves = 4; // Up, Down, Left, Right come first in Action
     const bool arrows = std::ranges::equal(
         std::span(settings.keys).first<moves>(), std::span(Settings::DefaultKeys).first<moves>());
-    const std::string move = arrows
-        ? "Arrows: move"
-        : "Move: " + name(Action::Up) + " " + name(Action::Left) + " " + name(Action::Down) + " "
-            + name(Action::Right);
+    const std::string move = arrows ? "Arrows: move"
+                                    : "Move: " + name(Action::Up) + " " + name(Action::Left) + " "
+            + name(Action::Down) + " " + name(Action::Right);
     std::string keyboard = move + "  ·  " + name(Action::Fire) + ": fire  ·  Esc: menu";
     const auto fire = settings.buttons.at(static_cast<std::size_t>(Action::Fire));
     if (!gamepad::anyConnected()) {
@@ -259,34 +237,6 @@ std::string controlsReminder(const Settings& settings)
     }
     return keyboard + "  ·  Pad: stick"
         + (fire ? ", " + std::to_string(*fire) + ": fire" : std::string()) + ", Start: menu";
-}
-
-/// One player in the HUD: swatch, name, then health or state.
-void drawPlayerChip(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
-    sf::FloatRect chip, std::size_t player, const PlayerSlot& slot, const std::string& name,
-    std::uint8_t points)
-{
-    box(target, chip, theme::Surface, theme::Hull, slot.left ? 3.0F : 4.0F);
-    widgets::swatch(target, assets, mode, {chip.position + sf::Vector2f{8.0F, 8.0F}, {56.0F, 48.0F}},
-        static_cast<std::uint8_t>(player), slot.present && !slot.down);
-    const sf::Vector2f column = chip.position + sf::Vector2f{76.0F, 10.0F};
-    text(target, assets.bodyBold, name, 15, theme::Text, column);
-    if (slot.left) {
-        text(target, assets.body, "Disconnected", 14, theme::Muted,
-            column + sf::Vector2f{0.0F, 26.0F});
-        return;
-    }
-    if (slot.down) {
-        text(target, assets.bodyBold, "Down", 14, theme::Red, column + sf::Vector2f{0.0F, 26.0F});
-        return;
-    }
-    text(target, assets.bodyBold, "HP", 14, theme::Text, column + sf::Vector2f{0.0F, 26.0F});
-    const sf::Color filled = points == 1 ? theme::Red : theme::Green;
-    for (std::uint8_t pip = 0; pip < 3; ++pip) {
-        box(target,
-            {column + sf::Vector2f{26.0F + (static_cast<float>(pip) * 26.0F), 30.0F}, {22.0F, 12.0F}},
-            pip >= points ? sf::Color::White : filled, theme::Hull, 2.0F);
-    }
 }
 
 void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
@@ -303,9 +253,10 @@ void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
     const float scoreWidth = std::max(textWidth(assets.bodyBold, "TEAM SCORE", 13),
                                  textWidth(assets.bodyBold, score, 32))
         + 36.0F;
-    box(target, {{left, firstRow}, {scoreWidth, 64.0F}}, theme::Surface, theme::Hull, 4.0F);
+    widgets::panel(
+        target, {{left, firstRow}, {scoreWidth, 64.0F}}, theme::Surface, theme::Hull, 1.5F, 10.0F);
     text(target, assets.bodyBold, "TEAM SCORE", 13, theme::Muted, {left + 18.0F, firstRow + 9.0F});
-    text(target, assets.bodyBold, score, 32, theme::Blue, {left + 18.0F, firstRow + 28.0F});
+    text(target, assets.bodyBold, score, 32, theme::Text, {left + 18.0F, firstRow + 28.0F});
 
     // One chip per player, right-aligned: swatch, name, health or state. On a
     // new row when they would reach the score, or the left of the screen
@@ -328,84 +279,166 @@ void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
         }
         const sf::FloatRect chip{{right - width, row}, {width, 64.0F}};
         right -= width + margin;
-        drawPlayerChip(target, assets, settings.colourMode, chip, i, slot, name, health.at(i));
+        widgets::panel(target, chip, theme::Surface, theme::Hull, 1.5F, 10.0F);
+        widgets::swatch(target, assets, settings.colourMode,
+            {chip.position + sf::Vector2f{8.0F, 8.0F}, {56.0F, 48.0F}},
+            static_cast<std::uint8_t>(i), slot.present && !slot.down);
+        const sf::Vector2f column = chip.position + sf::Vector2f{76.0F, 10.0F};
+        text(target, assets.bodyBold, name, 15, theme::Text, column);
+        if (slot.left) {
+            text(target, assets.body, "Disconnected", 14, theme::Muted,
+                column + sf::Vector2f{0.0F, 26.0F});
+        } else if (slot.down) {
+            text(target, assets.bodyBold, "Down", 14, theme::Red,
+                column + sf::Vector2f{0.0F, 26.0F});
+        } else {
+            text(
+                target, assets.bodyBold, "HP", 14, theme::Text, column + sf::Vector2f{0.0F, 26.0F});
+            const std::uint8_t points = health.at(i);
+            for (std::uint8_t pip = 0; pip < 3; ++pip) {
+                const sf::Color fill = pip >= points ? theme::InputBackground
+                    : points == 1                    ? theme::Red
+                                                     : theme::Green;
+                box(target,
+                    {column + sf::Vector2f{26.0F + (static_cast<float>(pip) * 26.0F), 30.0F},
+                        {22.0F, 12.0F}},
+                    fill, theme::Hull, 1.0F);
+            }
+        }
     }
 
     if (!session.notice.empty() && now < session.noticeUntil) {
         const float width = textWidth(assets.bodyBold, session.notice, 16) + 28.0F;
         const sf::FloatRect toast{{rightEdge - width, row + 102.0F}, {width, 40.0F}};
-        box(target, toast, theme::Blue, theme::LightBlue, 3.0F);
-        text(target, assets.bodyBold, session.notice, 16, sf::Color::White,
+        widgets::panel(target, toast, theme::Surface, theme::Blue, 1.5F, 8.0F);
+        text(target, assets.bodyBold, session.notice, 16, theme::Text,
             toast.position + sf::Vector2f{14.0F, 12.0F});
     }
 
     const std::string reminder = controlsReminder(settings);
     const float reminderWidth = textWidth(assets.body, reminder, 15) + 24.0F;
     const float bottom = area.position.y + area.size.y - margin;
-    box(target, {{left, bottom - 32.0F}, {reminderWidth, 32.0F}}, theme::Surface, theme::Hull, 3.0F);
-    text(target, assets.body, reminder, 15, theme::Text, {left + 12.0F, bottom - 23.0F});
+    box(target, {{left, bottom - 32.0F}, {reminderWidth, 32.0F}}, theme::Surface, theme::Hull,
+        1.0F);
+    text(target, assets.body, reminder, 15, theme::Muted, {left + 12.0F, bottom - 23.0F});
 }
 
-void drawMenu(sf::RenderTarget& target, const Assets& assets, const Session& session, sf::FloatRect area)
+void drawMenu(
+    sf::RenderTarget& target, const Assets& assets, const Session& session, sf::FloatRect area)
 {
     box(target, area, theme::Overlay, theme::Overlay, 0.0F);
-    box(target, layout::MenuPanel, theme::Surface, theme::Hull, 4.0F, true);
-    text(target, assets.display, "Menu", 32, theme::Text, {462.0F, 246.0F});
-    text(target, assets.body, "The game keeps running for the other players.", 15, theme::Muted,
-        {462.0F, 300.0F});
-    widgets::button(target, assets, layout::Resume, "Resume", true,
-        session.focus == layout::ResumeButton);
+    widgets::panel(target, layout::MenuPanel, theme::Surface, theme::Hull, 1.5F, 18.0F);
+    widgets::goldDetail(target, {460.0F, 183.0F}, 72.0F);
+    centredTitle(target, assets, "Menu", 64, 205.0F);
+    const std::string_view note = "The game keeps running for the other players.";
+    text(target, assets.body, note, 15, theme::Muted,
+        {(theme::UiWidth - textWidth(assets.body, note, 15)) / 2.0F, 272.0F});
+    widgets::button(
+        target, assets, layout::Resume, "Resume", true, session.focus == layout::ResumeButton);
     widgets::button(target, assets, layout::MenuSettings, "Settings", false,
         session.focus == layout::MenuSettingsButton);
     widgets::button(target, assets, layout::LeaveGame, "Leave game", false,
         session.focus == layout::LeaveButton);
 }
 
-/// One settings row: label on the left, value on the right, focus ring.
-void settingsRow(sf::RenderTarget& target, const Assets& assets, int row, std::string_view label,
-    const std::string& value, bool focused, bool waiting)
+/// The background of a settings row: a cyan outline if focused.
+void rowFocus(sf::RenderTarget& target, sf::FloatRect rect, bool focused)
+{
+    if (focused) {
+        box(target, rect, sf::Color::Transparent, theme::Blue, 2.0F);
+    }
+}
+
+void volumeRow(
+    sf::RenderTarget& target, const Assets& assets, const Settings& settings, bool focused)
+{
+    const sf::FloatRect rect = layout::settingsRow(layout::VolumeRow);
+    rowFocus(target, rect, focused);
+    const sf::Vector2f inside = rect.position + sf::Vector2f{16.0F, 14.0F};
+    text(target, assets.body, "Sound effects", 20, theme::Text, inside);
+    const std::string value
+        = settings.volume == 0 ? "Muted" : std::to_string(settings.volume) + " %";
+    text(target, assets.body, value, 20, theme::Blue,
+        {rect.position.x + rect.size.x - 16.0F - textWidth(assets.body, value, 20), inside.y});
+
+    const sf::FloatRect track = layout::VolumeTrack;
+    const float level = track.size.x * static_cast<float>(settings.volume)
+        / static_cast<float>(Settings::MaxVolume);
+    box(target, track, theme::Hull, theme::Hull, 0.0F);
+    box(target, {track.position, {level, track.size.y}}, theme::Blue, theme::Blue, 0.0F);
+    box(target, {track.position + sf::Vector2f{level - 5.0F, -9.0F}, {10.0F, 22.0F}}, theme::Blue,
+        theme::Blue, 0.0F);
+}
+
+/// A row with a "< value >" selector. A click left of its centre goes back.
+void selectorRow(sf::RenderTarget& target, const Assets& assets, int row, std::string_view label,
+    sf::FloatRect selector, std::string_view value, bool focused)
 {
     const sf::FloatRect rect = layout::settingsRow(row);
-    box(target, rect, theme::Surface, focused ? theme::Blue : theme::HullLight, focused ? 4.0F : 2.0F);
-    text(target, assets.bodyBold, label, 17, theme::Text,
-        {rect.position.x + 16.0F, rect.position.y + 12.0F});
-    const unsigned size = 17;
-    const float width = textWidth(assets.bodyBold, value, size);
-    text(target, assets.bodyBold, value, size, waiting ? theme::Blue : theme::Text,
-        {rect.position.x + rect.size.x - 16.0F - width, rect.position.y + 12.0F});
+    rowFocus(target, rect, focused);
+    text(target, assets.body, label, 20, theme::Text, rect.position + sf::Vector2f{16.0F, 14.0F});
+    box(target, selector, theme::InputBackground, theme::Hull, 1.0F);
+    centredText(target, assets.body, value, 19, theme::Text, selector);
+    constexpr float ArrowWidth = 28.0F;
+    centredText(target, assets.bodyBold, "<", 20, theme::Blue,
+        {selector.position, {ArrowWidth, selector.size.y}});
+    centredText(target, assets.bodyBold, ">", 20, theme::Blue,
+        {selector.position + sf::Vector2f{selector.size.x - ArrowWidth, 0.0F},
+            {ArrowWidth, selector.size.y}});
+}
+
+/// One action: its name, then the key (and the gamepad button, if bound) in keycaps,
+/// or a prompt while waiting for a key or a button.
+void keyRow(sf::RenderTarget& target, const Assets& assets, int row, std::string_view action,
+    sf::Keyboard::Key key, std::optional<unsigned> button, bool focused, bool waiting)
+{
+    const sf::FloatRect rect = layout::settingsRow(row);
+    rowFocus(target, rect, focused);
+    text(target, assets.body, action, 20, theme::Text, rect.position + sf::Vector2f{12.0F, 12.0F});
+    const float right = rect.position.x + rect.size.x - 4.0F;
+    if (waiting) {
+        constexpr std::string_view Prompt = "Key or button (Esc: cancel)";
+        text(target, assets.bodyBold, Prompt, 16, theme::Blue,
+            {right - 8.0F - textWidth(assets.bodyBold, Prompt, 16), rect.position.y + 14.0F});
+        return;
+    }
+    const sf::FloatRect keycap{{right - 120.0F, rect.position.y + 4.0F}, {120.0F, 36.0F}};
+    box(target, keycap, theme::InputBackground, theme::Hull, 1.0F);
+    centredText(target, assets.body, keyName(key).value_or("?"), 18, theme::Text, keycap);
+    if (button) {
+        const sf::FloatRect padcap{{keycap.position.x - 104.0F, keycap.position.y}, {96.0F, 36.0F}};
+        box(target, padcap, theme::InputBackground, theme::Hull, 1.0F);
+        centredText(target, assets.body, "Pad " + std::to_string(*button), 18, theme::Text, padcap);
+    }
 }
 
 void drawSettings(sf::RenderTarget& target, const Assets& assets, const Session& session,
     const Settings& settings, sf::FloatRect area)
 {
     box(target, area, theme::Overlay, theme::Overlay, 0.0F);
-    box(target, layout::SettingsPanel, theme::Surface, theme::Hull, 4.0F, true);
-    text(target, assets.display, "Settings", 32, theme::Text, {245.0F, 138.0F});
+    widgets::panel(target, layout::SettingsPanel, theme::Surface, theme::Hull, 1.5F, 18.0F);
+    text(target, assets.display, "Settings", 40, theme::Text, {261.0F, 132.0F});
+    volumeRow(target, assets, settings, session.focus == layout::VolumeRow);
+    selectorRow(target, assets, layout::ColourRow, "Colour-blind mode", layout::ColourSelector,
+        colourModeName(settings.colourMode), session.focus == layout::ColourRow);
+    selectorRow(target, assets, layout::InterfaceSizeRow, "Interface size",
+        layout::InterfaceSizeSelector, std::to_string(settings.interfaceSize) + " %",
+        session.focus == layout::InterfaceSizeRow);
 
-    settingsRow(target, assets, layout::VolumeRow, "Sound effects",
-        settings.volume == 0 ? "< Muted >" : "< " + std::to_string(settings.volume) + " % >",
-        session.focus == layout::VolumeRow, false);
-
-    settingsRow(target, assets, layout::ColourRow, "Colour-blind mode",
-        "< " + std::string(colourModeName(settings.colourMode)) + " >",
-        session.focus == layout::ColourRow, false);
-
-    settingsRow(target, assets, layout::InterfaceSizeRow, "Interface size",
-        "< " + std::to_string(settings.interfaceSize) + " % >",
-        session.focus == layout::InterfaceSizeRow, false);
-
+    box(target, {{640.0F, 184.0F}, {1.0F, 312.0F}}, theme::Hull, theme::Hull, 0.0F);
+    text(target, assets.display, "Key bindings", 32, theme::Text, {662.0F, 186.0F});
     constexpr std::array<std::string_view, ActionCount> actions{
-        "Move up", "Move down", "Move left", "Move right", "Fire",
+        "Move up",
+        "Move down",
+        "Move left",
+        "Move right",
+        "Fire",
     };
     for (std::size_t action = 0; action < ActionCount; ++action) {
         const int row = layout::FirstKeyRow + static_cast<int>(action);
-        const bool waiting = session.capturing == static_cast<Action>(action);
-        const auto button = settings.buttons.at(action);
-        const std::string key = waiting
-            ? "Key or button (Esc: cancel)"
-            : "[ " + std::string(keyName(settings.keys.at(action)).value_or("?")) + " ]"
-                + (button ? "  [ Pad " + std::to_string(*button) + " ]" : "");
-        settingsRow(target, assets, row, actions.at(action), key, session.focus == row, waiting);
+        keyRow(target, assets, row, actions.at(action), settings.keys.at(action),
+            settings.buttons.at(action), session.focus == row,
+            session.capturing == static_cast<Action>(action));
     }
     widgets::button(target, assets, layout::settingsRow(layout::ResetRow), "Reset controls", false,
         session.focus == layout::ResetRow);
@@ -413,29 +446,24 @@ void drawSettings(sf::RenderTarget& target, const Assets& assets, const Session&
         session.focus == layout::BackRow);
 
     if (!settings.saveError.empty()) {
-        errorBox(target, assets, {{245.0F, 450.0F}, {790.0F, 40.0F}}, settings.saveError);
+        errorBox(target, assets, {{245.0F, 504.0F}, {790.0F, 32.0F}}, settings.saveError);
     }
-    text(target, assets.body, "Arrows: move  ·  Enter: change  ·  Esc: back",
-        15, theme::Muted, {245.0F, 510.0F});
+    centredHelp(target, assets, "Arrows: move  ·  Enter: change  ·  Esc: back", 552.0F);
 }
 
 void drawGameOver(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
-    const Session& session, sf::FloatRect area, bool compact)
+    const Session& session, int interfaceSize)
 {
-    drawLightBackground(target, area);
-    const unsigned titleSize = compact ? 36U : 150U;
-    const float titleWidth = textWidth(assets.display, "GAME OVER", titleSize);
-    title(target, assets, "GAME OVER", titleSize,
-        {(theme::UiWidth - titleWidth) / 2.0F, compact ? 205.0F : 60.0F});
-
-    const std::string score = formatScore(session.score);
-    const float boxWidth = std::max(textWidth(assets.bodyBold, score, 72), 160.0F) + 72.0F;
-    const sf::FloatRect scoreBox{{(theme::UiWidth - boxWidth) / 2.0F, 248.0F}, {boxWidth, 130.0F}};
-    box(target, scoreBox, theme::Surface, theme::Hull, 4.0F, true);
-    centredText(target, assets.bodyBold, "TEAM SCORE", 13, theme::Muted,
-        {scoreBox.position + sf::Vector2f{0.0F, 18.0F}, {boxWidth, 16.0F}});
-    centredText(target, assets.bodyBold, score, 72, theme::Blue,
-        {scoreBox.position + sf::Vector2f{0.0F, 42.0F}, {boxWidth, 72.0F}});
+    const bool compact = layout::isCompact(interfaceSize);
+    if (!compact) {
+        screenDecoration(target, assets);
+    }
+    centredTitle(target, assets, "GAME OVER", compact ? 44U : 80U, compact ? 122.0F : 54.0F);
+    centredText(target, assets.body, "TEAM SCORE", 14, theme::Gold,
+        {{0.0F, compact ? 172.0F : 146.0F}, {theme::UiWidth, 17.0F}});
+    centredText(target, assets.bodyBold, formatScore(session.score), compact ? 28U : 40U,
+        theme::Text,
+        {{0.0F, compact ? 189.0F : 169.0F}, {theme::UiWidth, compact ? 36.0F : 53.0F}});
 
     // The crew: the players still in the game
     std::vector<std::size_t> crew;
@@ -444,17 +472,9 @@ void drawGameOver(sf::RenderTarget& target, const Assets& assets, ColourMode mod
             crew.push_back(i);
         }
     }
-    constexpr float Gap = 24.0F;
-    constexpr float GridWidth = 740.0F;
-    const float count = static_cast<float>(std::max<std::size_t>(crew.size(), 1));
-    const float width = (GridWidth - (Gap * (count - 1.0F))) / count;
-    for (std::size_t n = 0; n < crew.size(); ++n) {
-        const std::size_t i = crew.at(n);
-        const sf::FloatRect card{
-            {270.0F + (static_cast<float>(n) * (width + Gap)), 412.0F}, {width, 160.0F}};
-        crewCard(target, assets, mode, card, i, session.players.at(i), false);
-    }
-    widgets::button(target, assets, layout::BackToMenu, "Back to menu", true, session.focus == 0);
+    drawBanners(target, assets, mode, session, crew, compact ? 232.0F : 238.0F, interfaceSize);
+    widgets::button(target, assets, layout::backToMenu(interfaceSize), "Back to menu", true,
+        session.focus == 0);
 }
 
 } // namespace
@@ -471,15 +491,14 @@ void InterfaceSystem::update(ecs::World& world, const ecs::Time& time)
     const Settings& settings = singleton<Settings>(world);
     const ColourMode mode = settings.colourMode;
     const int size = settings.interfaceSize;
-    const bool compact = layout::isCompact(size);
     const sf::FloatRect area = layout::visibleArea(session, size);
     _window.setView(letterboxed(area, _window.getSize()));
     switch (session.screen) {
     case Screen::Connect:
-        drawConnect(_window, _assets, mode, session, area, compact);
+        drawConnect(_window, _assets, mode, session, layout::isCompact(size));
         break;
     case Screen::WaitingRoom:
-        drawWaitingRoom(_window, _assets, mode, session, area, size);
+        drawWaitingRoom(_window, _assets, mode, session, size);
         break;
     case Screen::Game:
         drawHud(_window, _assets, world, session, time.elapsedSeconds(), area);
@@ -488,7 +507,7 @@ void InterfaceSystem::update(ecs::World& world, const ecs::Time& time)
         }
         break;
     case Screen::GameOver:
-        drawGameOver(_window, _assets, mode, session, area, compact);
+        drawGameOver(_window, _assets, mode, session, size);
         break;
     }
     if (session.settingsOpen) {

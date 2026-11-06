@@ -30,7 +30,7 @@ struct Skin {
 /// a reference: it must outlive the game loop.
 struct Assets {
     std::array<Skin, ColourModeCount> skins; // Indexed by `ColourMode`
-    sf::Font display; // Pixelify Sans: titles and buttons, never digits (its 2 and 5 look alike)
+    sf::Font display; // Bebas Neue: titles only, it has few accents (names use `bodyBold`)
     sf::Font body; // Atkinson Hyperlegible: readable text, numbers, names and tags
     sf::Font bodyBold;
     std::array<sf::SoundBuffer, 4> sounds; // Indexed by `Sound`

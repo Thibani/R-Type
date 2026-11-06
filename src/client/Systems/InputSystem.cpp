@@ -17,6 +17,7 @@
 #include <SFML/Window/Mouse.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -121,13 +122,15 @@ void closeSettings(Session& session)
 {
     session.settingsOpen = false;
     session.capturing.reset();
-    session.focus = session.screen == Screen::Connect ? layout::SettingsButton : layout::MenuSettingsButton;
+    session.focus
+        = session.screen == Screen::Connect ? layout::SettingsButton : layout::MenuSettingsButton;
 }
 
 void changeColourMode(Settings& settings, int step)
 {
     constexpr int count = static_cast<int>(ColourModeCount);
-    settings.colourMode = static_cast<ColourMode>((static_cast<int>(settings.colourMode) + step + count) % count);
+    settings.colourMode
+        = static_cast<ColourMode>((static_cast<int>(settings.colourMode) + step + count) % count);
     settings.dirty = true;
 }
 
@@ -145,7 +148,35 @@ void changeInterfaceSize(Settings& settings, int step)
 /// Enter, so Left and Right always move, even on a setting row.
 void navigate(Session& session, const Settings& settings, int dx, int dy)
 {
-    session.focus = layout::neighbour(layout::focusables(session, settings.interfaceSize), session.focus, dx, dy);
+    session.focus = layout::neighbour(
+        layout::focusables(session, settings.interfaceSize), session.focus, dx, dy);
+}
+
+/// A click on the volume sets it where the track was clicked, and the left half
+/// of a selector goes back. False for any other click.
+bool clickSettings(const Session& session, Settings& settings, sf::Vector2f point)
+{
+    if (!session.settingsOpen) {
+        return false;
+    }
+    if (session.focus == layout::VolumeRow) {
+        const float ratio = std::clamp(
+            (point.x - layout::VolumeTrack.position.x) / layout::VolumeTrack.size.x, 0.0F, 1.0F);
+        const float steps = ratio * static_cast<float>(Settings::MaxVolume / Settings::VolumeStep);
+        settings.volume = static_cast<int>(std::lround(steps)) * Settings::VolumeStep;
+        settings.dirty = true;
+        return true;
+    }
+    if (session.focus == layout::ColourRow && point.x < layout::ColourSelector.getCenter().x) {
+        changeColourMode(settings, -1);
+        return true;
+    }
+    if (session.focus == layout::InterfaceSizeRow
+        && point.x < layout::InterfaceSizeSelector.getCenter().x) {
+        changeInterfaceSize(settings, -1);
+        return true;
+    }
+    return false;
 }
 
 /// Does what the focused (or clicked) row of the settings does.
@@ -153,14 +184,16 @@ void activateSettings(Session& session, Settings& settings, int index)
 {
     if (index == layout::VolumeRow) {
         // Enter, A or a click raises it and wraps to muted
-        settings.volume = settings.volume >= Settings::MaxVolume ? 0 : settings.volume + Settings::VolumeStep;
+        settings.volume
+            = settings.volume >= Settings::MaxVolume ? 0 : settings.volume + Settings::VolumeStep;
         settings.dirty = true;
     } else if (index == layout::ColourRow) {
         changeColourMode(settings, 1);
     } else if (index == layout::InterfaceSizeRow) {
         changeInterfaceSize(settings, 1);
     } else if (index < layout::ResetRow) {
-        session.capturing = static_cast<Action>(index - layout::FirstKeyRow); // Next key pressed is bound
+        session.capturing
+            = static_cast<Action>(index - layout::FirstKeyRow); // Next key pressed is bound
     } else if (index == layout::ResetRow) {
         settings.keys = Settings::DefaultKeys;
         settings.buttons = Settings::DefaultButtons;
@@ -279,7 +312,8 @@ void onPadButton(Session& session, Settings& settings, unsigned button, ecs::Gam
         return;
     }
     // Start opens and closes the menu; B goes back. A pad never quits the game
-    const bool back = button == gamepad::StartButton || (button == gamepad::BackButton && inMenu(session));
+    const bool back
+        = button == gamepad::StartButton || (button == gamepad::BackButton && inMenu(session));
     if (back && (session.screen != Screen::Connect || session.settingsOpen)) {
         escape(session, loop);
     } else if (button == gamepad::AcceptButton && inMenu(session)) {
@@ -296,7 +330,8 @@ void onPadPush(Session& session, const Settings& settings, bool vertical, int di
     navigate(session, settings, vertical ? 0 : direction, vertical ? direction : 0);
 }
 
-void onKey(Session& session, Settings& settings, const sf::Event::KeyPressed& key, ecs::GameLoop& loop)
+void onKey(
+    Session& session, Settings& settings, const sf::Event::KeyPressed& key, ecs::GameLoop& loop)
 {
     using sf::Keyboard::Key;
     if (session.capturing) {
@@ -384,12 +419,15 @@ void InputSystem::update(ecs::World& world, const ecs::Time& /*time*/)
                 continue;
             }
             const sf::Vector2f point = _window.mapPixelToCoords(click->position,
-                letterboxed(layout::visibleArea(session, settings.interfaceSize), _window.getSize()));
+                letterboxed(
+                    layout::visibleArea(session, settings.interfaceSize), _window.getSize()));
             const auto targets = layout::focusables(session, settings.interfaceSize);
             for (std::size_t i = 0; i < targets.size(); ++i) {
                 if (targets.at(i).contains(point)) {
                     session.focus = static_cast<int>(i);
-                    activate(session, settings, session.focus, _loop);
+                    if (!clickSettings(session, settings, point)) {
+                        activate(session, settings, session.focus, _loop);
+                    }
                     break;
                 }
             }
@@ -400,13 +438,15 @@ void InputSystem::update(ecs::World& world, const ecs::Time& /*time*/)
     if (!inMenu(session) && _window.hasFocus()) {
         mask = heldKeys(settings);
         for (unsigned joystick = 0; joystick < sf::Joystick::Count; ++joystick) {
-            mask = static_cast<std::uint8_t>(mask | gamepad::mask(gamepad::read(joystick), settings));
+            mask = static_cast<std::uint8_t>(
+                mask | gamepad::mask(gamepad::read(joystick), settings));
         }
     }
     singleton<PlayerControls>(world).mask = mask;
 }
 
-void InputSystem::onPadMoved(Session& session, Settings& settings, const sf::Event::JoystickMoved& moved)
+void InputSystem::onPadMoved(
+    Session& session, Settings& settings, const sf::Event::JoystickMoved& moved)
 {
     using sf::Joystick::Axis;
     std::size_t slot = 0;
