@@ -75,7 +75,7 @@ ChatOrder readMsg(std::string_view rest, std::span<const FriendRow> friends)
 } // namespace
 
 ChatOrder readChat(std::string_view input, const std::optional<std::string>& target,
-    std::span<const FriendRow> friends, bool inGame)
+    std::span<const FriendRow> friends)
 {
     const std::string_view text = trimmed(input);
     if (text.empty()) {
@@ -89,9 +89,6 @@ ChatOrder readChat(std::string_view input, const std::optional<std::string>& tar
     if (startsWithAnyCase(text, Command)
         && (text.size() == Command.size() || text[Command.size()] == ' ')) {
         return readMsg(trimmed(text.substr(Command.size())), friends);
-    }
-    if (!inGame) {
-        return {.action = ChatOrder::Problem{.text = "Not in a group yet."}};
     }
     return checked({.action = ChatOrder::ToGame{.text = std::string(text)}}, text);
 }

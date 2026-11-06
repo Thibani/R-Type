@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 
@@ -76,6 +77,9 @@ std::string* focusedField(Session& session)
         return nullptr;
     }
     if (session.screen == Screen::Home) {
+        if (session.focus == layout::GroupCodeField) {
+            return &session.groupCodeInput;
+        }
         return session.focus == layout::FriendNameField ? &session.friendName : nullptr;
     }
     if (session.screen != Screen::Connect) {
@@ -112,7 +116,14 @@ void type(Session& session, char32_t c)
     if (field == nullptr || c < 0x20 || c == 0x7F) {
         return; // Control characters (Enter, Tab, Backspace) are keys, not text
     }
-    if (session.screen == Screen::Home || session.focus == layout::NameField) {
+    if (session.screen == Screen::Home && session.focus == layout::GroupCodeField) {
+        // Upper case: a code is read aloud, and needs no thinking about it
+        const char32_t upper = c >= U'a' && c <= U'z' ? c - U'a' + U'A' : c;
+        if (upper < 0x80 && field->size() < GroupCodeSize
+            && GroupCodeAlphabet.find(static_cast<char>(upper)) != std::string_view::npos) {
+            appendUtf8(*field, upper);
+        }
+    } else if (session.screen == Screen::Home || session.focus == layout::NameField) {
         std::string longer = *field;
         appendUtf8(longer, c);
         if (isValidName(longer)) { // At most 16 bytes of UTF-8 (protocol §2.2)
@@ -236,6 +247,60 @@ void askFriend(Session& session)
     }
 }
 
+/// Joins the group of the code typed. Says so if it cannot be a code.
+void joinWithCode(Session& session)
+{
+    if (isValidGroupCode(session.groupCodeInput)) {
+        session.outgoing.emplace_back(GroupJoin{.code = session.groupCodeInput});
+        session.groupCodeInput.clear();
+    } else {
+        addChatLine(session,
+            ChatLine{.kind = ChatLine::Kind::Notice,
+                .name = {},
+                .text = "A group code has 6 characters."});
+    }
+}
+
+/// The big button: the leader starts the game, the others say whether they are ready.
+void pressPlay(Session& session)
+{
+    if (leadsTheGroup(session)) {
+        session.request = Request::Play;
+        return;
+    }
+    const auto me = std::ranges::find(
+        session.group.members, session.name, &network::protocol::GroupMemberState::name);
+    const bool ready = me != session.group.members.end() && me->ready;
+    session.outgoing.emplace_back(GroupReady{.ready = !ready});
+}
+
+/// Does what a button of the group's part does: `index` is its number on the main page.
+void activateGroupButton(Session& session, int index)
+{
+    const auto member = [&](int first) -> const std::string& {
+        return session.group.members.at(static_cast<std::size_t>(index - first)).name;
+    };
+    if (index == layout::NewGroupCodeButton) {
+        session.outgoing.emplace_back(GroupCode{.action = GroupCodeAction::Generate});
+    } else if (index == layout::DeleteGroupCodeButton) {
+        session.outgoing.emplace_back(GroupCode{.action = GroupCodeAction::Delete});
+    } else if (index == layout::GroupJoinButton) {
+        joinWithCode(session);
+    } else if (index == layout::LeaveGroupButton) {
+        session.outgoing.emplace_back(GroupLeave{});
+    } else if (index == layout::AcceptInvitationButton || index == layout::RefuseInvitationButton) {
+        const auto reply
+            = index == layout::AcceptInvitationButton ? FriendReply::Accept : FriendReply::Refuse;
+        session.outgoing.emplace_back(
+            GroupAnswer{.name = session.invitations.front(), .reply = reply});
+        session.invitations.erase(session.invitations.begin());
+    } else if (index >= layout::FirstPromoteButton) {
+        session.outgoing.emplace_back(GroupPromote{.name = member(layout::FirstPromoteButton)});
+    } else if (index >= layout::FirstKickButton) {
+        session.outgoing.emplace_back(GroupKick{.name = member(layout::FirstKickButton)});
+    }
+}
+
 /// Does what a button of a row of the friends panel does.
 void activateFriendButton(Session& session, const layout::FriendButton& button)
 {
@@ -285,8 +350,7 @@ void closeChat(Session& session)
 /// and what was said stays in the chat.
 void submitChat(Session& session)
 {
-    const ChatOrder order = readChat(
-        session.chatInput, session.chatTarget, session.friends, session.playerId.has_value());
+    const ChatOrder order = readChat(session.chatInput, session.chatTarget, session.friends);
     if (const auto* game = std::get_if<ChatOrder::ToGame>(&order.action)) {
         session.outgoing.emplace_back(ChatSend{.text = game->text});
     } else if (const auto* letter = std::get_if<ChatOrder::ToFriend>(&order.action)) {
@@ -355,7 +419,12 @@ bool leftClickOnChatOrMenu(
     Session& session, const Settings& settings, sf::FloatRect area, sf::Vector2f point)
 {
     const auto button = layout::friendMenuButton(session, layout::friendsBar(area, true));
+    const auto invite = layout::friendInviteButton(session, layout::friendsBar(area, true));
     const std::optional<std::string> menu = std::exchange(session.friendMenu, std::nullopt);
+    if (invite && menu && invite->contains(point)) {
+        session.outgoing.emplace_back(GroupInvite{.name = *menu});
+        return true;
+    }
     if (button && button->contains(point)) {
         openChat(session, menu);
         session.focus = layout::PlayButton;
@@ -395,13 +464,15 @@ void activate(Session& session, Settings& settings, int index, ecs::GameLoop& lo
         break;
     case Screen::Home:
         if (index == layout::PlayButton) {
-            session.request = Request::Play;
+            pressPlay(session);
         } else if (index == layout::HomeSettingsButton) {
             openSettings(session);
         } else if (index == layout::LogOutButton) {
             session.request = Request::Leave;
         } else if (index == layout::ChatBox) {
             openChat(session, std::nullopt);
+        } else if (index < layout::FriendNameField) {
+            activateGroupButton(session, index);
         } else if (index == layout::FriendAddButton) {
             askFriend(session);
         } else if (index >= layout::FirstFriendButton) {
@@ -430,9 +501,13 @@ void activate(Session& session, Settings& settings, int index, ecs::GameLoop& lo
 
 void moveFocus(Session& session, const Settings& settings, int step)
 {
-    const int count = static_cast<int>(layout::focusables(session, settings.interfaceSize).size());
-    if (count > 0) {
+    const auto parts = layout::focusables(session, settings.interfaceSize);
+    const int count = static_cast<int>(parts.size());
+    for (int tries = 0; tries < count; ++tries) {
         session.focus = (session.focus + step + count) % count;
+        if (parts.at(static_cast<std::size_t>(session.focus)).size.x > 0.0F) {
+            return; // A part that does not apply for now is skipped
+        }
     }
 }
 
@@ -473,21 +548,24 @@ void escape(Session& session, ecs::GameLoop& loop)
         session.menuOpen = !session.menuOpen;
         session.focus = 0;
     } else if (session.screen == Screen::Home) {
-        if (session.focus >= layout::FriendNameField) {
-            session.focus = layout::PlayButton;
-        }
+        session.focus = session.focus > layout::ChatBox ? layout::PlayButton : session.focus;
     } else {
         session.request = Request::LeaveGame;
     }
 }
 
 /// Enter, or A on a pad: activates the focus. In the form, logs in from any field;
-/// in the friends panel, asks from the name field.
+/// in the friends panel, asks from the name field; in the code field, joins the group.
 void confirm(Session& session, Settings& settings, ecs::GameLoop& loop)
 {
     if (!session.settingsOpen && session.screen == Screen::Home
         && session.focus == layout::FriendNameField) {
         askFriend(session);
+        return;
+    }
+    if (!session.settingsOpen && session.screen == Screen::Home
+        && session.focus == layout::GroupCodeField) {
+        joinWithCode(session);
         return;
     }
     activate(session, settings,
@@ -682,6 +760,13 @@ void InputSystem::update(ecs::World& world, const ecs::Time& /*time*/)
         const int count
             = static_cast<int>(layout::focusables(session, settings.interfaceSize).size());
         session.focus = std::min(session.focus, count - 1);
+        // The leader role or an invitation may have gone with the part that had the focus
+        if (layout::focusables(session, settings.interfaceSize)
+                .at(static_cast<std::size_t>(session.focus))
+                .size.x
+            <= 0.0F) {
+            session.focus = layout::PlayButton;
+        }
         const std::size_t shown = layout::friendRowsShown(
             layout::friendsBar(layout::visibleArea(session, settings.interfaceSize), true));
         const std::size_t last

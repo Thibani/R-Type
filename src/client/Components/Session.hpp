@@ -72,7 +72,9 @@ struct Session {
     std::string error; // Why the last attempt or session failed, or why the game refused us
 
     // Main page
-    bool joining{false}; // JOIN_GAME sent, JOIN_RESULT not received yet
+    network::protocol::GroupState group; // Empty until the first GROUP_STATE
+    std::string groupCodeInput; // What is typed in "Join with a code"
+    std::vector<std::string> invitations; // Who invited us, oldest first
 
     // Friends panel, on the main page. The list stays up to date during a game
     std::vector<FriendRow> friends; // Requests received, online, offline, requests sent
@@ -100,5 +102,13 @@ struct Session {
     std::string notice; // Short message ("P4 Dave left the game"), shown until noticeUntil
     float noticeUntil{0.0F};
 };
+
+/// True if we lead our group. Alone and not told yet, we do.
+[[nodiscard]]
+inline bool leadsTheGroup(const Session& session)
+{
+    return session.group.members.empty()
+        || session.group.members.at(session.group.leader).name == session.name;
+}
 
 } // namespace client

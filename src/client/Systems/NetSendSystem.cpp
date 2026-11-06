@@ -69,11 +69,8 @@ void NetSendSystem::update(ecs::World& world, const ecs::Time& /*time*/)
         session.status.clear();
         session.error.clear();
     } else if (session.request == Request::Play) {
-        if (!session.joining) { // A second click while waiting asks nothing more
-            session.joining = true;
-            session.error.clear();
-            _connection.sendReliable(JoinGame{});
-        }
+        session.error.clear();
+        _connection.sendReliable(JoinGame{}); // A second click during the countdown does nothing
     } else if (session.request == Request::LeaveGame) {
         _connection.sendReliable(LeaveGame{});
         leaveGame(world);
