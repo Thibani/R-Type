@@ -2,8 +2,10 @@
 
 #include "ecs/World/World.hpp"
 #include "server/Components/NetClient.hpp"
+#include "server/GameRoom.hpp"
 #include "server/Network.hpp"
 
+#include <cstddef>
 #include <iostream>
 #include <string_view>
 #include <vector>
@@ -39,7 +41,7 @@ void SessionCleanupSystem::update(ecs::World& world, const ecs::Time& time)
     const TimePoint now = toTimePoint(time);
 
     std::vector<ecs::Entity> leaving;
-    std::vector<PlayerLeft> announcements;
+    std::vector<LeaveReason> reasons; // Of those in a game, in order
     world.query<NetClient, Disconnecting>(
         [&](ecs::Entity entity, NetClient& client, Disconnecting& disconnecting) {
             if (disconnecting.notify) {
@@ -50,24 +52,22 @@ void SessionCleanupSystem::update(ecs::World& world, const ecs::Time& time)
                 }
             }
             leaving.push_back(entity);
-            const auto* player = world.tryGetComponent<InGame>(entity);
+            const auto* player = world.tryGetComponent<InRoom>(entity);
             if (player == nullptr) {
-                return; // Not in the game: the players do not know about it
+                return; // Not in a game: the players do not know about it
             }
             std::cout << "r-type_server: player " << static_cast<int>(player->playerId) << " '"
                       << client.name << "' " << describe(disconnecting.reason) << '\n';
-            announcements.push_back(
-                PlayerLeft{.playerId = player->playerId, .reason = disconnecting.reason});
+            reasons.push_back(disconnecting.reason);
         });
 
+    std::size_t inGame = 0;
     for (const ecs::Entity entity : leaving) {
+        if (world.hasComponent<InRoom>(entity)) {
+            leaveRoom(world, entity, reasons.at(inGame++));
+        }
         world.destroyEntity(entity);
     }
-    world.query<NetClient, InGame>([&](ecs::Entity /*entity*/, NetClient& client, InGame&) {
-        for (const PlayerLeft& left : announcements) {
-            client.channel.queueReliable(left);
-        }
-    });
 }
 
 } // namespace server

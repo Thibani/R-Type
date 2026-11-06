@@ -4,7 +4,9 @@
 #include "network/Protocol/Packets.hpp"
 #include "server/Components/ClientMessage.hpp"
 #include "server/Components/NetClient.hpp"
+#include "server/Groups.hpp"
 #include "server/OnlinePlayers.hpp"
+#include "server/Singleton.hpp"
 
 #include <iostream>
 #include <utility>
@@ -77,17 +79,16 @@ void ChatSystem::handleMessages(ecs::World& world, float now)
         const std::string& name = client->name;
 
         if (const auto* chat = std::get_if<ChatSend>(&message.payload)) {
-            if (!world.hasComponent<InGame>(message.client)) {
-                continue; // Nobody to talk to; the client says so itself
-            }
             if (!withinRate(name, now)) {
                 online.tell(name, ChatRefused{.reason = ChatRefusal::TooFast});
                 continue;
             }
             const ChatMessage line{.kind = ChatKind::Game, .name = name, .text = chat->text};
-            world.query<NetClient, InGame>([&](ecs::Entity /*entity*/, NetClient& player, InGame&) {
-                player.channel.queueReliable(line);
-            });
+            if (const Group* group = singleton<Groups>(world).of(name)) {
+                for (const GroupMember& member : group->members) {
+                    online.tell(member.name, line);
+                }
+            }
             continue;
         }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ecs/Entity/Entity.hpp"
 #include "network/Crypto/Crypto.hpp"
 #include "network/Protocol/Protocol.hpp"
 #include "network/Reliability/ReliableChannel.hpp"
@@ -36,10 +37,18 @@ struct NetClient {
 /// Before that, the session only carries the login, encrypted.
 struct LoggedIn { };
 
-/// On a logged-in player who entered the game (`JoinSystem`): only those get a
-/// ship and the game's events. The place in the game exists only while playing.
+/// On a player's entity in the World of a game (`GameRoom`): only those get a ship and
+/// the game's events. The place in the game exists only while playing.
 struct InGame {
     std::uint8_t playerId{}; // 0..3, also the ship colour
+    ecs::Entity session{}; // Their `NetClient`, in the server's main World
+};
+
+/// On a session whose player is in a game: where to find them.
+struct InRoom {
+    std::uint32_t room{};
+    ecs::Entity player{}; // Their entity in the World of that game
+    std::uint8_t playerId{};
 };
 
 /// Marks a session to close at the end of the frame (`SessionCleanupSystem`),

@@ -29,7 +29,11 @@ clients comply with.
 | `Systems/LoginSystem.hpp`           | AUTH_REQUEST → password hashed on its own thread → AUTH_RESULT, player admitted |
 | `Systems/TimeoutSystem.hpp`         | Silent for 5 s → `Disconnecting`                         |
 | `Systems/SessionCleanupSystem.hpp`  | `Disconnecting` → PLAYER_LEFT to the others, entity gone |
-| `Systems/InputSystem.hpp`           | INPUT → the player's `PlayerInput`                       |
+| `Groups.hpp`                        | The rules of groups, with no network                     |
+| `GameRoom.hpp`                      | One game: its World and its loop; `startGame`, `leaveRoom` |
+| `Systems/GroupSystem.hpp`           | Group orders, countdown, GROUP_STATE                     |
+| `Systems/RoomSystem.hpp`            | LEAVE_GAME and INPUT to the player's game; each game's frame |
+| `Systems/InputSystem.hpp`           | INPUT → the player's `PlayerInput`, in a game's World    |
 | `Systems/PlayerShipSystem.hpp`      | One ship per connected player, back 3 s after its death  |
 | `Systems/TickSystem.hpp`            | Counts simulation steps                                  |
 | `Systems/PlayerControlSystem.hpp`   | `PlayerInput` → ship `Velocity` (normalised diagonals)   |
@@ -78,12 +82,24 @@ frameStart()  NetReceiveSystem        network thread inbox → ReceivedPacket / 
               ConnectionSystem        CONNECT_REQUEST → NetClient entity, ACCEPT / REJECT
               SessionReceiveSystem    packet → its session's channel → ClientMessage
               LoginSystem             AUTH_REQUEST → account checked, main page open (LoggedIn)
-              JoinSystem              JOIN_GAME / LEAVE_GAME → place in the game (InGame)
+              RoomMessageSystem       LEAVE_GAME → main page, INPUT → the player's game
               TimeoutSystem           silent session → Disconnecting
               FriendSystem            friends' messages, who is online, file saved once a second
+              GroupSystem             group orders, countdown, game started, GROUP_STATE
               ChatSystem              chat and private messages, file saved once a second
-              InputSystem             ClientMessage (INPUT) → the player's PlayerInput
-              PlayerShipSystem        one ship per connected player, after its respawn delay
+frameEnd()    SessionCleanupSystem    Disconnecting → PLAYER_LEFT, entity destroyed
+              RoomSystem              one frame of each game (below), empty games removed
+              NetSendSystem           reliable messages, resends, heartbeats
+              SnapshotSystem          every 2 steps of a game: SNAPSHOT of its NetEntity, to its players
+              DiscardPacketsSystem    unhandled messages destroyed
+```
+
+These run on the main World, which holds the sessions. Each game is a `GameRoom`, with its own
+World and loop:
+
+```
+frameStart()  InputSystem             ClientMessage (INPUT) → the player's PlayerInput
+              PlayerShipSystem        one ship per player of the game, after its respawn delay
 simulation    TickSystem              SimulationTick + 1, first of every step
               PlayerControlSystem     PlayerInput → ship Velocity, FIRE → ship Trigger
               BydoSpawnSystem         a Bydo enters from the right every 1.5 s
@@ -96,12 +112,8 @@ simulation    TickSystem              SimulationTick + 1, first of every step
               game::CollisionSystem   overlapping hitboxes → CollisionEvent
               DamageSystem            CollisionEvent + Damage → −HP, kill → DespawnRequest (KILLED), score
               game::DespawnSystem     DespawnRequest → DespawnEvent, entity destroyed
-frameEnd()    SessionCleanupSystem    Disconnecting → PLAYER_LEFT, entity destroyed
-              ReplicationSystem       new NetEntity → ENTITY_SPAWN, gone → ENTITY_DESTROY,
+frameEnd()    ReplicationSystem       new NetEntity → ENTITY_SPAWN, gone → ENTITY_DESTROY,
                                       ship killed → PLAYER_DIED, score changed → GAME_STATE
-              NetSendSystem           reliable messages, resends, heartbeats
-              SnapshotSystem          every 2 steps: SNAPSHOT of all NetEntity, to everyone
-              DiscardPacketsSystem    unhandled messages destroyed
 ```
 
 `main` and the tests both call `installSystems()`, so the tests always run
@@ -241,16 +253,18 @@ Tests: `tests/server/GameplayTests.cpp` (the rules, step by step) and
 
 A connected player is an entity with a `NetClient`: its address, its random
 token, its name, and a `ReliableChannel` that numbers, acknowledges and resends
-its packets. Only a player in the game has a `playerId` (0–3), in `InGame`.
+its packets. It stays in the main World. A player in a game also has an entity in that game's
+World, with an `InGame` (`playerId` 0–3, and their session); `InRoom` on the session says where.
 
 | Event                                    | Server answer                                         |
 |------------------------------------------|-------------------------------------------------------|
 | CONNECT_REQUEST, fewer than 64 sessions  | New session; CONNECT_ACCEPT                           |
 | Same address asks again                  | The same CONNECT_ACCEPT (the first one may be lost)   |
 | 64 sessions already                      | CONNECT_REJECT (SERVER_FULL)                          |
-| JOIN_GAME, a place left                  | JOIN_RESULT (OK); PLAYER_JOINED to the players, and about each of them to the newcomer |
-| JOIN_GAME, 4 players already             | JOIN_RESULT (GAME_FULL)                               |
-| LEAVE_GAME                               | Back to the main page; ship destroyed; PLAYER_LEFT (QUIT) to the players |
+| JOIN_GAME from the leader, all ready     | 3 s of countdown in GROUP_STATE, then JOIN_RESULT (OK) and PLAYER_JOINED to each member |
+| JOIN_GAME otherwise                      | JOIN_RESULT (NOT_LEADER or NOT_READY)                 |
+| LEAVE_GAME                               | Back to the main page; ship destroyed; PLAYER_LEFT (QUIT) to the others of that game |
+| Group orders (GROUP_CODE, GROUP_JOIN...) | GROUP_STATE to the members, or GROUP_RESULT (§8.7)    |
 | FRIEND_REQUEST, FRIEND_ANSWER, FRIEND_REMOVE | FRIEND_RESULT and FRIEND_ENTRY (§8.5)             |
 | CHAT_SEND, PRIVATE_SEND                  | CHAT_MESSAGE or CHAT_REFUSED (§8.6)                   |
 | Empty name                               | CONNECT_REJECT (INVALID_NAME)                         |
@@ -282,5 +296,6 @@ instantly.
 | Reading, modifying or replaying packets | Every packet of a session is encrypted (protocol §3.3) |
 | Reflection / amplification  | A REJECT (21 bytes) only answers a request at least as large |
 | Guessable tokens            | `std::random_device`, backed by the OS secure generator     |
+| Guessing a group code       | 6 signs of 32, 5 wrong codes per 30 s and per account       |
 
 Tests: [`tests/server/`](../../tests/server).

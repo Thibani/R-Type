@@ -18,11 +18,15 @@
 #include "server/Components/NetClient.hpp"
 #include "server/Components/Player.hpp"
 #include "server/FriendStore.hpp"
+#include "server/GameRoom.hpp"
+#include "server/Groups.hpp"
 #include "server/MessageStore.hpp"
 #include "server/Network.hpp"
 #include "server/ServerSystems.hpp"
+#include "server/Singleton.hpp"
 #include "server/Systems/ChatSystem.hpp"
 #include "server/Systems/ConnectionSystem.hpp"
+#include "server/Systems/GroupSystem.hpp"
 #include "server/Systems/LoginSystem.hpp"
 #include "server/Systems/NetReceiveSystem.hpp"
 #include "server/Systems/SessionReceiveSystem.hpp"
@@ -31,6 +35,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -38,6 +43,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -139,6 +145,8 @@ public:
         , _messages(loadMessagesOrFail(_messagesFile.path()))
     {
         server::installSystems(_world, _loop, *_network, _accounts, _friends, _messages);
+        // Most tests are not about the countdown: `CountdownSeconds` sets it back for those
+        server::singleton<server::Groups>(_world).countdownSeconds = 0.0F;
         _loop.frameStart().add<MessageRecorder>(messages); // After every server system
     }
 
@@ -168,12 +176,14 @@ public:
     const server::PlayerInput* playerInput(std::uint8_t playerId)
     {
         const server::PlayerInput* found = nullptr;
-        _world.query<server::InGame, server::PlayerInput>(
-            [&](ecs::Entity /*entity*/, server::InGame& player, server::PlayerInput& input) {
-                if (player.playerId == playerId) {
-                    found = &input;
-                }
-            });
+        for (const auto& [id, room] : rooms()) {
+            room->world.query<server::InGame, server::PlayerInput>(
+                [&](ecs::Entity /*entity*/, server::InGame& player, server::PlayerInput& input) {
+                    if (player.playerId == playerId) {
+                        found = &input;
+                    }
+                });
+        }
         return found;
     }
 
@@ -182,12 +192,14 @@ public:
     std::optional<game::Position> shipPosition(std::uint8_t playerId)
     {
         std::optional<game::Position> found;
-        _world.query<server::PlayerShip, game::Position>(
-            [&](ecs::Entity /*entity*/, server::PlayerShip& ship, game::Position& position) {
-                if (ship.playerId == playerId) {
-                    found = position;
-                }
-            });
+        for (const auto& [id, room] : rooms()) {
+            room->world.query<server::PlayerShip, game::Position>(
+                [&](ecs::Entity /*entity*/, server::PlayerShip& ship, game::Position& position) {
+                    if (ship.playerId == playerId) {
+                        found = position;
+                    }
+                });
+        }
         return found;
     }
 
@@ -195,9 +207,24 @@ public:
     std::size_t shipCount()
     {
         std::size_t count = 0;
-        _world.query<server::PlayerShip>(
-            [&](ecs::Entity /*entity*/, server::PlayerShip& /*ship*/) { ++count; });
+        for (const auto& [id, room] : rooms()) {
+            room->world.query<server::PlayerShip>(
+                [&](ecs::Entity /*entity*/, server::PlayerShip& /*ship*/) { ++count; });
+        }
         return count;
+    }
+
+    /// The games running.
+    [[nodiscard]]
+    std::map<std::uint32_t, std::unique_ptr<server::GameRoom>>& rooms()
+    {
+        return server::singleton<server::GameRooms>(_world).rooms;
+    }
+
+    [[nodiscard]]
+    server::Groups& groups()
+    {
+        return server::singleton<server::Groups>(_world);
     }
 
     [[nodiscard]]
@@ -433,7 +460,70 @@ JoinResult joinOrFail(TestServer& server, TestClient& client)
     client.sendReliable(JoinGame{});
     const auto result = waitFor<JoinResult>(server, client);
     EXPECT_TRUE(result.has_value()) << "no JOIN_RESULT";
-    return result.value_or(JoinResult{.code = JoinCode::GameFull, .playerId = NoPlayer});
+    return result.value_or(JoinResult{.code = JoinCode::NotReady, .playerId = NoPlayer});
+}
+
+/// Runs short frames until `client` is told a GROUP_STATE that passes `wanted`.
+template <typename Wanted>
+std::optional<GroupState> waitForGroup(TestServer& server, TestClient& client, Wanted wanted)
+{
+    while (const auto state = waitFor<GroupState>(server, client)) {
+        if (wanted(*state)) {
+            return state;
+        }
+    }
+    return std::nullopt;
+}
+
+/// The code of the group `leader` leads, asked for now.
+std::string codeOrFail(TestServer& server, TestClient& leader)
+{
+    leader.sendReliable(GroupCode{.action = GroupCodeAction::Generate});
+    const auto state
+        = waitForGroup(server, leader, [](const GroupState& group) { return !group.code.empty(); });
+    EXPECT_TRUE(state.has_value()) << "no code";
+    return state.value_or(GroupState{}).code;
+}
+
+/// `players`, logged in, join the group of the first one, and all are ready.
+void groupOrFail(TestServer& server, std::span<TestClient* const> players)
+{
+    const std::string code = codeOrFail(server, *players[0]);
+    for (TestClient* player : players.subspan(1)) {
+        player->sendReliable(GroupJoin{.code = code});
+        player->sendReliable(GroupReady{.ready = true});
+    }
+    const auto everyone = waitForGroup(server, *players[0], [&](const GroupState& group) {
+        const auto ready = std::ranges::count_if(
+            group.members, [](const GroupMemberState& member) { return member.ready; });
+        return group.members.size() == players.size()
+            && static_cast<std::size_t>(ready) == players.size() - 1;
+    });
+    EXPECT_TRUE(everyone.has_value()) << "the group did not gather";
+}
+
+/// `players`, logged in, are one group, in one game, in this order. What each was told.
+std::vector<JoinResult> playTogether(TestServer& server, std::vector<TestClient*> players)
+{
+    groupOrFail(server, players);
+    players[0]->sendReliable(JoinGame{});
+    std::vector<JoinResult> results;
+    for (TestClient* player : players) {
+        const auto result = waitFor<JoinResult>(server, *player);
+        EXPECT_TRUE(result.has_value()) << "no JOIN_RESULT";
+        results.push_back(
+            result.value_or(JoinResult{.code = JoinCode::NotReady, .playerId = NoPlayer}));
+    }
+    return results;
+}
+
+/// New accounts, then the same.
+std::vector<JoinResult> connectTogether(TestServer& server, TestClient& first,
+    const std::string& firstName, TestClient& second, const std::string& secondName)
+{
+    logInOrFail(server, first, firstName);
+    logInOrFail(server, second, secondName);
+    return playTogether(server, {&first, &second});
 }
 
 /// A new account and a player in the game, as most tests need.
@@ -470,8 +560,10 @@ TEST(Session, PlayersGetDistinctIdsAndTokens)
     TestClient first(server.address());
     TestClient second(server.address());
 
-    EXPECT_EQ(connectOrFail(server, first, "One").playerId, 0);
-    EXPECT_EQ(connectOrFail(server, second, "Two").playerId, 1);
+    const auto joined = connectTogether(server, first, "One", second, "Two");
+
+    EXPECT_EQ(joined.at(0).playerId, 0);
+    EXPECT_EQ(joined.at(1).playerId, 1);
     EXPECT_NE(first.token, second.token);
 }
 
@@ -480,16 +572,15 @@ TEST(Session, EveryoneLearnsAboutEveryone)
     TestServer server;
     TestClient first(server.address());
     TestClient second(server.address());
-    (void)connectOrFail(server, first, "One");
-    (void)connectOrFail(server, second, "Two");
+    (void)connectTogether(server, first, "One", second, "Two");
 
-    const auto newcomer = waitFor<PlayerJoined>(server, first);
-    const auto alreadyHere = waitFor<PlayerJoined>(server, second);
+    const auto forFirst = waitFor<PlayerJoined>(server, first);
+    const auto forSecond = waitFor<PlayerJoined>(server, second);
 
-    ASSERT_TRUE(newcomer.has_value());
-    EXPECT_EQ(*newcomer, (PlayerJoined{.playerId = 1, .name = "Two"}));
-    ASSERT_TRUE(alreadyHere.has_value());
-    EXPECT_EQ(*alreadyHere, (PlayerJoined{.playerId = 0, .name = "One"}));
+    ASSERT_TRUE(forFirst.has_value());
+    EXPECT_EQ(*forFirst, (PlayerJoined{.playerId = 1, .name = "Two"}));
+    ASSERT_TRUE(forSecond.has_value());
+    EXPECT_EQ(*forSecond, (PlayerJoined{.playerId = 0, .name = "One"}));
 }
 
 TEST(Session, SessionsBeyondTheLimitAreRejected)
@@ -695,9 +786,8 @@ TEST(SessionEncryption, NothingOfTheGameIsReadableOnTheNetwork)
 {
     TestServer server;
     TestClient watcher(server.address());
-    (void)connectOrFail(server, watcher, "Watcher");
     TestClient newcomer(server.address());
-    (void)connectOrFail(server, newcomer, "SecretName");
+    (void)connectTogether(server, watcher, "Watcher", newcomer, "SecretName");
 
     (void)waitFor<PlayerJoined>(server, watcher); // Carries the name "SecretName"
     ASSERT_FALSE(watcher.rawDatagrams.empty());
@@ -820,8 +910,9 @@ struct FourPlayers {
         players.reserve(4);
         for (int i = 0; i < 4; ++i) {
             players.emplace_back(server.address());
-            (void)connectOrFail(server, players.back(), "Player" + std::to_string(i));
+            logInOrFail(server, players.back(), "Player" + std::to_string(i));
         }
+        (void)playTogether(server, {&players[0], &players[1], &players[2], &players[3]});
         spawns.resize(4);
         for (int frame = 0; frame < 1000 && !allSeeFourShips(); ++frame) {
             server.frame();
@@ -898,8 +989,7 @@ TEST(Session, SnapshotEchoesEachPlayersOwnInput)
     TestServer server;
     TestClient first(server.address());
     TestClient second(server.address());
-    (void)connectOrFail(server, first, "One");
-    (void)connectOrFail(server, second, "Two");
+    (void)connectTogether(server, first, "One", second, "Two");
 
     first.send(Input{.firstTick = 5, .count = 1, .masks = {}});
     second.send(Input{.firstTick = 9, .count = 1, .masks = {}});
@@ -984,8 +1074,7 @@ TEST(Session, DisconnectIsAnnouncedToTheOthers)
     TestServer server;
     TestClient staying(server.address());
     TestClient leaving(server.address());
-    (void)connectOrFail(server, staying, "Stays");
-    (void)connectOrFail(server, leaving, "Leaves");
+    (void)connectTogether(server, staying, "Stays", leaving, "Leaves");
 
     leaving.send(Disconnect{.reason = DisconnectReason::Quit});
     const auto left = waitFor<PlayerLeft>(server, staying);
@@ -995,20 +1084,6 @@ TEST(Session, DisconnectIsAnnouncedToTheOthers)
     EXPECT_EQ(server.sessionCount(), 1U);
 }
 
-TEST(Session, FreedPlayerIdIsReused)
-{
-    TestServer server;
-    TestClient first(server.address());
-    TestClient second(server.address());
-    (void)connectOrFail(server, first, "One");
-    (void)connectOrFail(server, second, "Two");
-    first.send(Disconnect{.reason = DisconnectReason::Quit});
-    deliver(server);
-
-    TestClient third(server.address());
-    EXPECT_EQ(connectOrFail(server, third, "Three").playerId, 0);
-}
-
 TEST(Session, SilentClientTimesOutAndTheGameGoesOn)
 {
     // The subject: a crashed client must not stop the server, and the others
@@ -1016,8 +1091,7 @@ TEST(Session, SilentClientTimesOutAndTheGameGoesOn)
     TestServer server;
     TestClient alive(server.address());
     TestClient crashed(server.address());
-    (void)connectOrFail(server, alive, "Alive");
-    (void)connectOrFail(server, crashed, "Crashed");
+    (void)connectTogether(server, alive, "Alive", crashed, "Crashed");
 
     // A live client reads every frame: its packets acknowledge PLAYER_JOINED.
     // Otherwise the server would rightly give up on it too after 5 s (§6.2).
@@ -1445,84 +1519,23 @@ TEST(MainPage, LeavingThePageIsNotAnnounced)
     EXPECT_FALSE(waitFor<PlayerLeft>(server, player).has_value());
 }
 
-TEST(JoinGame, PlayersLearnAboutANewcomerOnlyOnceInTheGame)
-{
-    TestServer server;
-    TestClient first(server.address());
-    (void)connectOrFail(server, first, "One");
-    TestClient second(server.address());
-    logInOrFail(server, second, "Two");
-    EXPECT_FALSE(waitFor<PlayerJoined>(server, first).has_value());
-
-    EXPECT_EQ(joinOrFail(server, second).playerId, 1);
-
-    const auto joined = waitFor<PlayerJoined>(server, first);
-    ASSERT_TRUE(joined.has_value());
-    EXPECT_EQ(joined->name, "Two");
-}
-
 TEST(JoinGame, ResultComesBeforeTheEventsOfTheGame)
 {
     TestServer server;
-    TestClient first(server.address());
-    (void)connectOrFail(server, first, "One");
     TestClient second(server.address());
     logInOrFail(server, second, "Two");
+    ASSERT_TRUE(waitFor<GroupState>(server, second).has_value());
     second.inbox.clear();
 
     second.sendReliable(JoinGame{});
     ASSERT_TRUE(waitFor<GameState>(server, second).has_value());
 
-    const auto firstEvent = std::ranges::find_if(second.inbox,
-        [](const Payload& payload) { return !std::holds_alternative<Heartbeat>(payload); });
+    const auto firstEvent = std::ranges::find_if(second.inbox, [](const Payload& payload) {
+        return !std::holds_alternative<Heartbeat>(payload)
+            && !std::holds_alternative<GroupState>(payload);
+    });
     ASSERT_NE(firstEvent, second.inbox.end());
     EXPECT_TRUE(std::holds_alternative<JoinResult>(*firstEvent));
-}
-
-TEST(JoinGame, FifthPlayerGetsGameFullAndStaysConnected)
-{
-    TestServer server;
-    FourPlayers game(server);
-    TestClient fifth(server.address());
-    logInOrFail(server, fifth, "Late");
-
-    const JoinResult result = joinOrFail(server, fifth);
-
-    EXPECT_EQ(result, (JoinResult{.code = JoinCode::GameFull, .playerId = NoPlayer}));
-    EXPECT_EQ(server.sessionCount(), 5U);
-    EXPECT_EQ(server.shipCount(), 4U);
-}
-
-TEST(JoinGame, PlaceFreedByALeaverCanBeTaken)
-{
-    TestServer server;
-    FourPlayers game(server);
-    TestClient fifth(server.address());
-    logInOrFail(server, fifth, "Late");
-    ASSERT_EQ(joinOrFail(server, fifth).code, JoinCode::GameFull);
-
-    game.players[1].sendReliable(LeaveGame{});
-    ASSERT_TRUE(waitFor<PlayerLeft>(server, game.players[0]).has_value());
-
-    EXPECT_EQ(joinOrFail(server, fifth), (JoinResult{.code = JoinCode::Ok, .playerId = 1}));
-}
-
-TEST(JoinGame, PlaceFreedInTheSameFrameIsNotGivenAway)
-{
-    // Otherwise the newcomer would inherit the ship of the player who left
-    TestServer server;
-    FourPlayers game(server);
-    TestClient fifth(server.address());
-    logInOrFail(server, fifth, "Late");
-
-    game.players[1].sendReliable(LeaveGame{});
-    fifth.sendReliable(JoinGame{});
-    std::this_thread::sleep_for(20ms);
-    const auto result = waitFor<JoinResult>(server, fifth);
-
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result->code, JoinCode::GameFull);
-    EXPECT_EQ(server.shipCount(), 3U);
 }
 
 TEST(JoinGame, AskingTwiceGivesOneShipAndOneAnswer)
@@ -1560,8 +1573,7 @@ TEST(LeaveGame, ShipGoesAndTheOthersAreTold)
     TestServer server;
     TestClient staying(server.address());
     TestClient leaving(server.address());
-    (void)connectOrFail(server, staying, "Stays");
-    (void)connectOrFail(server, leaving, "Leaves");
+    (void)connectTogether(server, staying, "Stays", leaving, "Leaves");
     server.frame();
     ASSERT_EQ(server.shipCount(), 2U);
 
@@ -1622,6 +1634,7 @@ TEST(LeaveGame, ComingBackGivesEverythingAgain)
 
     client.sendReliable(LeaveGame{});
     deliver(server);
+    deliver(server); // GROUP_STATE has told the group they are back
     server.frame();
     client.poll();
     client.inbox.clear();
@@ -1952,45 +1965,56 @@ std::optional<ChatMessage> chatLine(TestServer& server, TestClient& client)
 
 } // namespace
 
-TEST(Chat, AMessageReachesEveryPlayerOfTheGameUnderTheSendersName)
+TEST(Chat, AMessageReachesTheWholeGroupUnderTheSendersName)
 {
     TestServer server;
     TwoChatters chatters(server);
     TestClient& ann = chatters.both.ann;
     TestClient& ben = chatters.both.ben;
-    ASSERT_EQ(joinOrFail(server, ann).code, JoinCode::Ok);
-    ASSERT_EQ(joinOrFail(server, ben).code, JoinCode::Ok);
+    groupOrFail(server, std::array{&ann, &ben});
 
     ann.sendReliable(ChatSend{.text = "hello"});
 
     const ChatMessage expected{.kind = ChatKind::Game, .name = "Ann", .text = "hello"};
-    EXPECT_EQ(chatLine(server, ann), expected); // Her own line comes back too
+    EXPECT_EQ(chatLine(server, ann), expected); // Their own line comes back too
     EXPECT_EQ(chatLine(server, ben), expected);
 }
 
-TEST(Chat, TheGameChatStaysInTheGame)
+TEST(Chat, TheGroupKeepsTalkingDuringTheGame)
 {
     TestServer server;
     TwoChatters chatters(server);
     TestClient& ann = chatters.both.ann;
     TestClient& ben = chatters.both.ben;
-    ASSERT_EQ(joinOrFail(server, ann).code, JoinCode::Ok);
+    (void)playTogether(server, {&ann, &ben});
 
-    ann.sendReliable(ChatSend{.text = "hello"});
+    ben.sendReliable(ChatSend{.text = "hello"});
 
-    EXPECT_TRUE(chatLine(server, ann).has_value());
-    EXPECT_FALSE(chatLine(server, ben).has_value());
+    const ChatMessage expected{.kind = ChatKind::Game, .name = "Ben", .text = "hello"};
+    EXPECT_EQ(chatLine(server, ann), expected);
+    EXPECT_EQ(chatLine(server, ben), expected);
 }
 
-TEST(Chat, OutsideAGameTheGameChatGoesNowhere)
+TEST(Chat, AlonePlayerOnlyTalksToThemselves)
 {
     TestServer server;
     TwoChatters chatters(server);
 
     chatters.both.ann.sendReliable(ChatSend{.text = "hello"});
 
+    EXPECT_TRUE(chatLine(server, chatters.both.ann).has_value());
     EXPECT_FALSE(chatLine(server, chatters.both.ben).has_value());
-    EXPECT_FALSE(chatLine(server, chatters.both.ann).has_value());
+}
+
+TEST(Chat, AnotherGroupHearsNothing)
+{
+    TestServer server;
+    TwoChatters chatters(server);
+    ASSERT_EQ(joinOrFail(server, chatters.both.ben).code, JoinCode::Ok);
+
+    chatters.both.ann.sendReliable(ChatSend{.text = "hello"});
+
+    EXPECT_FALSE(chatLine(server, chatters.both.ben).has_value());
 }
 
 TEST(Chat, APrivateMessageReachesOnlyTheFriend)
@@ -2119,17 +2143,6 @@ TEST(Chat, NoTextIsReadableOnTheNetwork)
     }
 }
 
-TEST(Chat, FromTheMainPageNobodyInTheGameIsReached)
-{
-    TestServer server;
-    TwoChatters chatters(server);
-    ASSERT_EQ(joinOrFail(server, chatters.both.ben).code, JoinCode::Ok);
-
-    chatters.both.ann.sendReliable(ChatSend{.text = "hello"});
-
-    EXPECT_FALSE(chatLine(server, chatters.both.ben).has_value());
-}
-
 TEST(Chat, TheLimitSlidesWithTime)
 {
     // 1 message, 4 seconds, 4 messages, 2 seconds: the first left the window, the others not
@@ -2190,4 +2203,545 @@ TEST(Chat, TheFileIsWrittenAtMostOncePerSecond)
 
     server.frame(1.1F);
     EXPECT_NE(contentOf().find("second"), std::string::npos);
+}
+
+// --- Groups (§8.7) ---------------------------------------------------------------
+
+namespace {
+
+/// Up to the first GROUP_STATE of each.
+struct TwoPlayers {
+    explicit TwoPlayers(TestServer& server)
+        : leader(server.address())
+        , member(server.address())
+    {
+        logInOrFail(server, leader, "Lea");
+        logInOrFail(server, member, "Max");
+        EXPECT_TRUE(waitFor<GroupState>(server, leader).has_value());
+        EXPECT_TRUE(waitFor<GroupState>(server, member).has_value());
+    }
+
+    TestClient leader;
+    TestClient member;
+};
+
+std::optional<GroupOutcome> outcomeOf(TestServer& server, TestClient& client)
+{
+    const auto result = waitFor<GroupResult>(server, client);
+    return result ? std::optional{result->outcome} : std::nullopt;
+}
+
+} // namespace
+
+TEST(Groups, EachPlayerStartsAloneAndLeading)
+{
+    TestServer server;
+    TestClient client(server.address());
+    logInOrFail(server, client, "Lea");
+
+    const auto state = waitFor<GroupState>(server, client);
+
+    ASSERT_TRUE(state.has_value());
+    EXPECT_TRUE(state->code.empty()); // Nobody gets in without the leader wanting it
+    EXPECT_EQ(state->leader, 0);
+    ASSERT_EQ(state->members.size(), 1U);
+    EXPECT_EQ(state->members[0].name, "Lea");
+}
+
+TEST(Groups, ACodeLetsAPlayerIn)
+{
+    TestServer server;
+    TwoPlayers both(server);
+    const std::string code = codeOrFail(server, both.leader);
+    EXPECT_TRUE(isValidGroupCode(code));
+
+    both.member.sendReliable(GroupJoin{.code = code});
+
+    const auto hasBoth = [](const GroupState& state) { return state.members.size() == 2; };
+    EXPECT_TRUE(waitForGroup(server, both.leader, hasBoth).has_value());
+    const auto seen = waitForGroup(server, both.member, hasBoth);
+    ASSERT_TRUE(seen.has_value());
+    EXPECT_EQ(seen->members[seen->leader].name, "Lea");
+    EXPECT_EQ(seen->code, code);
+}
+
+TEST(Groups, ADeletedOrReplacedCodeNoLongerWorks)
+{
+    TestServer server;
+    TwoPlayers both(server);
+    const std::string first = codeOrFail(server, both.leader);
+    const std::string second = codeOrFail(server, both.leader);
+    EXPECT_NE(first, second);
+
+    both.member.sendReliable(GroupJoin{.code = first});
+    EXPECT_EQ(outcomeOf(server, both.member), GroupOutcome::UnknownCode);
+
+    both.leader.sendReliable(GroupCode{.action = GroupCodeAction::Delete});
+    ASSERT_TRUE(waitForGroup(server, both.leader, [](const GroupState& state) {
+        return state.code.empty();
+    }).has_value());
+    both.member.sendReliable(GroupJoin{.code = second});
+    EXPECT_EQ(outcomeOf(server, both.member), GroupOutcome::UnknownCode);
+}
+
+TEST(Groups, OnlyTheLeaderGetsACode)
+{
+    TestServer server;
+    TwoPlayers both(server);
+    groupOrFail(server, std::array{&both.leader, &both.member});
+
+    both.member.sendReliable(GroupCode{.action = GroupCodeAction::Generate});
+
+    EXPECT_EQ(outcomeOf(server, both.member), GroupOutcome::NotLeader);
+}
+
+TEST(Groups, TooManyWrongCodesAreRefusedThenAllowedAgain)
+{
+    TestServer server;
+    TwoPlayers both(server);
+    const std::string code = codeOrFail(server, both.leader);
+    const std::string wrong = code == "AAAAAA" ? "BBBBBB" : "AAAAAA";
+
+    for (std::size_t i = 0; i < server::GroupSystem::MaxWrongCodes; ++i) {
+        both.member.sendReliable(GroupJoin{.code = wrong});
+        EXPECT_EQ(outcomeOf(server, both.member), GroupOutcome::UnknownCode);
+    }
+    both.member.sendReliable(GroupJoin{.code = code}); // Even the right one: it can't be told apart
+    EXPECT_EQ(outcomeOf(server, both.member), GroupOutcome::TooManyTries);
+
+    for (int i = 0; i < 8; ++i) { // Stays connected through the wait
+        both.leader.poll();
+        both.member.poll();
+        both.leader.send(Heartbeat{});
+        both.member.send(Heartbeat{});
+        deliver(server, server::GroupSystem::WrongCodeWindowSeconds / 8.0F + 0.01F);
+    }
+    both.member.sendReliable(GroupJoin{.code = code});
+    EXPECT_TRUE(waitForGroup(server, both.member, [](const GroupState& state) {
+        return state.members.size() == 2;
+    }).has_value());
+}
+
+TEST(Groups, AKickedPlayerCannotComeBackWithTheCode)
+{
+    TestServer server;
+    TwoPlayers both(server);
+    groupOrFail(server, std::array{&both.leader, &both.member});
+    const std::string code = codeOrFail(server, both.leader);
+
+    both.leader.sendReliable(GroupKick{.name = "Max"});
+
+    EXPECT_EQ(outcomeOf(server, both.member), GroupOutcome::RemovedFromGroup);
+    const auto alone = waitForGroup(
+        server, both.member, [](const GroupState& state) { return state.members.size() == 1; });
+    ASSERT_TRUE(alone.has_value());
+    EXPECT_EQ(alone->members[0].name, "Max");
+
+    both.member.sendReliable(GroupJoin{.code = code});
+    EXPECT_EQ(outcomeOf(server, both.member), GroupOutcome::Kicked);
+}
+
+TEST(Groups, OnlyTheLeaderKicksOrPromotes)
+{
+    TestServer server;
+    TwoPlayers both(server);
+    groupOrFail(server, std::array{&both.leader, &both.member});
+
+    both.member.sendReliable(GroupKick{.name = "Lea"});
+    EXPECT_EQ(outcomeOf(server, both.member), GroupOutcome::NotLeader);
+    both.member.sendReliable(GroupPromote{.name = "Max"});
+    EXPECT_EQ(outcomeOf(server, both.member), GroupOutcome::NotLeader);
+}
+
+TEST(Groups, TheLeaderCanGiveTheRole)
+{
+    TestServer server;
+    TwoPlayers both(server);
+    groupOrFail(server, std::array{&both.leader, &both.member});
+
+    both.leader.sendReliable(GroupPromote{.name = "Max"});
+
+    const auto state = waitForGroup(server, both.member,
+        [](const GroupState& group) { return group.members[group.leader].name == "Max"; });
+    EXPECT_TRUE(state.has_value());
+}
+
+TEST(Groups, WhenTheLeaderGoesTheRolePassesOn)
+{
+    TestServer server;
+    TwoPlayers both(server);
+    groupOrFail(server, std::array{&both.leader, &both.member});
+
+    both.leader.send(Disconnect{.reason = DisconnectReason::Quit});
+
+    const auto state = waitForGroup(
+        server, both.member, [](const GroupState& group) { return group.members.size() == 1; });
+    ASSERT_TRUE(state.has_value());
+    EXPECT_EQ(state->members[state->leader].name, "Max");
+}
+
+TEST(Groups, AnyoneCanLeaveExceptWhenAlone)
+{
+    TestServer server;
+    TwoPlayers both(server);
+    both.member.sendReliable(GroupLeave{});
+    EXPECT_EQ(outcomeOf(server, both.member), GroupOutcome::Alone);
+
+    groupOrFail(server, std::array{&both.leader, &both.member});
+    both.leader.sendReliable(GroupLeave{}); // The leader too
+
+    EXPECT_TRUE(waitForGroup(server, both.member, [](const GroupState& group) {
+        return group.members.size() == 1 && group.members[0].name == "Max";
+    }).has_value());
+    EXPECT_TRUE(waitForGroup(server, both.leader, [](const GroupState& group) {
+        return group.members.size() == 1 && group.members[0].name == "Lea";
+    }).has_value());
+}
+
+TEST(Groups, AFriendOnlineCanBeInvitedAndAccept)
+{
+    TestServer server;
+    TwoChatters chatters(server);
+    TestClient& ann = chatters.both.ann;
+    TestClient& ben = chatters.both.ben;
+
+    ann.sendReliable(GroupInvite{.name = "Ben"});
+
+    EXPECT_EQ(outcomeOf(server, ann), GroupOutcome::Invited);
+    const auto invited = waitFor<GroupInvited>(server, ben);
+    ASSERT_TRUE(invited.has_value());
+    EXPECT_EQ(invited->name, "Ann");
+    ben.sendReliable(GroupAnswer{.name = "Ann", .reply = FriendReply::Accept});
+    EXPECT_TRUE(waitForGroup(server, ann, [](const GroupState& group) {
+        return group.members.size() == 2;
+    }).has_value());
+}
+
+TEST(Groups, InvitingAgainDoesNotFloodTheFriend)
+{
+    TestServer server;
+    TwoChatters chatters(server);
+    TestClient& ann = chatters.both.ann;
+    TestClient& ben = chatters.both.ben;
+
+    for (int i = 0; i < 3; ++i) {
+        ann.sendReliable(GroupInvite{.name = "Ben"});
+        EXPECT_EQ(outcomeOf(server, ann), GroupOutcome::Invited);
+    }
+
+    EXPECT_TRUE(waitFor<GroupInvited>(server, ben).has_value());
+    EXPECT_FALSE(waitFor<GroupInvited>(server, ben).has_value());
+}
+
+TEST(Groups, RefusingLeavesTheGroupAsItIs)
+{
+    TestServer server;
+    TwoChatters chatters(server);
+    TestClient& ann = chatters.both.ann;
+    TestClient& ben = chatters.both.ben;
+    ann.sendReliable(GroupInvite{.name = "Ben"});
+    ASSERT_TRUE(waitFor<GroupInvited>(server, ben).has_value());
+
+    ben.sendReliable(GroupAnswer{.name = "Ann", .reply = FriendReply::Refuse});
+    deliver(server);
+    ben.sendReliable(GroupAnswer{.name = "Ann", .reply = FriendReply::Accept});
+
+    EXPECT_EQ(outcomeOf(server, ben), GroupOutcome::InvitationGone);
+}
+
+TEST(Groups, OnlyAFriendOnlineCanBeInvited)
+{
+    TestServer server;
+    TwoPlayers both(server);
+
+    both.leader.sendReliable(GroupInvite{.name = "Max"}); // Not a friend
+    EXPECT_EQ(outcomeOf(server, both.leader), GroupOutcome::NotAvailable);
+    EXPECT_FALSE(waitFor<GroupInvited>(server, both.member).has_value());
+}
+
+TEST(Groups, AnInvitationBringsAKickedFriendBack)
+{
+    TestServer server;
+    TwoChatters chatters(server);
+    TestClient& ann = chatters.both.ann;
+    TestClient& ben = chatters.both.ben;
+    groupOrFail(server, std::array{&ann, &ben});
+    const std::string code = codeOrFail(server, ann);
+    ann.sendReliable(GroupKick{.name = "Ben"});
+    ASSERT_EQ(outcomeOf(server, ben), GroupOutcome::RemovedFromGroup);
+
+    ann.sendReliable(GroupInvite{.name = "Ben"});
+    ASSERT_TRUE(waitFor<GroupInvited>(server, ben).has_value());
+    ben.sendReliable(GroupAnswer{.name = "Ann", .reply = FriendReply::Accept});
+
+    EXPECT_TRUE(waitForGroup(server, ann, [&](const GroupState& group) {
+        return group.members.size() == 2 && group.code == code;
+    }).has_value());
+}
+
+TEST(Groups, OnTheWayInAGameEverythingIsIgnored)
+{
+    TestServer server;
+    TwoPlayers both(server);
+    const std::string code = codeOrFail(server, both.leader);
+    ASSERT_EQ(joinOrFail(server, both.member).code, JoinCode::Ok);
+    both.member.inbox.clear();
+
+    both.member.sendReliable(GroupJoin{.code = code});
+    deliver(server);
+    deliver(server);
+
+    EXPECT_FALSE(waitForGroup(server, both.leader, [](const GroupState& group) {
+        return group.members.size() == 2;
+    }).has_value());
+}
+
+// --- Starting a game ----------------------------------------------------------------
+
+TEST(StartGame, OnlyTheLeaderStartsIt)
+{
+    TestServer server;
+    TwoPlayers both(server);
+    groupOrFail(server, std::array{&both.leader, &both.member});
+
+    EXPECT_EQ(joinOrFail(server, both.member),
+        (JoinResult{.code = JoinCode::NotLeader, .playerId = NoPlayer}));
+    EXPECT_EQ(server.shipCount(), 0U);
+}
+
+TEST(StartGame, EveryoneMustBeReady)
+{
+    TestServer server;
+    TwoPlayers both(server);
+    const std::string code = codeOrFail(server, both.leader);
+    both.member.sendReliable(GroupJoin{.code = code});
+    ASSERT_TRUE(waitForGroup(server, both.leader, [](const GroupState& group) {
+        return group.members.size() == 2;
+    }).has_value());
+
+    EXPECT_EQ(joinOrFail(server, both.leader),
+        (JoinResult{.code = JoinCode::NotReady, .playerId = NoPlayer}));
+    EXPECT_EQ(server.shipCount(), 0U);
+}
+
+TEST(StartGame, ANewMemberIsNotReady)
+{
+    TestServer server;
+    TwoPlayers both(server);
+    TestClient third(server.address());
+    logInOrFail(server, third, "Zoe");
+    groupOrFail(server, std::array{&both.leader, &both.member});
+    const std::string code = codeOrFail(server, both.leader);
+
+    third.sendReliable(GroupJoin{.code = code});
+    ASSERT_TRUE(waitForGroup(server, both.leader, [](const GroupState& group) {
+        return group.members.size() == 3;
+    }).has_value());
+
+    EXPECT_EQ(joinOrFail(server, both.leader).code, JoinCode::NotReady);
+}
+
+TEST(StartGame, TheCountdownComesFirstThenEveryoneEnters)
+{
+    TestServer server;
+    server.groups().countdownSeconds = 3.0F;
+    TwoPlayers both(server);
+    groupOrFail(server, std::array{&both.leader, &both.member});
+
+    both.leader.sendReliable(JoinGame{});
+    const auto started = waitForGroup(
+        server, both.member, [](const GroupState& group) { return group.countdown == 3; });
+    ASSERT_TRUE(started.has_value());
+    EXPECT_EQ(server.shipCount(), 0U);
+
+    both.leader.send(Heartbeat{});
+    both.member.send(Heartbeat{});
+    deliver(server, 1.5F);
+    EXPECT_TRUE(waitForGroup(server, both.member, [](const GroupState& group) {
+        return group.countdown == 2;
+    }).has_value());
+    both.leader.poll();
+    both.leader.send(Heartbeat{});
+    both.member.send(Heartbeat{});
+    deliver(server, 1.6F);
+
+    EXPECT_EQ(waitFor<JoinResult>(server, both.leader),
+        (JoinResult{.code = JoinCode::Ok, .playerId = 0}));
+    EXPECT_EQ(waitFor<JoinResult>(server, both.member),
+        (JoinResult{.code = JoinCode::Ok, .playerId = 1}));
+    EXPECT_EQ(server.shipCount(), 2U);
+}
+
+TEST(StartGame, TakingBackReadyStopsTheCountdown)
+{
+    TestServer server;
+    server.groups().countdownSeconds = 3.0F;
+    TwoPlayers both(server);
+    groupOrFail(server, std::array{&both.leader, &both.member});
+    both.leader.sendReliable(JoinGame{});
+    ASSERT_TRUE(waitForGroup(server, both.member, [](const GroupState& group) {
+        return group.countdown > 0;
+    }).has_value());
+
+    both.member.sendReliable(GroupReady{.ready = false});
+    ASSERT_TRUE(waitForGroup(server, both.member, [](const GroupState& group) {
+        return group.countdown == 0;
+    }).has_value());
+
+    both.leader.send(Heartbeat{});
+    both.member.send(Heartbeat{});
+    deliver(server, 3.5F);
+    EXPECT_FALSE(waitFor<JoinResult>(server, both.member).has_value());
+    EXPECT_EQ(server.shipCount(), 0U);
+}
+
+TEST(StartGame, AGroupInAGameCannotStartAgainUntilEveryoneIsBack)
+{
+    TestServer server;
+    TwoPlayers both(server);
+    (void)playTogether(server, {&both.leader, &both.member});
+    both.leader.sendReliable(LeaveGame{});
+    ASSERT_TRUE(waitFor<PlayerLeft>(server, both.member).has_value());
+
+    EXPECT_EQ(joinOrFail(server, both.leader).code, JoinCode::NotReady);
+
+    both.member.sendReliable(LeaveGame{});
+    deliver(server);
+    both.member.sendReliable(GroupReady{.ready = true}); // Nobody stays ready after a game
+    deliver(server);
+    EXPECT_EQ(joinOrFail(server, both.leader), (JoinResult{.code = JoinCode::Ok, .playerId = 0}));
+}
+
+TEST(StartGame, AfterAGameNobodyIsReadyAnyMore)
+{
+    TestServer server;
+    TwoPlayers both(server);
+    (void)playTogether(server, {&both.leader, &both.member});
+    both.member.sendReliable(LeaveGame{});
+    both.leader.sendReliable(LeaveGame{});
+    deliver(server);
+
+    EXPECT_EQ(joinOrFail(server, both.leader).code, JoinCode::NotReady);
+}
+
+// --- Games in parallel (§8.4) -------------------------------------------------------
+
+TEST(Parallel, TwoGroupsPlayTwoSeparateGames)
+{
+    TestServer server;
+    TestClient first(server.address());
+    TestClient second(server.address());
+
+    EXPECT_EQ(connectOrFail(server, first, "One").playerId, 0);
+    EXPECT_EQ(connectOrFail(server, second, "Two").playerId, 0); // Each is player 0 in their own
+
+    EXPECT_EQ(server.rooms().size(), 2U);
+    EXPECT_EQ(server.shipCount(), 2U);
+    EXPECT_FALSE(waitFor<PlayerJoined>(server, first).has_value());
+}
+
+TEST(Parallel, AGameOnlyShowsItsOwnEntities)
+{
+    TestServer server;
+    TestClient first(server.address());
+    TestClient second(server.address());
+    (void)connectOrFail(server, first, "One");
+    (void)connectOrFail(server, second, "Two");
+
+    const auto snapshot = [&](TestClient& client) {
+        client.inbox.clear();
+        const auto found = waitFor<Snapshot>(server, client);
+        EXPECT_TRUE(found.has_value());
+        return found.value_or(Snapshot{});
+    };
+    first.poll();
+    server.frame(2.0F / 60.0F);
+
+    EXPECT_EQ(snapshot(first).entities.size(), 1U); // Their ship
+    EXPECT_EQ(snapshot(second).entities.size(), 1U);
+}
+
+TEST(Parallel, AnInputOnlyMovesTheShipOfItsGame)
+{
+    TestServer server;
+    TestClient first(server.address());
+    TestClient second(server.address());
+    (void)connectOrFail(server, first, "One");
+    (void)connectOrFail(server, second, "Two");
+    server.frame();
+    std::vector<game::Position> before;
+    for (const auto& [id, room] : server.rooms()) {
+        room->world.query<server::PlayerShip, game::Position>(
+            [&](ecs::Entity, server::PlayerShip&, game::Position& position) {
+                before.push_back(position);
+            });
+    }
+    ASSERT_EQ(before.size(), 2U);
+
+    first.send(Input{.firstTick = 1, .count = 1, .masks = {input::Right}});
+    deliver(server);
+    for (int i = 0; i < 10; ++i) {
+        server.frame(1.0F / 60.0F);
+    }
+
+    std::vector<game::Position> after;
+    for (const auto& [id, room] : server.rooms()) {
+        room->world.query<server::PlayerShip, game::Position>(
+            [&](ecs::Entity, server::PlayerShip&, game::Position& position) {
+                after.push_back(position);
+            });
+    }
+    ASSERT_EQ(after.size(), 2U);
+    EXPECT_GT(after[0].x, before[0].x); // First game: moved
+    EXPECT_FLOAT_EQ(after[1].x, before[1].x); // Second game: did not
+}
+
+TEST(Parallel, AGameGoesWithItsLastPlayer)
+{
+    TestServer server;
+    TestClient first(server.address());
+    TestClient second(server.address());
+    (void)connectTogether(server, first, "One", second, "Two");
+    ASSERT_EQ(server.rooms().size(), 1U);
+
+    first.sendReliable(LeaveGame{});
+    deliver(server);
+    deliver(server);
+    EXPECT_EQ(server.rooms().size(), 1U); // The other still plays
+
+    second.send(Disconnect{.reason = DisconnectReason::Quit});
+    deliver(server);
+    server.frame();
+
+    EXPECT_TRUE(server.rooms().empty());
+}
+
+TEST(Parallel, EachGameStartsWithItsOwnScoreAndNoEnemies)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)connectOrFail(server, client, "Dave");
+    for (int i = 0; i < 200; ++i) { // Long enough for the first Bydo
+        client.send(Heartbeat{});
+        server.frame(1.0F / 60.0F);
+    }
+    client.poll();
+    client.inbox.clear();
+    server.frame(2.0F / 60.0F);
+    const auto old = waitFor<Snapshot>(server, client);
+    ASSERT_TRUE(old.has_value());
+    ASSERT_GT(old->entities.size(), 1U);
+
+    client.sendReliable(LeaveGame{});
+    deliver(server);
+    deliver(server);
+    ASSERT_TRUE(server.rooms().empty());
+    client.poll();
+    client.inbox.clear();
+    ASSERT_EQ(joinOrFail(server, client).code, JoinCode::Ok);
+
+    const auto fresh = waitFor<Snapshot>(server, client);
+    ASSERT_TRUE(fresh.has_value());
+    EXPECT_EQ(fresh->entities.size(), 1U); // Only their ship
+    EXPECT_GE(fresh->serverTick, old->serverTick); // Keeps growing for the client (§8.4)
 }

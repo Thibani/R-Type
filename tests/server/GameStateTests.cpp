@@ -10,19 +10,21 @@
 #include "server/Components/ClientMessage.hpp"
 #include "server/Components/NetEntity.hpp"
 #include "server/Components/Player.hpp"
+#include "server/GameRoom.hpp"
 #include "server/NetIds.hpp"
 #include "server/Network.hpp"
 #include "server/Singleton.hpp"
 #include "server/Systems/InputSystem.hpp"
-#include "server/Systems/JoinSystem.hpp"
 #include "server/Systems/PlayerShipSystem.hpp"
 #include "server/Systems/ReplicationSystem.hpp"
+#include "server/Systems/RoomSystem.hpp"
 #include "server/Systems/SnapshotSystem.hpp"
 #include "server/Systems/TickSystem.hpp"
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <set>
@@ -418,21 +420,20 @@ TEST(GameState, LeavingTheGameLeavesNothingOfItOnThePlayer)
 {
     ecs::World world;
     const ecs::Entity player = addPlayer(world, 0);
-    world.addComponent(player, PlayerInput{});
-    world.addComponent(
-        player, server::RespawnTimer{.remaining = 2.0F}); // Their ship was just killed
+    world.removeComponent<server::InGame>(player); // A session, on the main page
+    server::startGame(world, std::array{player}, 0.0F);
     auto& client = world.getComponent<server::NetClient>(player);
     client.knownEntities.insert(7);
     client.knownScore = 50;
     world.addComponent(
         world.createEntity(), server::ClientMessage{.client = player, .payload = LeaveGame{}});
 
-    server::JoinSystem{}.update(world, ecs::Time{});
+    server::RoomMessageSystem{}.update(world, ecs::Time{});
+    server::RoomSystem{}.update(world, ecs::Time{});
 
-    EXPECT_FALSE(world.hasComponent<server::InGame>(player));
-    EXPECT_FALSE(world.hasComponent<PlayerInput>(player));
-    EXPECT_FALSE(world.hasComponent<server::RespawnTimer>(player));
+    EXPECT_FALSE(world.hasComponent<server::InRoom>(player));
     EXPECT_TRUE(client.knownEntities.empty());
     EXPECT_FALSE(client.knownScore.has_value());
     EXPECT_TRUE(world.hasComponent<server::LoggedIn>(player));
+    EXPECT_TRUE(server::singleton<server::GameRooms>(world).rooms.empty()); // Its game with it
 }

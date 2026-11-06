@@ -72,6 +72,10 @@ bool isValidName(std::string_view name) noexcept;
 [[nodiscard]]
 bool isValidChatText(std::string_view text) noexcept;
 
+/// True if `code` can be a group's code: GroupCodeSize characters of `GroupCodeAlphabet`.
+[[nodiscard]]
+bool isValidGroupCode(std::string_view code) noexcept;
+
 /// Human readable name of an error, for logs.
 [[nodiscard]]
 std::string_view toString(DecodeError error) noexcept;

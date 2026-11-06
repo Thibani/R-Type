@@ -40,6 +40,9 @@ namespace server {
 /// shortcut: always RUNNING; the lobby and game over phases come with #110.
 class ReplicationSystem final : public ecs::System {
 public:
+    /// `world` is the game's, `sessions` the one holding the `NetClient`s.
+    ReplicationSystem(ecs::World& world, ecs::World& sessions);
+    /// The players' `NetClient`s are in `world` itself: for the tests of a single World.
     explicit ReplicationSystem(ecs::World& world);
 
     void update(ecs::World& world, const ecs::Time& time) override;
@@ -48,6 +51,7 @@ private:
     void onDespawn(const game::DespawnEvent& despawn);
 
     ecs::World& _world;
+    ecs::World& _sessions;
     // Gathered during the simulation steps, sent at the end of the frame
     std::map<std::uint16_t, network::protocol::EntityDestroy> _destroyed;
     std::vector<network::protocol::PlayerDied> _deaths;

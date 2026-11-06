@@ -11,7 +11,7 @@
 
 namespace server {
 
-/// The chat: CHAT_SEND, PRIVATE_SEND, and the private messages waiting for a player
+/// The chat: CHAT_SEND for the group, PRIVATE_SEND, and the private messages waiting for a player
 /// who comes online (docs/protocol.md §8.6). Runs in `frameStart()`, after `FriendSystem`.
 ///
 /// The server writes the author's name itself, from the session: a client cannot
