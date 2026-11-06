@@ -77,8 +77,8 @@ void DamageSystem::kill(ecs::Entity target, ecs::Entity by)
     }
     if (const auto* ship = _world.tryGetComponent<PlayerShip>(target)) {
         const std::uint8_t playerId = ship->playerId;
-        _world.query<NetClient>([&](ecs::Entity player, NetClient& client) {
-            if (client.playerId == playerId) {
+        _world.query<InGame>([&](ecs::Entity player, InGame& inGame) {
+            if (inGame.playerId == playerId) {
                 _world.commands().addComponent(
                     player, RespawnTimer{.remaining = game::ship::RespawnDelay});
             }

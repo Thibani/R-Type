@@ -39,22 +39,15 @@ bool isLoggedIn(ecs::World& world, const std::string& name)
     return found;
 }
 
-/// Lets the player in: AUTH_RESULT comes first, then everyone learns about
-/// everyone. From the next system on, this player is part of the game.
+/// The account is open: the player reaches the main page, and nobody is told yet.
 void admit(ecs::World& world, ecs::Entity player)
 {
     NetClient& client = world.getComponent<NetClient>(player);
     client.channel.queueReliable(AuthResult{.code = AuthCode::Ok});
-
-    const PlayerJoined newcomer{.playerId = client.playerId, .name = client.name};
-    world.query<NetClient, LoggedIn>([&](ecs::Entity /*entity*/, NetClient& other, LoggedIn&) {
-        other.channel.queueReliable(newcomer);
-        client.channel.queueReliable(PlayerJoined{.playerId = other.playerId, .name = other.name});
-    });
     world.addComponent(player, LoggedIn{});
 
-    std::cout << "r-type_server: player " << static_cast<int>(client.playerId) << " '"
-              << client.name << "' joined from " << client.endpoint << '\n';
+    std::cout << "r-type_server: '" << client.name << "' logged in from " << client.endpoint
+              << '\n';
 }
 
 } // namespace

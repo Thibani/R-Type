@@ -19,7 +19,6 @@ namespace server {
 struct NetClient {
     network::Endpoint endpoint;
     std::uint32_t token{}; // Random, non-zero, unique among sessions
-    std::uint8_t playerId{}; // 0..3, also the ship colour
     std::string name;
     network::ReliableChannel channel;
     network::crypto::SessionCipher cipher; // Seals and opens every packet of the session
@@ -33,9 +32,15 @@ struct NetClient {
     std::optional<std::uint32_t> knownScore; // Score of the last GAME_STATE it was sent
 };
 
-/// On a `NetClient` that has logged in to its account: only those are part of
-/// the game. Before that, the session only carries the login, encrypted.
+/// On a `NetClient` that has logged in to its account: it is on the main page.
+/// Before that, the session only carries the login, encrypted.
 struct LoggedIn { };
+
+/// On a logged-in player who entered the game (`JoinSystem`): only those get a
+/// ship and the game's events. The place in the game exists only while playing.
+struct InGame {
+    std::uint8_t playerId{}; // 0..3, also the ship colour
+};
 
 /// Marks a session to close at the end of the frame (`SessionCleanupSystem`),
 /// which tells the other players with PLAYER_LEFT.

@@ -11,9 +11,10 @@
 #include "server/Components/NetEntity.hpp"
 #include "server/Components/Player.hpp"
 #include "server/NetIds.hpp"
+#include "server/Network.hpp"
 #include "server/Singleton.hpp"
 #include "server/Systems/InputSystem.hpp"
-#include "server/Network.hpp"
+#include "server/Systems/JoinSystem.hpp"
 #include "server/Systems/PlayerShipSystem.hpp"
 #include "server/Systems/ReplicationSystem.hpp"
 #include "server/Systems/SnapshotSystem.hpp"
@@ -395,4 +396,43 @@ TEST(GameState, LargeSnapshotIsSplit)
     }
     EXPECT_EQ(total, entities.size());
     EXPECT_EQ(parts[2].entities[0].netId, MaxSnapshotEntities * 2);
+}
+
+// --- Back to the main page (§8.4) ---------------------------------------------
+
+TEST(GameState, InputFromTheMainPageIsIgnored)
+{
+    ecs::World world;
+    const ecs::Entity player = addPlayer(world, 0);
+    world.removeComponent<server::InGame>(player);
+    InputSystem system;
+
+    receiveInput(world, player, inputAt(10, {input::Fire}));
+    system.update(world, ecs::Time{});
+
+    EXPECT_FALSE(world.hasComponent<PlayerInput>(player));
+    EXPECT_EQ(world.entityCount(), 1U); // The message was consumed all the same
+}
+
+TEST(GameState, LeavingTheGameLeavesNothingOfItOnThePlayer)
+{
+    ecs::World world;
+    const ecs::Entity player = addPlayer(world, 0);
+    world.addComponent(player, PlayerInput{});
+    world.addComponent(
+        player, server::RespawnTimer{.remaining = 2.0F}); // Their ship was just killed
+    auto& client = world.getComponent<server::NetClient>(player);
+    client.knownEntities.insert(7);
+    client.knownScore = 50;
+    world.addComponent(
+        world.createEntity(), server::ClientMessage{.client = player, .payload = LeaveGame{}});
+
+    server::JoinSystem{}.update(world, ecs::Time{});
+
+    EXPECT_FALSE(world.hasComponent<server::InGame>(player));
+    EXPECT_FALSE(world.hasComponent<PlayerInput>(player));
+    EXPECT_FALSE(world.hasComponent<server::RespawnTimer>(player));
+    EXPECT_TRUE(client.knownEntities.empty());
+    EXPECT_FALSE(client.knownScore.has_value());
+    EXPECT_TRUE(world.hasComponent<server::LoggedIn>(player));
 }

@@ -36,6 +36,8 @@ add_library(rtype_server
     Systems/SessionReceiveSystem.cpp
     Systems/LoginSystem.hpp
     Systems/LoginSystem.cpp
+    Systems/JoinSystem.hpp
+    Systems/JoinSystem.cpp
     Systems/TimeoutSystem.hpp
     Systems/TimeoutSystem.cpp
     Systems/SessionCleanupSystem.hpp

@@ -16,7 +16,7 @@
 
 namespace server {
 
-/// Lets a connected client into the game once it has logged in to its account
+/// Opens the main page to a connected client once it has logged in to its account
 /// (docs/protocol.md §8.1). Runs in `frameStart()`, after `SessionReceiveSystem`.
 ///
 /// Hashing a password is deliberately slow, so it runs on another thread, one
@@ -25,7 +25,7 @@ namespace server {
 ///
 /// One attempt per connection: after a failure, the client must connect again.
 /// A session still not logged in after `LoginTimeout` is closed, so that a
-/// stranger cannot keep a player slot.
+/// stranger cannot keep one of the server's sessions.
 class LoginSystem final : public ecs::System {
 public:
     static constexpr std::chrono::seconds LoginTimeout{10};

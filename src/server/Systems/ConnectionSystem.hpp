@@ -3,6 +3,7 @@
 #include "ecs/System/System.hpp"
 #include "network/Transport/NetworkThread.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <random>
 
@@ -22,6 +23,10 @@ class ConnectionSystem final : public ecs::System {
 public:
     static constexpr std::uint8_t TickRate = 60; // §9, matches GameLoop's default step
     static constexpr std::uint8_t SnapshotRate = 30; // §9
+    /// Sessions open at once, on the main page or in the game. Without a limit,
+    /// anybody could open sessions forever, and each one costs a key exchange.
+    /// A chosen value, not a measured one: far more than this game needs.
+    static constexpr std::size_t MaxSessions = 64;
 
     explicit ConnectionSystem(network::NetworkThread& socket);
 
