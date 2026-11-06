@@ -6,8 +6,10 @@ clients comply with.
 | File                                | Content                                                  |
 |-------------------------------------|----------------------------------------------------------|
 | `main.cpp`                          | Entry point: options, network thread, World, GameLoop, Ctrl+C |
-| `ServerOptions.hpp`                 | Command line parsing (`-p`, `--accounts`, `-h`)          |
+| `ServerOptions.hpp`                 | Command line parsing (`-p`, `--accounts`, `--friends`, `-h`) |
 | `AccountStore.hpp`                  | The accounts, in memory and in their file (no ECS, no network) |
+| `FriendStore.hpp`                   | Friends and requests, in memory and in their file (no ECS, no network) |
+| `TextFile.hpp`                      | What both files need: atomic replace, copy of a damaged file |
 | `ServerSystems.hpp`                 | `installSystems()`: every system, in order; `installSimulation()` |
 | `Spawn.hpp`                         | The weapons as data (`weapons::`); create ships, Bydos, projectiles |
 | `Network.hpp`                       | Frame time → time point, send a packet, shutdown notice  |
@@ -76,6 +78,7 @@ frameStart()  NetReceiveSystem        network thread inbox → ReceivedPacket / 
               LoginSystem             AUTH_REQUEST → account checked, main page open (LoggedIn)
               JoinSystem              JOIN_GAME / LEAVE_GAME → place in the game (InGame)
               TimeoutSystem           silent session → Disconnecting
+              FriendSystem            friends' messages, who is online, file saved once a second
               InputSystem             ClientMessage (INPUT) → the player's PlayerInput
               PlayerShipSystem        one ship per connected player, after its respawn delay
 simulation    TickSystem              SimulationTick + 1, first of every step
@@ -245,6 +248,7 @@ its packets. Only a player in the game has a `playerId` (0–3), in `InGame`.
 | JOIN_GAME, a place left                  | JOIN_RESULT (OK); PLAYER_JOINED to the players, and about each of them to the newcomer |
 | JOIN_GAME, 4 players already             | JOIN_RESULT (GAME_FULL)                               |
 | LEAVE_GAME                               | Back to the main page; ship destroyed; PLAYER_LEFT (QUIT) to the players |
+| FRIEND_REQUEST, FRIEND_ANSWER, FRIEND_REMOVE | FRIEND_RESULT and FRIEND_ENTRY (§8.5)             |
 | Empty name                               | CONNECT_REJECT (INVALID_NAME)                         |
 | Other protocol version                   | CONNECT_REJECT (VERSION_MISMATCH)                     |
 | Wrong token for the address, or unknown address | Dropped, counted                               |

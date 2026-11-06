@@ -1,10 +1,10 @@
-# R-Type Network Protocol — Version 4
+# R-Type Network Protocol — Version 5
 
 | Status   | Implemented                 |
 |----------|-----------------------------|
-| Version  | 4                           |
+| Version  | 5                           |
 | Transport| UDP only                    |
-| Issue    | #21 (design), #10 (documentation), #97 (encryption), #73 (accounts), #72 (main page) |
+| Issue    | #21 (design), #10 (documentation), #97 (encryption), #73 (accounts), #72 (main page), #126 (friends) |
 
 This document specifies the binary protocol spoken between `r-type_client`
 and `r-type_server`. It is meant to be complete enough to write a new client
@@ -118,7 +118,7 @@ Every datagram starts with this 20-byte header.
 | Offset | Size | Field          | Description                                                  |
 |-------:|-----:|----------------|--------------------------------------------------------------|
 | 0      | 2    | `magic`        | Always `0x5254` (`"RT"`). Filters out stray traffic.          |
-| 2      | 1    | `version`      | Protocol version. This document describes version `4`.       |
+| 2      | 1    | `version`      | Protocol version. This document describes version `5`.       |
 | 3      | 1    | `type`         | Packet type, see [§4](#4-packet-types).                       |
 | 4      | 1    | `flags`        | Bit field, see below.                                         |
 | 5      | 1    | `reserved`     | **MUST** be `0`.                                              |
@@ -134,7 +134,7 @@ Every datagram starts with this 20-byte header.
 |----:|------------|----------------------------------------------------------------------|
 | 0   | `RELIABLE` | The payload starts with a `u16 reliableId` and must be acknowledged. |
 | 1   | `HAS_ACK`  | `ack` and `ackBits` are meaningful. Clear until a packet is received.|
-| 2–7 | —          | Reserved, **MUST** be `0` in version 4.                              |
+| 2–7 | —          | Reserved, **MUST** be `0` in version 5.                              |
 
 ### 3.2 Versioning
 
@@ -222,8 +222,13 @@ Sizes are payload sizes, header excluded. Reliable packets include their
 | `0x30` | `JOIN_GAME`       | C → S     | **yes**  | 2                  |
 | `0x31` | `LEAVE_GAME`      | C → S     | **yes**  | 2                  |
 | `0x32` | `JOIN_RESULT`     | S → C     | **yes**  | 4                  |
+| `0x33` | `FRIEND_REQUEST`  | C → S     | **yes**  | 18                 |
+| `0x34` | `FRIEND_ANSWER`   | C → S     | **yes**  | 19                 |
+| `0x35` | `FRIEND_REMOVE`   | C → S     | **yes**  | 18                 |
+| `0x36` | `FRIEND_RESULT`   | S → C     | **yes**  | 3                  |
+| `0x37` | `FRIEND_ENTRY`    | S → C     | **yes**  | 19                 |
 
-Ranges `0x00`, `0x08–0x0F`, `0x11–0x1F`, `0x27–0x2F` and `0x33–0xFF` are reserved.
+Ranges `0x00`, `0x08–0x0F`, `0x11–0x1F`, `0x27–0x2F` and `0x38–0xFF` are reserved.
 
 These sizes are before encryption: every type except `CONNECT_REQUEST`,
 `CONNECT_ACCEPT` and `CONNECT_REJECT` adds 24 bytes on the network
@@ -308,6 +313,18 @@ Reliable, and always the first reliable message of a session.
 Reliable, and their only field is `reliableId`. Before the login, the server
 ignores them. It also ignores `JOIN_GAME` from a player in the game, and
 `LEAVE_GAME` from a player who is not ([§8.4](#84-main-page-and-game)).
+
+#### `FRIEND_REQUEST` (`0x33`), `FRIEND_ANSWER` (`0x34`), `FRIEND_REMOVE` (`0x35`)
+
+The server ignores them before the login ([§8.5](#85-friends)).
+
+| Offset | Size | Field        | Values                                              |
+|-------:|-----:|--------------|-----------------------------------------------------|
+| 0      | 2    | `reliableId` |                                                     |
+| 2      | 16   | `name`       | Exact name of the other account, not empty ([§2.2](#22-strings)) |
+| 18     | 1    | `reply`      | `FRIEND_ANSWER` only: `0` REFUSE, `1` ACCEPT        |
+
+`FRIEND_REMOVE` removes a friend, or cancels a request the player sent.
 
 #### `INPUT` (`0x10`)
 
@@ -440,6 +457,23 @@ newcomer once for every player already connected.
 
 ---
 
+`FRIEND_RESULT` (`0x36`) — the answer to `FRIEND_REQUEST`.
+
+| Offset | Size | Field        | Values                                              |
+|-------:|-----:|--------------|-----------------------------------------------------|
+| 0      | 2    | `reliableId` |                                                     |
+| 2      | 1    | `code`       | `0` OK, `1` UNKNOWN_NAME, `2` ALREADY_LINKED, `3` YOURSELF, `4` LIMIT_REACHED |
+
+`FRIEND_ENTRY` (`0x37`) — one line of the player's list, new or changed.
+
+| Offset | Size | Field        | Values                                              |
+|-------:|-----:|--------------|-----------------------------------------------------|
+| 0      | 2    | `reliableId` |                                                     |
+| 2      | 16   | `name`       | Not empty                                           |
+| 18     | 1    | `state`      | `0` OFFLINE, `1` ONLINE, `2` REQUEST_RECEIVED, `3` REQUEST_SENT, `4` REMOVED |
+
+---
+
 ## 5. Identifiers and enumerations
 
 ### 5.1 Network entity ids
@@ -510,7 +544,7 @@ of an enemy, `CONNECT_ACCEPT`).
   messages wait until the window moves. Without this rule, losing a single
   message while many others are in flight would disconnect a healthy peer.
 
-In version 4 the client sends reliable messages too (`JOIN_GAME`, `LEAVE_GAME`), with the same rules.
+The client sends reliable messages too (`JOIN_GAME`, `LEAVE_GAME`, friends), with the same rules.
 
 ---
 
@@ -625,6 +659,27 @@ Events and snapshots sent before the server read `LEAVE_GAME` may still arrive: 
 **MUST** ignore them until `JOIN_RESULT`. The input ticks and snapshot ticks of a session
 keep growing across games, so nothing late from one game counts in the next.
 
+### 8.5 Friends
+
+Friends are kept by the server, between accounts. They only need a logged-in session:
+they work on the main page and during a game.
+
+- Once logged in, a player receives one `FRIEND_ENTRY` per friend (`OFFLINE` or `ONLINE`)
+  and per request, received or sent. A request sent while they were offline arrives this way.
+- `FRIEND_REQUEST` is answered by `FRIEND_RESULT`. If it is `OK`, both players get a
+  `FRIEND_ENTRY`: `REQUEST_SENT` and `REQUEST_RECEIVED`. If the other had already asked,
+  they become friends at once.
+- `FRIEND_ANSWER (ACCEPT)` makes them friends: each gets a `FRIEND_ENTRY` with the status
+  of the other. `FRIEND_ANSWER (REFUSE)` and `FRIEND_REMOVE` give both a `REMOVED` entry.
+  An answer to a request that does not exist does nothing.
+- When a player comes online or leaves, each friend online gets a `FRIEND_ENTRY`.
+- Limits, per player: **50 friends**, **50 requests sent**, **50 requests received**.
+  Beyond them: `LIMIT_REACHED`.
+
+Known limits: `UNKNOWN_NAME` tells whether an account exists, which adding by exact name
+cannot avoid. 50 accounts can fill a player's requests. The server saves the file at most
+once per second, so a crash can lose the last second of changes. The file is not encrypted.
+
 ---
 
 ## 9. Timing
@@ -653,7 +708,7 @@ that is about **40 KB/s per client** downstream, events excluded. Upstream, `INP
 
 ```text
 52 54             magic "RT"
-04                version 4
+05                version 5
 01                type CONNECT_REQUEST
 00                flags: none (nothing received yet, so no HAS_ACK)
 00                reserved
@@ -672,8 +727,8 @@ Total: 68 bytes.
 
 ## 11. Possible extensions
 
-Kept out of version 4, but the header leaves room for them:
+Kept out of version 5, but the header leaves room for them:
 
 - a `COMPRESSED` flag bit for LZ4 or zlib payloads;
 - delta snapshots relative to the last acknowledged snapshot;
-- rooms and lobbies, as new packet types in the `0x33–0x4F` range (#71, #72).
+- rooms and lobbies, as new packet types in the `0x38–0x4F` range (#71, #72).
