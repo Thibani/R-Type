@@ -122,6 +122,11 @@ inline std::vector<Sample> all()
         toServer(makePacket(LeaveGame{}, 13)),
         toClient(makePacket(JoinResult{.code = JoinCode::Ok, .playerId = 2}, 14)),
         toClient(makePacket(JoinResult{.code = JoinCode::GameFull, .playerId = NoPlayer}, 15)),
+        toServer(makePacket(FriendRequest{.name = "Zoë"}, 16)),
+        toServer(makePacket(FriendAnswer{.name = "Zoë", .reply = FriendReply::Accept}, 17)),
+        toServer(makePacket(FriendRemove{.name = "Zoë"}, 18)),
+        toClient(makePacket(FriendResult{.code = FriendCode::LimitReached}, 19)),
+        toClient(makePacket(FriendEntry{.name = "Zoë", .state = FriendState::Removed}, 20)),
     };
 }
 

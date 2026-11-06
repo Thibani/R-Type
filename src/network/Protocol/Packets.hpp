@@ -136,6 +136,40 @@ struct LeaveGame {
     friend bool operator==(const LeaveGame&, const LeaveGame&) = default;
 };
 
+/// Asks an account, by its exact name, to become a friend. Answered by FRIEND_RESULT.
+struct FriendRequest {
+    static constexpr PacketType Type = PacketType::FriendRequest;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = true;
+
+    std::string name;
+
+    friend bool operator==(const FriendRequest&, const FriendRequest&) = default;
+};
+
+/// Accepts or refuses the request received from `name`.
+struct FriendAnswer {
+    static constexpr PacketType Type = PacketType::FriendAnswer;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = true;
+
+    std::string name;
+    FriendReply reply{FriendReply::Refuse};
+
+    friend bool operator==(const FriendAnswer&, const FriendAnswer&) = default;
+};
+
+/// Removes a friend, or cancels the request sent to `name`.
+struct FriendRemove {
+    static constexpr PacketType Type = PacketType::FriendRemove;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = true;
+
+    std::string name;
+
+    friend bool operator==(const FriendRemove&, const FriendRemove&) = default;
+};
+
 // --- Server -> client (§4.3) -------------------------------------------------
 
 /// State of one entity inside a snapshot. Positions and velocities are
@@ -251,11 +285,35 @@ struct JoinResult {
     friend bool operator==(const JoinResult&, const JoinResult&) = default;
 };
 
+/// Answer to FRIEND_REQUEST.
+struct FriendResult {
+    static constexpr PacketType Type = PacketType::FriendResult;
+    static constexpr Direction Way = Direction::ServerToClient;
+    static constexpr bool Reliable = true;
+
+    FriendCode code{FriendCode::Ok};
+
+    friend bool operator==(const FriendResult&, const FriendResult&) = default;
+};
+
+/// One line of the player's friends list, new or changed.
+struct FriendEntry {
+    static constexpr PacketType Type = PacketType::FriendEntry;
+    static constexpr Direction Way = Direction::ServerToClient;
+    static constexpr bool Reliable = true;
+
+    std::string name;
+    FriendState state{FriendState::Offline};
+
+    friend bool operator==(const FriendEntry&, const FriendEntry&) = default;
+};
+
 // --- Whole packet ------------------------------------------------------------
 
 using Payload = std::variant<ConnectRequest, ConnectAccept, ConnectReject, Disconnect, Heartbeat,
-    AuthRequest, AuthResult, Input, JoinGame, LeaveGame, Snapshot, EntitySpawn, EntityDestroy,
-    PlayerJoined, PlayerLeft, PlayerDied, GameState, JoinResult>;
+    AuthRequest, AuthResult, Input, JoinGame, LeaveGame, FriendRequest, FriendAnswer, FriendRemove,
+    Snapshot, EntitySpawn, EntityDestroy, PlayerJoined, PlayerLeft, PlayerDied, GameState,
+    JoinResult, FriendResult, FriendEntry>;
 
 /// Acknowledgement carried by a packet (HAS_ACK flag, §6.1).
 struct Ack {
