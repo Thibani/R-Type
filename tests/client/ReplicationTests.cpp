@@ -102,6 +102,13 @@ TEST(Replication, EveryEnemyKindHasItsOwnLook)
     }
 }
 
+TEST(Replication, EveryGadgetHasItsOwnLook)
+{
+    EXPECT_EQ(client::lookOf(EntityKind::Force), client::Look::Force);
+    EXPECT_EQ(client::lookOf(EntityKind::ForceCapsule), client::Look::ForceCapsule);
+    EXPECT_EQ(client::lookOf(EntityKind::RepairKit), client::Look::RepairKit);
+}
+
 TEST(Replication, MissileSpawnPlaysTheShotSound)
 {
     ecs::World world;

@@ -6,6 +6,7 @@
 #include "game/Systems/DespawnSystem.hpp"
 #include "game/Systems/MovementSystem.hpp"
 #include "server/Components/Combat.hpp"
+#include "server/Components/Gadgets.hpp"
 #include "server/Singleton.hpp"
 #include "server/Systems/AimSystem.hpp"
 #include "server/Systems/BossSystem.hpp"
@@ -14,6 +15,8 @@
 #include "server/Systems/DamageSystem.hpp"
 #include "server/Systems/DeathBurstSystem.hpp"
 #include "server/Systems/DiscardPacketsSystem.hpp"
+#include "server/Systems/DropSystem.hpp"
+#include "server/Systems/ForceSystem.hpp"
 #include "server/Systems/HopSystem.hpp"
 #include "server/Systems/HoverSystem.hpp"
 #include "server/Systems/InputSystem.hpp"
@@ -21,6 +24,7 @@
 #include "server/Systems/MatchSystem.hpp"
 #include "server/Systems/NetReceiveSystem.hpp"
 #include "server/Systems/NetSendSystem.hpp"
+#include "server/Systems/PickupSystem.hpp"
 #include "server/Systems/PlayerControlSystem.hpp"
 #include "server/Systems/PlayerShipSystem.hpp"
 #include "server/Systems/ProgressSystem.hpp"
@@ -41,6 +45,7 @@ namespace server {
 void installSimulation(ecs::World& world)
 {
     (void)singleton<TeamScore>(world); // Created now: DamageSystem adds to it during events
+    (void)singleton<DropTable>(world); // Same: DropSystem rolls its dice during events
 
     world.systems().add<TickSystem>();
     world.systems().add<MatchSystem>();
@@ -57,11 +62,14 @@ void installSimulation(ecs::World& world)
     world.systems().add<WeaponSystem>();
     world.systems().add<game::MovementSystem>();
     world.systems().add<game::ConfinementSystem>();
+    world.systems().add<ForceSystem>(world);
     world.systems().add<game::ArenaExitSystem>();
     world.systems().add<game::CollisionSystem>();
     world.systems().add<DamageSystem>(world);
     world.systems().add<LivesSystem>(world);
+    world.systems().add<PickupSystem>(world);
     world.systems().add<DeathBurstSystem>(world);
+    world.systems().add<DropSystem>(world);
     world.systems().add<game::DespawnSystem>(world);
 }
 

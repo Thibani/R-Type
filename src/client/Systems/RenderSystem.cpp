@@ -15,7 +15,9 @@
 
 #include <SFML/Graphics/RectangleShape.hpp>
 #include <SFML/Graphics/Sprite.hpp>
+#include <SFML/System/Angle.hpp>
 
+#include <cmath>
 #include <cstdint>
 #include <string>
 
@@ -25,8 +27,19 @@ namespace {
 
 constexpr float PlaceholderSize = 56.0F;
 
+/// The direction a sprite drawn flying right is turned to: a player missile
+/// points where it flies (the Force fires up, down and backwards).
+sf::Angle heading(const Appearance& appearance, const game::Velocity* velocity)
+{
+    if (appearance.look != Look::PlayerMissile || velocity == nullptr
+        || (velocity->dx == 0.0F && velocity->dy == 0.0F)) {
+        return sf::Angle::Zero;
+    }
+    return sf::radians(std::atan2(velocity->dy, velocity->dx));
+}
+
 void drawEntity(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
-    const game::Position& position, const Appearance& appearance, float seconds)
+    const game::Position& position, const Appearance& appearance, sf::Angle rotation, float seconds)
 {
     const sf::Vector2f centre{position.x, position.y};
     const auto frame = spriteFrame(assets, mode, appearance.look, appearance.player, seconds);
@@ -42,6 +55,7 @@ void drawEntity(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
     sprite.setOrigin(sf::Vector2f(frame->rect.size) / 2.0F);
     sprite.setScale({frame->mirrored ? -frame->scale : frame->scale, frame->scale});
     sprite.setPosition(centre);
+    sprite.setRotation(rotation);
     target.draw(sprite);
 
     if (appearance.look == Look::PlayerShip && appearance.player < theme::Players.size()) {
@@ -83,8 +97,10 @@ void RenderSystem::update(ecs::World& world, const ecs::Time& time)
 
     const ColourMode mode = singleton<Settings>(world).colourMode;
     world.query<game::Position, Appearance>(
-        [&](ecs::Entity /*entity*/, game::Position& position, Appearance& appearance) {
-            drawEntity(_window, _assets, mode, position, appearance, time.elapsedSeconds());
+        [&](ecs::Entity entity, game::Position& position, Appearance& appearance) {
+            const auto* velocity = world.tryGetComponent<game::Velocity>(entity);
+            drawEntity(_window, _assets, mode, position, appearance, heading(appearance, velocity),
+                time.elapsedSeconds());
         });
 }
 

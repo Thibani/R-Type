@@ -1,12 +1,15 @@
-# R-Type Network Protocol — Version 2
+# R-Type Network Protocol — Version 3
 
 | Status   | Implemented                 |
 |----------|-----------------------------|
-| Version  | 2                           |
+| Version  | 3                           |
 | Transport| UDP only                    |
 | Issue    | #21 (design), #10 (documentation) |
 
-**Changes since version 1:** `GAME_STATE` carries the level, the lives and
+**Changes since version 2:** input bit 5 is `POD` (moves the Force around
+the ship); new entity kinds 13–15 (the Force and the pickups).
+
+**Changes from version 1 to 2:** `GAME_STATE` carries the level, the lives and
 the distance to the next boss (10 bytes instead of 7); new `RESTART` packet
 (client → server) to play again after a game over; new entity kinds 4–12.
 
@@ -127,7 +130,7 @@ Every datagram starts with this 20-byte header.
 |----:|------------|----------------------------------------------------------------------|
 | 0   | `RELIABLE` | The payload starts with a `u16 reliableId` and must be acknowledged. |
 | 1   | `HAS_ACK`  | `ack` and `ackBits` are meaningful. Clear until a packet is received.|
-| 2–7 | —          | Reserved, **MUST** be `0` in version 2.                              |
+| 2–7 | —          | Reserved, **MUST** be `0` in version 3.                              |
 
 ### 3.2 Versioning
 
@@ -223,7 +226,8 @@ Input mask bits:
 |----:|---------|----:|---------|
 | 0   | UP      | 3   | RIGHT   |
 | 1   | DOWN    | 4   | FIRE    |
-| 2   | LEFT    | 5–7 | reserved, **MUST** be `0` |
+| 2   | LEFT    | 5   | POD: moves the Force to its next slot (on a press) |
+|     |         | 6–7 | reserved, **MUST** be `0` |
 
 Each packet repeats the last few inputs (up to 8) so a lost datagram costs
 nothing: the next one carries the missing ticks again. The server applies only
@@ -375,7 +379,10 @@ enough on the wire. The server keeps the `Entity ↔ netId` mapping.
 | `10`  | GUNNER           |
 | `11`  | MINE             |
 | `12`  | BOSS             |
-| `13`–`255` | reserved for new content |
+| `13`  | FORCE (pod attached to a ship; `owner` is the ship's player) |
+| `14`  | FORCE_CAPSULE (pickup) |
+| `15`  | REPAIR_KIT (pickup) |
+| `16`–`255` | reserved for new content |
 
 A client receiving an unknown kind **MUST NOT** crash. It **SHOULD** display
 a placeholder.
@@ -421,7 +428,7 @@ four players are distinct. `0xFF` means "no player" (`owner` of an enemy).
   messages wait until the window moves. Without this rule, losing a single
   message while many others are in flight would disconnect a healthy peer.
 
-In version 2 only the server sends reliable messages.
+In version 3 only the server sends reliable messages.
 
 ---
 
@@ -524,7 +531,7 @@ a snapshot takes 2 parts, about 1280 bytes in total with headers. At 30 Hz that 
 
 ```text
 52 54             magic "RT"
-02                version 2
+03                version 3
 01                type CONNECT_REQUEST
 00                flags: none (nothing received yet, so no HAS_ACK)
 00                reserved
@@ -542,7 +549,7 @@ Total: 36 bytes.
 
 ## 11. Possible extensions
 
-Kept out of version 2, but the header leaves room for them:
+Kept out of version 3, but the header leaves room for them:
 
 - a `COMPRESSED` flag bit for LZ4 or zlib payloads;
 - delta snapshots relative to the last acknowledged snapshot;

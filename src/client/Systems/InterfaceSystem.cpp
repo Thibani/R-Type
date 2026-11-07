@@ -199,7 +199,8 @@ std::string controlsReminder(const Settings& settings)
         ? "Arrows: move"
         : "Move: " + name(Action::Up) + " " + name(Action::Left) + " " + name(Action::Down) + " "
             + name(Action::Right);
-    return move + "  ·  " + name(Action::Fire) + ": fire  ·  Esc: menu";
+    return move + "  ·  " + name(Action::Fire) + ": fire  ·  " + name(Action::Pod)
+        + ": move the Force  ·  Esc: menu";
 }
 
 /// Top left: team score and level. Returns where they end on the right.
@@ -407,11 +408,11 @@ void settingsRow(sf::RenderTarget& target, const Assets& assets, int row, std::s
     const sf::FloatRect rect = layout::settingsRow(row);
     box(target, rect, theme::Surface, focused ? theme::Blue : theme::HullLight, focused ? 4.0F : 2.0F);
     text(target, assets.bodyBold, label, 17, theme::Text,
-        {rect.position.x + 16.0F, rect.position.y + 12.0F});
+        {rect.position.x + 16.0F, rect.position.y + 10.0F});
     const unsigned size = 17;
     const float width = textWidth(assets.bodyBold, value, size);
     text(target, assets.bodyBold, value, size, waiting ? theme::Blue : theme::Text,
-        {rect.position.x + rect.size.x - 16.0F - width, rect.position.y + 12.0F});
+        {rect.position.x + rect.size.x - 16.0F - width, rect.position.y + 10.0F});
 }
 
 void drawSettings(sf::RenderTarget& target, const Assets& assets, const Session& session,
@@ -431,7 +432,12 @@ void drawSettings(sf::RenderTarget& target, const Assets& assets, const Session&
         session.focus == layout::ColourRow, false);
 
     constexpr std::array<std::string_view, ActionCount> actions{
-        "Move up", "Move down", "Move left", "Move right", "Fire",
+        "Move up",
+        "Move down",
+        "Move left",
+        "Move right",
+        "Fire",
+        "Move the Force",
     };
     for (std::size_t action = 0; action < ActionCount; ++action) {
         const int row = layout::FirstKeyRow + static_cast<int>(action);
@@ -446,7 +452,7 @@ void drawSettings(sf::RenderTarget& target, const Assets& assets, const Session&
         session.focus == layout::BackRow);
 
     if (!settings.saveError.empty()) {
-        errorBox(target, assets, {{372.0F, 590.0F}, {536.0F, 40.0F}}, settings.saveError);
+        errorBox(target, assets, {{372.0F, 600.0F}, {536.0F, 36.0F}}, settings.saveError);
     }
     text(target, assets.body, "Up/Down: choose  ·  Left/Right: adjust  ·  Enter: change  ·  Esc: back",
         15, theme::Muted, {372.0F, 642.0F});

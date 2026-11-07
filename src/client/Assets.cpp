@@ -25,22 +25,24 @@ constexpr sf::IntRect BydoFrame{{5, 6}, {21, 24}};
 constexpr sf::IntRect PlayerMissileFrame{{249, 105}, {16, 8}};
 constexpr sf::IntRect EnemyMissileFrame{{243, 277}, {12, 10}};
 
-/// The enemy sheets: the same in every colour mode (only players, Bydos and
-/// missiles are recoloured).
-struct EnemySheet {
+/// The sheets that are the same in every colour mode (only players, Bydos
+/// and missiles are recoloured): enemies and gadgets.
+struct SharedSheet {
     sf::Texture Skin::*texture;
     const char* file;
 };
-constexpr std::array<EnemySheet, 9> EnemySheets{
-    EnemySheet{.texture = &Skin::pataPatas, .file = "r-typesheet8.gif"},
-    EnemySheet{.texture = &Skin::bugs, .file = "r-typesheet16.gif"},
-    EnemySheet{.texture = &Skin::cancers, .file = "r-typesheet19.gif"},
-    EnemySheet{.texture = &Skin::cruisers, .file = "r-typesheet24.gif"},
-    EnemySheet{.texture = &Skin::hoppers, .file = "r-typesheet7.gif"},
-    EnemySheet{.texture = &Skin::spinners, .file = "r-typesheet13.gif"},
-    EnemySheet{.texture = &Skin::gunners, .file = "r-typesheet14.gif"},
-    EnemySheet{.texture = &Skin::mines, .file = "r-typesheet39.gif"},
-    EnemySheet{.texture = &Skin::bosses, .file = "r-typesheet30.gif"}};
+constexpr std::array<SharedSheet, 11> SharedSheets{
+    SharedSheet{.texture = &Skin::pataPatas, .file = "r-typesheet8.gif"},
+    SharedSheet{.texture = &Skin::bugs, .file = "r-typesheet16.gif"},
+    SharedSheet{.texture = &Skin::cancers, .file = "r-typesheet19.gif"},
+    SharedSheet{.texture = &Skin::cruisers, .file = "r-typesheet24.gif"},
+    SharedSheet{.texture = &Skin::hoppers, .file = "r-typesheet7.gif"},
+    SharedSheet{.texture = &Skin::spinners, .file = "r-typesheet13.gif"},
+    SharedSheet{.texture = &Skin::gunners, .file = "r-typesheet14.gif"},
+    SharedSheet{.texture = &Skin::mines, .file = "r-typesheet39.gif"},
+    SharedSheet{.texture = &Skin::bosses, .file = "r-typesheet30.gif"},
+    SharedSheet{.texture = &Skin::forces, .file = "r-typesheet2.gif"},
+    SharedSheet{.texture = &Skin::capsules, .file = "r-typesheet3.gif"}};
 
 /// A 12 × 12 tile of player `index`'s swatch pattern: stripes, dots, checks
 /// or solid colour (from the mockup's style guide).
@@ -63,6 +65,29 @@ sf::Image patternTile(std::size_t index, sf::Color colour)
             if (filled) {
                 image.setPixel({x, y}, colour);
             }
+        }
+    }
+    return image;
+}
+
+/// The repair kit, drawn here (no sheet has one): a white case with a red
+/// cross, 16 × 16. The cross is told apart by its shape in every colour mode.
+sf::Image repairKitImage()
+{
+    constexpr unsigned size = 16;
+    sf::Image image({size, size}, sf::Color::Transparent);
+    for (unsigned y = 1; y + 1 < size; ++y) {
+        for (unsigned x = 1; x + 1 < size; ++x) {
+            const bool edge = x == 1 || y == 1 || x == size - 2 || y == size - 2;
+            const bool cross = (x >= 6 && x <= 9 && y >= 3 && y <= 12)
+                || (y >= 6 && y <= 9 && x >= 3 && x <= 12);
+            sf::Color colour = sf::Color::White;
+            if (edge) {
+                colour = theme::Hull;
+            } else if (cross) {
+                colour = theme::Red;
+            }
+            image.setPixel({x, y}, colour);
         }
     }
     return image;
@@ -95,7 +120,7 @@ void tintFrame(sf::Image& image, sf::IntRect frame, sf::Color from, sf::Color to
 
 /// The skin of `mode`, from the original sprite sheets.
 bool loadSkin(Skin& skin, ColourMode mode, sf::Image ships, sf::Image bydos, sf::Image missiles,
-    const std::array<sf::Image, EnemySheets.size()>& enemies)
+    const std::array<sf::Image, SharedSheets.size()>& shared)
 {
     const theme::Palette& palette = theme::Palettes.at(static_cast<std::size_t>(mode));
     if (mode != ColourMode::Off) {
@@ -116,13 +141,13 @@ bool loadSkin(Skin& skin, ColourMode mode, sf::Image ships, sf::Image bydos, sf:
         }
         skin.patterns.at(i).setRepeated(true);
     }
-    for (std::size_t i = 0; i < EnemySheets.size(); ++i) {
-        if (!loadTexture(skin.*EnemySheets.at(i).texture, enemies.at(i))) {
+    for (std::size_t i = 0; i < SharedSheets.size(); ++i) {
+        if (!loadTexture(skin.*SharedSheets.at(i).texture, shared.at(i))) {
             return false;
         }
     }
-    return loadTexture(skin.ships, ships) && loadTexture(skin.bydos, bydos)
-        && loadTexture(skin.missiles, missiles);
+    return loadTexture(skin.repairKits, repairKitImage()) && loadTexture(skin.ships, ships)
+        && loadTexture(skin.bydos, bydos) && loadTexture(skin.missiles, missiles);
 }
 
 } // namespace
@@ -144,15 +169,15 @@ std::expected<void, std::string> Assets::load(Assets& assets, const std::filesys
             return fail(sprites / file);
         }
     }
-    std::array<sf::Image, EnemySheets.size()> enemies;
-    for (std::size_t i = 0; i < EnemySheets.size(); ++i) {
-        if (!enemies.at(i).loadFromFile(sprites / EnemySheets.at(i).file)) {
-            return fail(sprites / EnemySheets.at(i).file);
+    std::array<sf::Image, SharedSheets.size()> shared;
+    for (std::size_t i = 0; i < SharedSheets.size(); ++i) {
+        if (!shared.at(i).loadFromFile(sprites / SharedSheets.at(i).file)) {
+            return fail(sprites / SharedSheets.at(i).file);
         }
     }
     for (std::size_t mode = 0; mode < assets.skins.size(); ++mode) {
         if (!loadSkin(assets.skins.at(mode), static_cast<ColourMode>(mode), ships, bydos, missiles,
-                enemies)) {
+                shared)) {
             return std::unexpected("cannot create the textures of the colour modes");
         }
     }
@@ -210,6 +235,14 @@ SpriteFrame bossFrame(const Skin& skin, float seconds)
         {155, 204}, 2.0F);
 }
 
+/// The Force (r-typesheet2, second row): 12 frames of the pod turning round.
+SpriteFrame forceFrame(const Skin& skin, float seconds)
+{
+    constexpr std::array<int, 12> lefts{159, 183, 207, 231, 255, 279, 301, 325, 349, 373, 397, 421};
+    const std::size_t index = loopFrame(lefts.size(), 15.0F, seconds);
+    return frame(skin.forces, {lefts.at(index), 35}, {20, 16}, 2.5F);
+}
+
 } // namespace
 
 std::optional<SpriteFrame> spriteFrame(
@@ -246,6 +279,15 @@ std::optional<SpriteFrame> spriteFrame(
         return frame(skin.mines, {34, 2}, {64, 64}, 1.7F);
     case Look::Boss: // Animated
         return bossFrame(skin, seconds);
+    // Gadgets (game/Gadgets.hpp)
+    case Look::Force: // Turning round. 20 × 16 × 2.5: hitbox 50 × 40
+        return forceFrame(skin, seconds);
+    case Look::ForceCapsule: { // Opening and closing. 16 × 16 × 2.5: hitbox 40 × 40
+        const auto index = static_cast<int>(pingPongFrame(12, 12.0F, seconds));
+        return frame(skin.capsules, {1 + (index * 17), 1}, {16, 16}, 2.5F);
+    }
+    case Look::RepairKit: // 16 × 16 × 2.5: hitbox 40 × 40
+        return frame(skin.repairKits, {0, 0}, {16, 16}, 2.5F);
     case Look::Unknown:
         break;
     }

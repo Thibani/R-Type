@@ -291,6 +291,41 @@ ecs::Entity spawnBoss(ecs::World& world, float y, std::uint8_t health)
     return boss;
 }
 
+ecs::Entity spawnPickup(ecs::World& world, PickupKind kind, game::Position at)
+{
+    using namespace game::pickup;
+    const ecs::Entity pickup = spawnNetworked(world,
+        kind == PickupKind::Repair ? EntityKind::RepairKit : EntityKind::ForceCapsule, NoPlayer, at,
+        {.dx = -Speed, .dy = 0.0F},
+        {
+            .halfWidth = HalfSize,
+            .halfHeight = HalfSize,
+            .layer = game::layer::Pickup,
+            .collidesWith = game::layer::PlayerShip,
+        });
+    world.addComponent(pickup, Pickup{.kind = kind});
+    world.addComponent(pickup, game::DespawnOutsideArena{});
+    return pickup;
+}
+
+ecs::Entity spawnForce(ecs::World& world, std::uint8_t playerId, game::Position shipAt)
+{
+    using namespace game::force;
+    const ecs::Entity force = spawnNetworked(world, EntityKind::Force, playerId,
+        {.x = shipAt.x + GapX, .y = shipAt.y}, {},
+        {
+            .halfWidth = HalfWidth,
+            .halfHeight = HalfHeight,
+            .layer = game::layer::Force,
+            .collidesWith = game::layer::EnemyMissile, // Stops them (ForceSystem)
+        });
+    world.addComponent(force, Force{.playerId = playerId});
+    world.addComponent(force, BlocksMissiles{});
+    world.addComponent(force, weapons::ForceCannon);
+    world.addComponent(force, Trigger{}); // Pulled with the ship's (ForceSystem)
+    return force;
+}
+
 ecs::Entity spawnProjectile(ecs::World& world, const Projectile& projectile, std::uint8_t owner,
     game::Position from, game::Velocity direction)
 {

@@ -372,7 +372,7 @@ TEST(Session, OtherProtocolVersionIsRejected)
     };
     const auto size = encode(request, buffer);
     ASSERT_TRUE(size.has_value());
-    buffer[2] = std::byte{3}; // version byte: a version 3 client
+    buffer[2] = std::byte{Version + 1}; // version byte: a client from the future
 
     client.sendBytes(std::span(buffer).first(*size));
     const auto rejected = waitFor<ConnectReject>(server, client);

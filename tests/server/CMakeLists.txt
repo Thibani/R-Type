@@ -12,6 +12,7 @@ rtype_add_test(server_tests
         WaveTests.cpp
         RunTests.cpp
         BossTests.cpp
+        GadgetTests.cpp
     LIBRARIES
         rtype::server
 )

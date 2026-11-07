@@ -50,7 +50,12 @@ constexpr auto BindableKeys = std::to_array<NamedKey>({
 
 /// File names of the actions, in `Action` order.
 constexpr std::array<std::string_view, ActionCount> ActionKeys{
-    "key.up", "key.down", "key.left", "key.right", "key.fire",
+    "key.up",
+    "key.down",
+    "key.left",
+    "key.right",
+    "key.fire",
+    "key.pod",
 };
 
 /// In `ColourMode` order.

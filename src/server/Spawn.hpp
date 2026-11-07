@@ -6,9 +6,11 @@
 #include "game/Components/Collision.hpp"
 #include "game/Components/Motion.hpp"
 #include "game/Enemies.hpp"
+#include "game/Gadgets.hpp"
 #include "game/Ship.hpp"
 #include "network/Protocol/Protocol.hpp"
 #include "server/Components/Combat.hpp"
+#include "server/Components/Gadgets.hpp"
 
 #include <cstdint>
 #include <numbers>
@@ -40,6 +42,14 @@ namespace weapons {
         .interval = game::ship::FireCooldown,
         .cooldown = 0.0F,
         .muzzle = {.x = game::ship::HalfWidth, .y = 0.0F}, // The ship's nose
+    };
+
+    /// The Force's gun: the ship's missiles, fired away from the ship.
+    inline constexpr Weapon ForceCannon{
+        .projectile = ShipCannon.projectile,
+        .interval = game::force::FireCooldown,
+        .cooldown = 0.0F,
+        .muzzle = {}, // From its centre, whatever its slot
     };
 
     inline constexpr Weapon BydoCannon{
@@ -181,6 +191,12 @@ ecs::Entity spawnMine(ecs::World& world, float y, float firstShotDelay);
 
 /// The boss, with `health` hit points (see `game/Boss.hpp`).
 ecs::Entity spawnBoss(ecs::World& world, float y, std::uint8_t health);
+
+/// A pickup of `kind` at `at` (where an enemy was destroyed), drifting left.
+ecs::Entity spawnPickup(ecs::World& world, PickupKind kind, game::Position at);
+
+/// A Force for player `playerId`, in front of their ship at `shipAt`.
+ecs::Entity spawnForce(ecs::World& world, std::uint8_t playerId, game::Position shipAt);
 
 /// A projectile fired by `owner` (a playerId, or `NoPlayer` for an enemy)
 /// from `from`, flying along `direction` (a unit vector).

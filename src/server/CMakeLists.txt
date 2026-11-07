@@ -26,6 +26,7 @@ add_library(rtype_server
     Components/Behaviour.hpp
     Components/Waves.hpp
     Components/Match.hpp
+    Components/Gadgets.hpp
     Spawn.hpp
     Spawn.cpp
     Run.hpp
@@ -75,6 +76,12 @@ add_library(rtype_server
     Systems/BossSystem.cpp
     Systems/DeathBurstSystem.hpp
     Systems/DeathBurstSystem.cpp
+    Systems/ForceSystem.hpp
+    Systems/ForceSystem.cpp
+    Systems/PickupSystem.hpp
+    Systems/PickupSystem.cpp
+    Systems/DropSystem.hpp
+    Systems/DropSystem.cpp
     Systems/WeaponSystem.hpp
     Systems/WeaponSystem.cpp
     Systems/DamageSystem.hpp

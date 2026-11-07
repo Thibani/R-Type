@@ -18,8 +18,9 @@ enum class Action : std::uint8_t {
     Left,
     Right,
     Fire,
+    Pod, // Moves the Force to its next slot around the ship
 };
-inline constexpr std::size_t ActionCount = 5;
+inline constexpr std::size_t ActionCount = 6;
 
 /// The colours of the game, for each type of colour blindness (`theme::Palettes`).
 enum class ColourMode : std::uint8_t {
@@ -41,6 +42,7 @@ struct Settings {
         sf::Keyboard::Key::Left,
         sf::Keyboard::Key::Right,
         sf::Keyboard::Key::Space,
+        sf::Keyboard::Key::LShift,
     };
 
     int volume{80}; // Sound effects, 0 (muted) to 100 %

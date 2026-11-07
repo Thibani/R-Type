@@ -32,6 +32,9 @@ struct Skin {
     sf::Texture gunners; // r-typesheet14.gif
     sf::Texture mines; // r-typesheet39.gif
     sf::Texture bosses; // r-typesheet30.gif
+    sf::Texture forces; // r-typesheet2.gif: the Force
+    sf::Texture capsules; // r-typesheet3.gif: the Force capsule
+    sf::Texture repairKits; // Drawn at startup (Assets.cpp)
     std::array<sf::Texture, 4> patterns; // P1-P4 swatch patterns (generated)
 };
 

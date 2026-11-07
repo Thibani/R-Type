@@ -76,7 +76,9 @@ screens. Players are told apart by colour, pattern and P1-P4 tag. Each colour mo
 its own copy of the sprites, repainted at startup (`Assets.cpp`, `theme::Palettes`).
 
 **Settings** open over the connection form (Settings button) or over the game
-(Esc menu → Settings; the game keeps running). Up/Down choose a row,
+(Esc menu → Settings; the game keeps running). The actions are the 4
+moves, Fire and **Move the Force** (Left Shift: the Force goes to its next
+slot around the ship). Up/Down choose a row,
 Left/Right change the volume, Enter changes a key: press the new key, or Esc
 to cancel. A key already used by another action is swapped with it. Changes
 apply at once and are saved.
@@ -96,6 +98,7 @@ key.down = Down
 key.left = Left
 key.right = Right
 key.fire = Space
+key.pod = LShift
 ```
 
 | System  | Location                                                        |
@@ -135,13 +138,17 @@ key.fire = Space
 1. Add a value to `Look` and a case to `lookOf()` in `Components/Appearance.hpp`.
 2. Give it a frame in `spriteFrame()` (`Assets.cpp`): texture, rectangle in
    the sheet, scale. A new sheet goes in `assets/sprites/`, in `Skin` and in
-   `EnemySheets` (`Assets.cpp`) so that every colour mode loads it.
+   `SharedSheets` (`Assets.cpp`) so that every colour mode loads it.
 3. Until then, the kind is drawn as a "?": nothing else to change, the
    network code already creates the entity.
 
 To animate it, pick the frame from the time `spriteFrame()` receives, as the
 boss does (`bossFrame()`: 32 frames of its sheet played back and forth with
-`pingPongFrame()` of `Ui/Animation.hpp`, 10 per second).
+`pingPongFrame()` of `Ui/Animation.hpp`, 10 per second) or the Force
+(`forceFrame()`: 12 frames turning round with `loopFrame()`). Player
+missiles are turned the way they fly, since the Force fires up, down and
+backwards (`RenderSystem`). The repair kit has no sheet: `repairKitImage()`
+draws it at startup.
 
 ### Add a sound
 

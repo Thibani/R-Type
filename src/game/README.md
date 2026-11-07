@@ -12,6 +12,7 @@ constants, and the systems both sides can share.
 | `Waves.hpp`                     | Endless mode: levels, arrival rate, formation chance |
 | `Run.hpp`                       | A game: team lives, distance points                  |
 | `Boss.hpp`                      | The boss: when it comes, health, attacks, reward     |
+| `Gadgets.hpp`                   | Drops (repair kit, Force capsule) and the Force's 4 slots |
 | `Components/Health.hpp`         | `Health`: hit points left                            |
 | `Components/Motion.hpp`         | `Position`, `Velocity`                               |
 | `Components/Confinement.hpp`    | `ConfinedToArena`: keeps an entity inside the field  |

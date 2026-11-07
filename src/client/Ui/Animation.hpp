@@ -19,4 +19,16 @@ constexpr std::size_t pingPongFrame(
     return step < frameCount ? step : period - step;
 }
 
+/// Which of `frameCount` frames a looping animation shows at `seconds`, at
+/// `framesPerSecond`: 0, 1, …, n−1, 0, 1… (for a sprite that turns round).
+[[nodiscard]]
+constexpr std::size_t loopFrame(
+    std::size_t frameCount, float framesPerSecond, float seconds) noexcept
+{
+    if (frameCount <= 1 || framesPerSecond <= 0.0F || seconds <= 0.0F) {
+        return 0;
+    }
+    return static_cast<std::size_t>(seconds * framesPerSecond) % frameCount;
+}
+
 } // namespace client

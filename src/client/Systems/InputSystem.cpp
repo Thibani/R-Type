@@ -295,6 +295,7 @@ std::uint8_t heldKeys(const Settings& settings)
     add(Action::Left, input::Left);
     add(Action::Right, input::Right);
     add(Action::Fire, input::Fire);
+    add(Action::Pod, input::Pod);
     return mask;
 }
 

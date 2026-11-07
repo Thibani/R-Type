@@ -14,6 +14,7 @@ add_library(rtype_game
     Waves.hpp
     Run.hpp
     Boss.hpp
+    Gadgets.hpp
 
     Components/Motion.hpp
     Components/Health.hpp

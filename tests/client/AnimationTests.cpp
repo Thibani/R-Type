@@ -34,3 +34,16 @@ TEST(Animation, ASingleFrameOrNoTimeShowsTheFirstFrame)
     EXPECT_EQ(client::pingPongFrame(8, 10.0F, 0.0F), 0U);
     EXPECT_EQ(client::pingPongFrame(8, 0.0F, 5.0F), 0U);
 }
+
+TEST(Animation, LoopStartsAgainAfterTheLastFrame)
+{
+    std::vector<std::size_t> frames;
+    frames.reserve(7);
+    for (int step = 0; step < 7; ++step) {
+        frames.push_back(client::loopFrame(3, 2.0F, (static_cast<float>(step) + 0.5F) / 2.0F));
+    }
+
+    EXPECT_EQ(frames, (std::vector<std::size_t>{0, 1, 2, 0, 1, 2, 0}));
+    EXPECT_EQ(client::loopFrame(1, 10.0F, 5.0F), 0U);
+    EXPECT_EQ(client::loopFrame(12, 10.0F, 0.0F), 0U);
+}

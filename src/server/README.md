@@ -19,6 +19,7 @@ clients comply with.
 | `Components/Combat.hpp`             | Combat as data: `Weapon`, `Projectile`, `Trigger`, `Damage`, `ScoreValue`; `TeamScore` |
 | `Components/Waves.hpp`              | The endless mode's state: `RunProgress` (time, level), `WaveDirector` (next arrival, pending members) |
 | `Components/Behaviour.hpp`          | Enemy behaviours as data: `Enemy`, `WaveFlight`, `Seeker`, `AimsAtShips` |
+| `Components/Gadgets.hpp`            | `Pickup`, `Force`, `BlocksMissiles`, `DropTable` (random drops) |
 | `Components/NetEntity.hpp`          | `NetEntity` (network id), `NetIdCounter`, `SimulationTick`, `LastSnapshot` |
 | `Singleton.hpp`                     | `singleton<T>(world)`: state shared by several systems   |
 | `NetIds.hpp`                        | `allocateNetId()`: ids for networked entities (§5.1)     |
@@ -46,6 +47,9 @@ clients comply with.
 | `Systems/DamageSystem.hpp`          | Collisions + `Damage` → hits, kills, team score          |
 | `Systems/LivesSystem.hpp`           | Ship killed → one team life less, respawn or `Eliminated` |
 | `Systems/DeathBurstSystem.hpp`      | `BurstOnDeath` killed → projectiles all around (Mine)    |
+| `Systems/ForceSystem.hpp`           | The Force: POD → next slot, follows its ship, fires with it, stops enemy missiles |
+| `Systems/PickupSystem.hpp`          | Ship touches a pickup → repaired, or a Force (points if it has one) |
+| `Systems/DropSystem.hpp`            | Enemy killed → maybe a repair kit or a Force capsule; the boss drops both |
 | `Systems/ReplicationSystem.hpp`     | ENTITY_SPAWN / ENTITY_DESTROY (real reason), PLAYER_DIED, GAME_STATE |
 | `Systems/NetSendSystem.hpp`         | Reliable messages, resends, heartbeats                   |
 | `Systems/SnapshotSystem.hpp`        | SNAPSHOT of every networked entity, 30 Hz                |
@@ -201,6 +205,8 @@ Everything that moves is a networked entity made by `Spawn.hpp`, so
 | Player missile  | `PLAYER_MISSILE` | enemies (1 damage)  | –      | it hits, or leaves the arena        |
 | Enemy           | see below        | ships (crashes)     | 1–15   | killed (+points to the team score), or leaves on the left |
 | Enemy missile   | `ENEMY_MISSILE`  | ships (1 damage)    | –      | it hits, or leaves the arena        |
+| Force           | `FORCE`          | enemy missiles (stops them) | – | its ship is gone                  |
+| Pickup          | `REPAIR_KIT`, `FORCE_CAPSULE` | taken by ships | – | a ship takes it, or it leaves on the left |
 
 The rules (speeds, sizes, rates, points) are constants in `src/game/Ship.hpp`,
 `src/game/Bydo.hpp`, `src/game/Enemies.hpp` and `src/game/Boss.hpp`, shared with the client.
@@ -256,6 +262,16 @@ around) and **Summon** (3 Bugs come out of it); below half health its weapons
 reload faster. Killing it gives 5000 points and one life (5 at most); the
 next one comes 90 s later with 30 HP more. GAME_STATE's `bossProgress` tells
 the clients how far it is (0–99 %, 100 while it is there): their distance bar.
+
+**Gadgets** (`game/Gadgets.hpp`). A killed enemy may drop a pickup where it
+was (`DropSystem`): a **repair kit** (8 %) or a **Force capsule** (5 %); the
+boss drops both. Pickups drift left; the ship that touches one takes it
+(`PickupSystem`). The repair kit gives the ship its 3 hearts back. The
+capsule gives the player a **Force**, an invulnerable pod stuck to the ship
+(`ForceSystem`): each press of POD (input bit 5) moves it to the next slot,
+front → above → behind → below; it fires the ship's missiles away from the
+ship while FIRE is held, and absorbs the enemy missiles it touches. It is
+lost with the ship; a second capsule gives 500 points instead.
 
 GAME_STATE is sent at once when the phase, level, lives or boss distance
 change, but at most every 250 ms when only the score moved (distance points

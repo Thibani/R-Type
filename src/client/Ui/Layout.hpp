@@ -50,7 +50,7 @@ inline constexpr sf::FloatRect SettingsPanel{{340.0F, 40.0F}, {600.0F, 640.0F}};
 [[nodiscard]]
 constexpr sf::FloatRect settingsRow(int row) noexcept
 {
-    return {{372.0F, 122.0F + (static_cast<float>(row) * 52.0F)}, {536.0F, 46.0F}};
+    return {{372.0F, 122.0F + (static_cast<float>(row) * 48.0F)}, {536.0F, 42.0F}};
 }
 
 // Game over: "Play again" first, so Enter starts a new game

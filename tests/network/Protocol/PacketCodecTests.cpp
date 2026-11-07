@@ -67,7 +67,7 @@ TEST(PacketCodec, MatchesTheSpecificationExample)
     };
 
     const auto expected = bytes({
-        0x52, 0x54, 0x02, 0x01, 0x00, 0x00, 0x00,
+        0x52, 0x54, 0x03, 0x01, 0x00, 0x00, 0x00,
         0x10, // magic, version, type, flags, reserved, size
         0x00, 0x00, 0x00, 0x00, // sessionToken
         0x00, 0x00, 0x00, 0x00, // sequence, ack
@@ -86,7 +86,7 @@ TEST(PacketCodec, EncodesHeaderFields)
     const auto datagram = encodeOrFail(packet);
 
     const auto expected = bytes({
-        0x52, 0x54, 0x02, 0x25, // magic, version, PLAYER_DIED
+        0x52, 0x54, 0x03, 0x25, // magic, version, PLAYER_DIED
         0x03, 0x00, 0x00, 0x05, // RELIABLE | HAS_ACK, reserved, payloadSize 5
         0xCA, 0xFE, 0xBA, 0xBE, // sessionToken
         0x00, 0x2A, 0x00, 0x29, // sequence 42, ack 41
@@ -254,14 +254,14 @@ TEST(PacketCodecValidation, RejectsPayloadSizeMismatch)
 TEST(PacketCodecValidation, RejectsOtherVersionButHeaderStaysReadable)
 {
     auto datagram = encodeOrFail(makePacket(ConnectRequest{.name = "old"}));
-    datagram[2] = std::byte{3};
+    datagram[2] = std::byte{Version - 1};
 
     EXPECT_EQ(decodeError(datagram, Direction::ClientToServer), DecodeError::UnsupportedVersion);
 
     // The server can still tell it was a CONNECT_REQUEST and answer VERSION_MISMATCH.
     const auto header = decodeHeader(datagram);
     ASSERT_TRUE(header.has_value());
-    EXPECT_EQ(header->version, 3);
+    EXPECT_EQ(header->version, Version - 1);
     EXPECT_EQ(header->type, std::to_underlying(PacketType::ConnectRequest));
 }
 
@@ -354,6 +354,18 @@ TEST(PacketCodecValidation, RejectsReservedInputBits)
     datagram[HeaderSize + 5] = std::byte{0x80};
 
     EXPECT_EQ(decodeError(datagram, Direction::ClientToServer), DecodeError::InvalidValue);
+}
+
+TEST(PacketCodecValidation, AcceptsThePodBit)
+{
+    Input input{.firstTick = 0, .count = 1, .masks = {}};
+    input.masks.at(0) = input::Fire | input::Pod;
+    const auto datagram = encodeOrFail(makePacket(input));
+
+    const auto decoded = decode(datagram, Direction::ClientToServer);
+
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(std::get<Input>(decoded->payload).masks.at(0), input::Fire | input::Pod);
 }
 
 TEST(PacketCodecValidation, RejectsSnapshotCountNotMatchingPayload)

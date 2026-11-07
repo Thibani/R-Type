@@ -6,14 +6,14 @@
 #include <cstdint>
 #include <limits>
 
-/// Constants and enumerations of the R-Type network protocol, version 1.
+/// Constants and enumerations of the R-Type network protocol, version 3.
 /// The reference is docs/protocol.md: section numbers below point to it.
 namespace network::protocol {
 
 // --- Sizes and identification (§2, §3) ---------------------------------------
 
 inline constexpr std::uint16_t Magic = 0x5254; // "RT"
-inline constexpr std::uint8_t Version = 2;
+inline constexpr std::uint8_t Version = 3;
 
 inline constexpr std::size_t HeaderSize = 20;
 inline constexpr std::size_t MaxDatagramSize = 1200;
@@ -101,7 +101,7 @@ enum class GamePhase : std::uint8_t {
     GameOver = 2,
 };
 
-/// Kind of a networked entity. Values 13-255 are reserved for new content:
+/// Kind of a networked entity. Values 16-255 are reserved for new content:
 /// receivers keep unknown kinds as-is instead of rejecting the packet.
 enum class EntityKind : std::uint8_t {
     PlayerShip = 0,
@@ -117,6 +117,9 @@ enum class EntityKind : std::uint8_t {
     Gunner = 10,
     Mine = 11,
     Boss = 12,
+    Force = 13, // The pod attached to a ship; its owner is the ship's player
+    ForceCapsule = 14, // Pickup: gives a Force
+    RepairKit = 15, // Pickup: repairs a ship
 };
 
 /// Bits of an input mask (§4.2).
@@ -126,7 +129,8 @@ namespace input {
     inline constexpr std::uint8_t Left = 1U << 2U;
     inline constexpr std::uint8_t Right = 1U << 3U;
     inline constexpr std::uint8_t Fire = 1U << 4U;
-    inline constexpr std::uint8_t Known = 0x1FU; // Up | Down | Left | Right | Fire
+    inline constexpr std::uint8_t Pod = 1U << 5U; // Moves the Force to its next slot
+    inline constexpr std::uint8_t Known = 0x3FU; // Up | Down | Left | Right | Fire | Pod
 } // namespace input
 
 // --- Quantization (§2.1) -----------------------------------------------------
