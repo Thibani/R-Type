@@ -4,6 +4,7 @@
 #include "client/Components/NetEntity.hpp"
 #include "client/Components/Session.hpp"
 #include "client/Components/Settings.hpp"
+#include "client/Gamepad.hpp"
 #include "client/Settings.hpp"
 #include "client/Singleton.hpp"
 #include "client/Ui/Layout.hpp"
@@ -251,7 +252,13 @@ std::string controlsReminder(const Settings& settings)
         ? "Arrows: move"
         : "Move: " + name(Action::Up) + " " + name(Action::Left) + " " + name(Action::Down) + " "
             + name(Action::Right);
-    return move + "  ·  " + name(Action::Fire) + ": fire  ·  Esc: menu";
+    std::string keyboard = move + "  ·  " + name(Action::Fire) + ": fire  ·  Esc: menu";
+    const auto fire = settings.buttons.at(static_cast<std::size_t>(Action::Fire));
+    if (!gamepad::anyConnected()) {
+        return keyboard;
+    }
+    return keyboard + "  ·  Pad: stick"
+        + (fire ? ", " + std::to_string(*fire) + ": fire" : std::string()) + ", Start: menu";
 }
 
 /// One player in the HUD: swatch, name, then health or state.
@@ -393,8 +400,11 @@ void drawSettings(sf::RenderTarget& target, const Assets& assets, const Session&
     for (std::size_t action = 0; action < ActionCount; ++action) {
         const int row = layout::FirstKeyRow + static_cast<int>(action);
         const bool waiting = session.capturing == static_cast<Action>(action);
-        const std::string key = waiting ? "Press a key (Esc: cancel)"
-                                        : "[ " + std::string(keyName(settings.keys.at(action)).value_or("?")) + " ]";
+        const auto button = settings.buttons.at(action);
+        const std::string key = waiting
+            ? "Key or button (Esc: cancel)"
+            : "[ " + std::string(keyName(settings.keys.at(action)).value_or("?")) + " ]"
+                + (button ? "  [ Pad " + std::to_string(*button) + " ]" : "");
         settingsRow(target, assets, row, actions.at(action), key, session.focus == row, waiting);
     }
     widgets::button(target, assets, layout::settingsRow(layout::ResetRow), "Reset controls", false,
@@ -405,7 +415,7 @@ void drawSettings(sf::RenderTarget& target, const Assets& assets, const Session&
     if (!settings.saveError.empty()) {
         errorBox(target, assets, {{245.0F, 450.0F}, {790.0F, 40.0F}}, settings.saveError);
     }
-    text(target, assets.body, "Up/Down: choose  ·  Left/Right: adjust  ·  Enter: change  ·  Esc: back",
+    text(target, assets.body, "Arrows: move  ·  Enter: change  ·  Esc: back",
         15, theme::Muted, {245.0F, 510.0F});
 }
 

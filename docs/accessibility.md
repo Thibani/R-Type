@@ -7,16 +7,19 @@ disabilities.
 
 ## Controls
 
-| Action            | Key                         |
-|-------------------|-----------------------------|
-| Move              | Arrow keys by default (diagonals allowed) |
-| Fire              | Space by default, **held** (auto-fire) |
-| Menu / back       | Esc (fixed)                  |
-| Connect           | Enter, on the connection form |
+| Action            | Key                         | Gamepad                      |
+|-------------------|-----------------------------|------------------------------|
+| Move              | Arrow keys by default (diagonals allowed) | Left stick or D-pad |
+| Fire              | Space by default, **held** (auto-fire) | A (button 0) by default, held |
+| Menu              | Esc (fixed)                  | Start (fixed)                |
+| In menus          | Arrows, Tab, Enter, Esc      | Stick or D-pad, A to choose, B to go back |
+| Connect           | Enter, on the connection form | A, once the name and password are typed |
 
-Moving and firing can be bound to any key in the settings (connection
-screen → Settings, or Esc → Settings in game). Menus always use the arrows,
-Tab, Enter and Esc, so a player can never lock themselves out.
+Moving and firing can be bound to any key and any gamepad button in the
+settings (connection screen → Settings, or Esc → Settings in game). Menus
+always use the arrows, Tab, Enter and Esc, or the stick, A, B and Start, so a
+player can never lock themselves out. Typing a name or password still needs the
+keyboard.
 
 ## Physical and motor
 
@@ -26,6 +29,7 @@ Tab, Enter and Esc, so a player can never lock themselves out.
 | **Customizable controls.** Select an action in the settings and press the new key; a key already used is swapped, and "Reset controls" restores the defaults. Saved for the next start | Players choose the keys they can reach: one hand, left-handed layouts, adapted keyboards |
 | **Keys are states, not events.** The client sends which keys are held 60 times per second, and every packet repeats the last 8 ticks | A key held a bit too long or too short does not matter, and a lost packet never drops an action |
 | **Few keys, all on the keyboard.** Arrows, Space, Esc, Enter; no mouse needed in game | Playable with one hand, or with keyboard-emulating devices |
+| **Gamepad support.** Move with the stick or D-pad, fire with a button, open the menu with Start, and use every menu with the pad. Buttons are remappable like keys, keyboard and pad work at the same time, and plugging or unplugging a pad never stops the game | Players who cannot use a keyboard comfortably, or who use an adapted controller |
 | **Generous rules.** 3 hit points, and a destroyed ship comes back after 3 s, again and again | A mistake does not end the game |
 | **The menu does not pause others.** Esc opens a menu while the game keeps running for the other players | A player can take a break without stopping their team |
 
@@ -66,7 +70,6 @@ Tab, Enter and Esc, so a player can never lock themselves out.
 
 | Need | Plan |
 |------|------|
-| Gamepad support | Remappable gamepad buttons (#125) |
 | Adjustable game speed or difficulty | Not planned |
 | Larger text | Interface scaling (#123) |
 | High-contrast theme | Not scheduled |

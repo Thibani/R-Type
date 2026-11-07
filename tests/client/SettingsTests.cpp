@@ -1,6 +1,7 @@
 // The settings file and the key bindings: no window, files in a temporary folder.
 
 #include "client/Components/Settings.hpp"
+#include "client/Gamepad.hpp"
 #include "client/Settings.hpp"
 #include "client/Singleton.hpp"
 #include "client/Systems/SettingsSystem.hpp"
@@ -381,6 +382,171 @@ TEST(InterfaceSize, SettingsRowsNeverOverlapAndStayInThePanel)
         for (int b = a + 1; b <= BackRow; ++b) {
             EXPECT_FALSE(settingsRow(a).findIntersection(settingsRow(b)).has_value()) << a << " " << b;
         }
+    }
+}
+
+// --- Moving the focus ---------------------------------------------------------------
+
+namespace {
+
+/// Where the focus lands after one push from `from`.
+int pushed(const std::vector<sf::FloatRect>& rects, int from, int dx, int dy)
+{
+    return client::layout::neighbour(rects, from, dx, dy);
+}
+
+std::vector<sf::FloatRect> settingsRows()
+{
+    std::vector<sf::FloatRect> rows;
+    for (int row = 0; row <= client::layout::BackRow; ++row) {
+        rows.push_back(client::layout::settingsRow(row));
+    }
+    return rows;
+}
+
+} // namespace
+
+TEST(Focus, SettingsColumnsAreReachedSideways)
+{
+    using namespace client::layout;
+    const auto rows = settingsRows();
+    const int moveUp = FirstKeyRow;
+    const int fire = FirstKeyRow + static_cast<int>(Action::Fire);
+    const int moveRight = FirstKeyRow + static_cast<int>(Action::Right);
+
+    EXPECT_EQ(pushed(rows, ResetRow, 1, 0), moveRight); // Beside it, not further down
+    EXPECT_EQ(pushed(rows, fire, -1, 0), BackRow);
+    EXPECT_EQ(pushed(rows, moveUp, -1, 0), VolumeRow);
+    EXPECT_EQ(pushed(rows, InterfaceSizeRow, 0, 1), ResetRow);
+    EXPECT_EQ(pushed(rows, ResetRow, 0, 1), BackRow);
+}
+
+TEST(Focus, StopsAtTheEdges)
+{
+    using namespace client::layout;
+    const auto rows = settingsRows();
+
+    EXPECT_EQ(pushed(rows, VolumeRow, 0, -1), VolumeRow);
+    EXPECT_EQ(pushed(rows, VolumeRow, -1, 0), VolumeRow);
+    EXPECT_EQ(pushed(rows, BackRow, 0, 1), BackRow);
+}
+
+TEST(Focus, ConnectionFormIsAGrid)
+{
+    using namespace client::layout;
+    const auto form = focusables(client::Session{}, 100);
+
+    EXPECT_EQ(pushed(form, NameField, 1, 0), PasswordField);
+    EXPECT_EQ(pushed(form, PasswordField, 0, 1), PortField);
+    EXPECT_EQ(pushed(form, PortField, 0, 1), CreateAccountButton);
+    EXPECT_EQ(pushed(form, LoginButton, 0, 1), SettingsButton);
+    EXPECT_EQ(pushed(form, QuitButton, -1, 0), SettingsButton);
+}
+
+TEST(Focus, NothingToFocusLeavesItAlone)
+{
+    EXPECT_EQ(pushed({}, 0, 1, 0), 0);
+}
+
+// --- Gamepad -----------------------------------------------------------------------
+
+namespace {
+
+std::optional<unsigned> buttonOf(const Settings& settings, Action action)
+{
+    return settings.buttons.at(static_cast<std::size_t>(action));
+}
+
+} // namespace
+
+TEST(Gamepad, ButtonsAreReadBack)
+{
+    Settings settings;
+    ASSERT_TRUE(client::bindButton(settings, Action::Fire, 2));
+    ASSERT_TRUE(client::bindButton(settings, Action::Up, 11));
+
+    const std::string text = client::formatSettings(settings);
+    const Settings read = client::parseSettings(text);
+
+    EXPECT_NE(text.find("button.fire = 2"), std::string::npos);
+    EXPECT_NE(text.find("button.down = none"), std::string::npos);
+    EXPECT_EQ(read.buttons, settings.buttons);
+}
+
+TEST(Gamepad, BadButtonsKeepTheirDefault)
+{
+    for (const char* text : {"button.fire = 7", "button.fire = 32", "button.fire = -1", "button.fire = A"}) {
+        EXPECT_EQ(buttonOf(client::parseSettings(text), Action::Fire), 0U) << text;
+    }
+    EXPECT_FALSE(buttonOf(client::parseSettings("button.fire = none"), Action::Fire).has_value());
+}
+
+TEST(Gamepad, TwoActionsOnOneButtonResetTheButtons)
+{
+    const Settings settings = client::parseSettings("button.up = 3\nbutton.down = 3\nkey.fire = X\n");
+
+    EXPECT_EQ(settings.buttons, Settings::DefaultButtons);
+    EXPECT_EQ(keyOf(settings, Action::Fire), Key::X); // The keys are not touched
+}
+
+TEST(Gamepad, ABoundButtonIsSwapped)
+{
+    Settings settings; // Fire = 0
+
+    ASSERT_TRUE(client::bindButton(settings, Action::Up, 0));
+
+    EXPECT_EQ(buttonOf(settings, Action::Up), 0U);
+    EXPECT_FALSE(buttonOf(settings, Action::Fire).has_value()); // Fire gets Up's: none
+}
+
+TEST(Gamepad, StartCannotBeBound)
+{
+    Settings settings;
+
+    EXPECT_FALSE(client::bindButton(settings, Action::Fire, client::gamepad::StartButton));
+    EXPECT_FALSE(client::bindButton(settings, Action::Fire, client::gamepad::MaxButtons));
+    EXPECT_EQ(buttonOf(settings, Action::Fire), 0U);
+}
+
+TEST(Gamepad, StickAndDPadMoveTheShip)
+{
+    using client::gamepad::PadState;
+    namespace input = network::protocol::input;
+    const Settings settings;
+
+    EXPECT_EQ(client::gamepad::mask(PadState{.x = -100.0F}, settings), input::Left);
+    EXPECT_EQ(client::gamepad::mask(PadState{.x = 80.0F, .y = 80.0F}, settings), input::Right | input::Down);
+    EXPECT_EQ(client::gamepad::mask(PadState{.povX = 100.0F}, settings), input::Right);
+    // The D-pad's up, as SFML reports it on this system
+    EXPECT_EQ(client::gamepad::mask(PadState{.povY = client::gamepad::povY(-100.0F)}, settings), input::Up);
+}
+
+TEST(Gamepad, ARestingStickDoesNothing)
+{
+    using client::gamepad::PadState;
+    const Settings settings;
+
+    EXPECT_EQ(client::gamepad::mask(PadState{.x = 30.0F, .y = -45.0F}, settings), 0);
+    EXPECT_EQ(client::gamepad::mask(PadState{}, settings), 0);
+}
+
+TEST(Gamepad, BoundButtonsFireAndMove)
+{
+    using client::gamepad::PadState;
+    namespace input = network::protocol::input;
+    Settings settings; // Fire = 0
+    ASSERT_TRUE(client::bindButton(settings, Action::Up, 12)); // A D-pad reported as buttons
+
+    EXPECT_EQ(client::gamepad::mask(PadState{.buttons = 1U << 0U}, settings), input::Fire);
+    EXPECT_EQ(client::gamepad::mask(PadState{.buttons = 1U << 12U}, settings), input::Up);
+    EXPECT_EQ(client::gamepad::mask(PadState{.buttons = 1U << 5U}, settings), 0); // Unbound
+}
+
+TEST(Gamepad, DisconnectedPadIsAtRest)
+{
+    // No pad on the test machine: reading any of them must give a resting pad
+    for (unsigned joystick = 0; joystick < 8; ++joystick) {
+        EXPECT_EQ(client::gamepad::mask(client::gamepad::read(joystick), Settings{}), 0);
     }
 }
 

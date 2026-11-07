@@ -5,6 +5,9 @@
 
 #include <SFML/Graphics/Rect.hpp>
 
+#include <cmath>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 /// Where the clickable parts of each screen are, on the 1280 × 720 interface
@@ -103,6 +106,46 @@ constexpr sf::FloatRect visibleArea(const Session& session, int interfaceSize) n
         }
     }
     return {{centre.x - (size.x / 2.0F), centre.y - (size.y / 2.0F)}, size};
+}
+
+/// The focusable nearest to `rects[from]` in direction (`dx`, `dy`), one of
+/// them 0 and the other -1 or 1. Controls in line with it come first (their
+/// sides overlap), nearest first: Down from a field picks the field just
+/// below, Right from a row the row beside it. Otherwise the closest that way.
+/// `from` itself when nothing lies that way: the focus stops at the edges.
+[[nodiscard]]
+inline int neighbour(const std::vector<sf::FloatRect>& rects, int from, int dx, int dy)
+{
+    if (from < 0 || std::cmp_greater_equal(from, rects.size())) {
+        return rects.empty() ? from : 0;
+    }
+    const sf::FloatRect current = rects.at(static_cast<std::size_t>(from));
+    const auto inLine = [&](sf::FloatRect other) {
+        const bool sideways = dx != 0;
+        const float start = sideways ? current.position.y : current.position.x;
+        const float end = start + (sideways ? current.size.y : current.size.x);
+        const float otherStart = sideways ? other.position.y : other.position.x;
+        const float otherEnd = otherStart + (sideways ? other.size.y : other.size.x);
+        return otherStart < end && start < otherEnd;
+    };
+    int best = from;
+    std::tuple<bool, float, float> bestRank{};
+    for (std::size_t i = 0; i < rects.size(); ++i) {
+        const sf::Vector2f offset = rects.at(i).getCenter() - current.getCenter();
+        const float along = (offset.x * static_cast<float>(dx)) + (offset.y * static_cast<float>(dy));
+        if (along <= 1.0F) {
+            continue; // Not that way
+        }
+        const float across = std::abs(dx != 0 ? offset.y : offset.x);
+        const bool aside = !inLine(rects.at(i));
+        // In line first, then nearest, then the most directly that way
+        const std::tuple rank{aside, aside ? along + (2.0F * across) : along, across};
+        if (best == from || rank < bestRank) {
+            best = static_cast<int>(i);
+            bestRank = rank;
+        }
+    }
+    return best;
 }
 
 /// The focusable parts of the current screen, in focus order.

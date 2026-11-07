@@ -18,6 +18,8 @@
 ///     interface = 100
 ///     key.up = Up
 ///     key.fire = Space
+///     button.fire = 0
+///     button.up = none
 ///
 /// Unknown keys are ignored (older and newer clients can share a file); a bad
 /// value keeps its default; a missing or unreadable file gives the defaults.
@@ -40,6 +42,10 @@ bool bindKey(Settings& settings, Action action, sf::Keyboard::Key key) noexcept;
 /// Name of a colour mode, in the file and on the settings screen.
 [[nodiscard]]
 std::string_view colourModeName(ColourMode mode) noexcept;
+
+/// Binds gamepad `button` to `action`, swapped like keys. False for Start
+/// (it opens the menu) or a button number SFML cannot report.
+bool bindButton(Settings& settings, Action action, unsigned button) noexcept;
 
 [[nodiscard]]
 Settings parseSettings(std::string_view text);
