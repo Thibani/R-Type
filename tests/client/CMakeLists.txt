@@ -6,6 +6,7 @@ rtype_add_test(client_tests
         ReplicationTests.cpp
         ServerConnectionTests.cpp
         SettingsTests.cpp
+        AnimationTests.cpp
     LIBRARIES
         rtype::client
 )

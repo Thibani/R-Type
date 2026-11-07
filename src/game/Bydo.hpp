@@ -21,9 +21,6 @@ inline constexpr std::uint8_t MaxHealth = 1;
 /// Team score earned for each Bydo killed.
 inline constexpr std::uint32_t Points = 100;
 
-/// A new Bydo enters from the right every `SpawnInterval` seconds.
-inline constexpr float SpawnInterval = 1.5F;
-
 /// Each Bydo fires at the nearest ship every `FireInterval` seconds.
 inline constexpr float FireInterval = 2.5F;
 inline constexpr float MissileSpeed = 360.0F;

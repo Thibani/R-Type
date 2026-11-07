@@ -22,7 +22,7 @@ std::uint8_t mask(const PadState& pad, const Settings& settings) noexcept
     bits |= vertical > 0 ? input::Down : 0U;
 
     constexpr std::array<std::uint8_t, ActionCount> actionBits{
-        input::Up, input::Down, input::Left, input::Right, input::Fire};
+        input::Up, input::Down, input::Left, input::Right, input::Fire, input::Pod};
     for (std::size_t action = 0; action < ActionCount; ++action) {
         const auto button = settings.buttons.at(action);
         if (button && *button < MaxButtons && ((pad.buttons >> *button) & 1U) != 0) {

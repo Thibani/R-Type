@@ -815,7 +815,7 @@ TEST(Session, SnapshotsCarryEveryShip)
         std::set<std::uint8_t> owners;
         for (const EntityState& state : snapshot->entities) {
             if (state.kind != EntityKind::PlayerShip) {
-                continue; // Bydos may already be there
+                continue; // Enemies may already be there
             }
             owners.insert(state.owner);
             EXPECT_EQ(state.health, game::ship::MaxHealth); // 3 hearts each
@@ -868,18 +868,18 @@ TEST(Session, LeavingShipIsDestroyedForTheOthers)
 
 // --- A first game (#61) ----------------------------------------------------------
 
-TEST(Session, FiringAndBydosReachTheClients)
+TEST(Session, FiringAndEnemiesReachTheClients)
 {
     // The whole chain over UDP: FIRE → missile spawned with its shooter, and
-    // Bydos entering the arena, as every client sees them
+    // enemies entering the arena, as every client sees them
     TestServer server;
     TestClient client(server.address());
     (void)connectOrFail(server, client, "Thibani");
 
     std::optional<EntitySpawn> missile;
-    std::optional<EntitySpawn> bydo;
+    std::optional<EntitySpawn> enemy;
     std::optional<GameState> state;
-    for (int frame = 0; frame < 200 && !(missile && bydo && state); ++frame) {
+    for (int frame = 0; frame < 200 && !(missile && enemy && state); ++frame) {
         client.send(Input{.firstTick = static_cast<std::uint32_t>(frame + 1),
             .count = 1,
             .masks = {input::Fire},
@@ -890,8 +890,9 @@ TEST(Session, FiringAndBydosReachTheClients)
         while (auto spawn = client.take<EntitySpawn>()) {
             if (spawn->kind == EntityKind::PlayerMissile) {
                 missile = spawn;
-            } else if (spawn->kind == EntityKind::Bydo) {
-                bydo = spawn;
+            } else if (spawn->kind != EntityKind::PlayerShip
+                && spawn->kind != EntityKind::EnemyMissile) {
+                enemy = spawn; // Whichever enemy came first
             }
         }
         if (const auto received = client.take<GameState>()) {
@@ -902,8 +903,8 @@ TEST(Session, FiringAndBydosReachTheClients)
     ASSERT_TRUE(missile.has_value()) << "no missile fired";
     EXPECT_EQ(missile->owner, 0);
     EXPECT_GT(missile->vx, 0);
-    ASSERT_TRUE(bydo.has_value()) << "no Bydo arrived";
-    EXPECT_EQ(bydo->owner, NoPlayer);
+    ASSERT_TRUE(enemy.has_value()) << "no enemy arrived";
+    EXPECT_EQ(enemy->owner, NoPlayer);
     ASSERT_TRUE(state.has_value());
     EXPECT_EQ(state->phase, GamePhase::Running);
 }

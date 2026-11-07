@@ -6,25 +6,39 @@
 #include "game/Systems/DespawnSystem.hpp"
 #include "game/Systems/MovementSystem.hpp"
 #include "server/Components/Combat.hpp"
+#include "server/Components/Gadgets.hpp"
 #include "server/Singleton.hpp"
-#include "server/Systems/BydoAimSystem.hpp"
-#include "server/Systems/BydoMovementSystem.hpp"
-#include "server/Systems/BydoSpawnSystem.hpp"
+#include "server/Systems/AimSystem.hpp"
+#include "server/Systems/BossSystem.hpp"
+#include "server/Systems/CircleFlightSystem.hpp"
 #include "server/Systems/ConnectionSystem.hpp"
 #include "server/Systems/DamageSystem.hpp"
+#include "server/Systems/DeathBurstSystem.hpp"
 #include "server/Systems/DiscardPacketsSystem.hpp"
+#include "server/Systems/DropSystem.hpp"
+#include "server/Systems/ForceSystem.hpp"
+#include "server/Systems/HopSystem.hpp"
+#include "server/Systems/HoverSystem.hpp"
 #include "server/Systems/InputSystem.hpp"
+#include "server/Systems/LivesSystem.hpp"
 #include "server/Systems/LoginSystem.hpp"
+#include "server/Systems/MatchSystem.hpp"
 #include "server/Systems/NetReceiveSystem.hpp"
 #include "server/Systems/NetSendSystem.hpp"
+#include "server/Systems/PickupSystem.hpp"
 #include "server/Systems/PlayerControlSystem.hpp"
 #include "server/Systems/PlayerShipSystem.hpp"
+#include "server/Systems/ProgressSystem.hpp"
 #include "server/Systems/ReplicationSystem.hpp"
+#include "server/Systems/RestartSystem.hpp"
+#include "server/Systems/SeekerSystem.hpp"
 #include "server/Systems/SessionCleanupSystem.hpp"
 #include "server/Systems/SessionReceiveSystem.hpp"
 #include "server/Systems/SnapshotSystem.hpp"
 #include "server/Systems/TickSystem.hpp"
 #include "server/Systems/TimeoutSystem.hpp"
+#include "server/Systems/WaveFlightSystem.hpp"
+#include "server/Systems/WaveSystem.hpp"
 #include "server/Systems/WeaponSystem.hpp"
 
 namespace server {
@@ -32,18 +46,31 @@ namespace server {
 void installSimulation(ecs::World& world)
 {
     (void)singleton<TeamScore>(world); // Created now: DamageSystem adds to it during events
+    (void)singleton<DropTable>(world); // Same: DropSystem rolls its dice during events
 
     world.systems().add<TickSystem>();
+    world.systems().add<MatchSystem>();
     world.systems().add<PlayerControlSystem>();
-    world.systems().add<BydoSpawnSystem>();
-    world.systems().add<BydoMovementSystem>();
-    world.systems().add<BydoAimSystem>();
+    world.systems().add<ProgressSystem>();
+    world.systems().add<BossSystem>(world);
+    world.systems().add<WaveSystem>();
+    world.systems().add<WaveFlightSystem>();
+    world.systems().add<SeekerSystem>();
+    world.systems().add<CircleFlightSystem>();
+    world.systems().add<HopSystem>();
+    world.systems().add<HoverSystem>();
+    world.systems().add<AimSystem>();
     world.systems().add<WeaponSystem>();
     world.systems().add<game::MovementSystem>();
     world.systems().add<game::ConfinementSystem>();
+    world.systems().add<ForceSystem>(world);
     world.systems().add<game::ArenaExitSystem>();
     world.systems().add<game::CollisionSystem>();
     world.systems().add<DamageSystem>(world);
+    world.systems().add<LivesSystem>(world);
+    world.systems().add<PickupSystem>(world);
+    world.systems().add<DeathBurstSystem>(world);
+    world.systems().add<DropSystem>(world);
     world.systems().add<game::DespawnSystem>(world);
 }
 
@@ -56,6 +83,7 @@ void installSystems(
     loop.frameStart().add<LoginSystem>(accounts);
     loop.frameStart().add<TimeoutSystem>();
     loop.frameStart().add<InputSystem>();
+    loop.frameStart().add<RestartSystem>();
     loop.frameStart().add<PlayerShipSystem>();
 
     installSimulation(world);

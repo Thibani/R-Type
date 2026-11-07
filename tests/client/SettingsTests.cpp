@@ -412,10 +412,10 @@ TEST(Focus, SettingsColumnsAreReachedSideways)
     const auto rows = settingsRows();
     const int moveUp = FirstKeyRow;
     const int fire = FirstKeyRow + static_cast<int>(Action::Fire);
-    const int moveRight = FirstKeyRow + static_cast<int>(Action::Right);
+    const int pod = FirstKeyRow + static_cast<int>(Action::Pod);
 
-    EXPECT_EQ(pushed(rows, ResetRow, 1, 0), moveRight); // Beside it, not further down
-    EXPECT_EQ(pushed(rows, fire, -1, 0), BackRow);
+    EXPECT_EQ(pushed(rows, ResetRow, 1, 0), fire); // Beside it, not further down
+    EXPECT_EQ(pushed(rows, pod, -1, 0), BackRow);
     EXPECT_EQ(pushed(rows, moveUp, -1, 0), VolumeRow);
     EXPECT_EQ(pushed(rows, InterfaceSizeRow, 0, 1), ResetRow);
     EXPECT_EQ(pushed(rows, ResetRow, 0, 1), BackRow);

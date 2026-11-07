@@ -13,6 +13,18 @@ enum class Look : std::uint8_t {
     Bydo,
     PlayerMissile,
     EnemyMissile,
+    PataPata,
+    Bug,
+    Cancer,
+    Cruiser,
+    Hopper,
+    Spinner,
+    Gunner,
+    Mine,
+    Boss,
+    Force,
+    ForceCapsule,
+    RepairKit,
     Unknown, // A kind added after this client was built: drawn as a "?" (§5.2)
 };
 
@@ -34,6 +46,30 @@ constexpr Look lookOf(network::protocol::EntityKind kind) noexcept
         return Look::PlayerMissile;
     case network::protocol::EntityKind::EnemyMissile:
         return Look::EnemyMissile;
+    case network::protocol::EntityKind::PataPata:
+        return Look::PataPata;
+    case network::protocol::EntityKind::Bug:
+        return Look::Bug;
+    case network::protocol::EntityKind::Cancer:
+        return Look::Cancer;
+    case network::protocol::EntityKind::Cruiser:
+        return Look::Cruiser;
+    case network::protocol::EntityKind::Hopper:
+        return Look::Hopper;
+    case network::protocol::EntityKind::Spinner:
+        return Look::Spinner;
+    case network::protocol::EntityKind::Gunner:
+        return Look::Gunner;
+    case network::protocol::EntityKind::Mine:
+        return Look::Mine;
+    case network::protocol::EntityKind::Boss:
+        return Look::Boss;
+    case network::protocol::EntityKind::Force:
+        return Look::Force;
+    case network::protocol::EntityKind::ForceCapsule:
+        return Look::ForceCapsule;
+    case network::protocol::EntityKind::RepairKit:
+        return Look::RepairKit;
     }
     return Look::Unknown;
 }
