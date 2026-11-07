@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <filesystem>
 #include <span>
 #include <string>
 #include <string_view>
@@ -11,6 +12,7 @@ namespace server {
 /// Command line of `r-type_server`.
 struct ServerOptions {
     std::uint16_t port{4242};
+    std::filesystem::path accountsFile{"accounts.txt"};
     bool help{false}; // -h / --help: print the usage and exit
 };
 

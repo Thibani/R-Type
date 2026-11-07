@@ -27,6 +27,8 @@ add_library(rtype_server
     Components/Waves.hpp
     Components/Match.hpp
     Components/Gadgets.hpp
+    AccountStore.hpp
+    AccountStore.cpp
     Spawn.hpp
     Spawn.cpp
     Run.hpp
@@ -38,6 +40,8 @@ add_library(rtype_server
     Systems/ConnectionSystem.cpp
     Systems/SessionReceiveSystem.hpp
     Systems/SessionReceiveSystem.cpp
+    Systems/LoginSystem.hpp
+    Systems/LoginSystem.cpp
     Systems/TimeoutSystem.hpp
     Systems/TimeoutSystem.cpp
     Systems/SessionCleanupSystem.hpp

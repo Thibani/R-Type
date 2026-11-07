@@ -20,7 +20,8 @@ enum class Screen : std::uint8_t {
 /// What the player asked for in the interface, done by the network systems.
 enum class Request : std::uint8_t {
     None,
-    Connect,
+    Login,
+    CreateAccount,
     Leave, // Back to the connection screen
     Restart, // A new game, after GAME OVER
     Quit, // Close the client
@@ -45,15 +46,16 @@ struct Session {
 
     // Connection form
     std::string name;
+    std::string password; // Forgotten once logged in
     std::string address;
     std::string port;
-    std::string status; // "Connecting... attempt 3 / 10"
+    std::string status; // "Connecting... attempt 3 / 10", "Logging in..."
     std::string error; // Why the last attempt or session failed
 
     // Game
     std::optional<std::uint8_t> playerId; // Ours, from CONNECT_ACCEPT
     std::array<PlayerSlot, network::protocol::MaxPlayers> players{};
-    // From CONNECT_ACCEPT to the next reliable event: the PLAYER_JOINED received
+    // From AUTH_RESULT to the next reliable event: the PLAYER_JOINED received
     // meanwhile are the players already there (§8.1), not arrivals to announce
     bool catchingUp{false};
     std::uint32_t score{0}; // Team score from GAME_STATE

@@ -55,6 +55,15 @@ float textWidth(const sf::Font& font, std::string_view text, unsigned size)
     return makeText(font, text, size, sf::Color::White).getLocalBounds().size.x;
 }
 
+unsigned fittedSize(const sf::Font& font, std::string_view text, unsigned size, float width)
+{
+    constexpr unsigned smallest = 9;
+    while (size > smallest && textWidth(font, text, size) > width) {
+        --size;
+    }
+    return size;
+}
+
 void text(sf::RenderTarget& target, const sf::Font& font, std::string_view text, unsigned size,
     sf::Color colour, sf::Vector2f position)
 {
@@ -92,6 +101,25 @@ void button(sf::RenderTarget& target, const Assets& assets, sf::FloatRect rect,
     }
 }
 
+namespace {
+
+/// The end of `value` that fits in `width`: a field scrolls with what is typed.
+std::string_view endThatFits(
+    const sf::Font& font, std::string_view value, unsigned size, float width)
+{
+    const auto isContinuation
+        = [](char c) { return (static_cast<unsigned char>(c) & 0xC0U) == 0x80U; };
+    while (!value.empty() && textWidth(font, value, size) > width) {
+        value.remove_prefix(1);
+        while (!value.empty() && isContinuation(value.front())) { // Whole UTF-8 characters only
+            value.remove_prefix(1);
+        }
+    }
+    return value;
+}
+
+} // namespace
+
 void field(sf::RenderTarget& target, const Assets& assets, sf::FloatRect rect,
     std::string_view label, std::string_view value, bool focused)
 {
@@ -99,9 +127,10 @@ void field(sf::RenderTarget& target, const Assets& assets, sf::FloatRect rect,
         target, assets.bodyBold, label, 16, theme::Text, rect.position - sf::Vector2f{0.0F, 28.0F});
     box(target, rect, theme::InputBackground, focused ? theme::Blue : theme::Hull, 3.0F);
     const sf::Vector2f inside = rect.position + sf::Vector2f{14.0F, 14.0F};
-    text(target, assets.body, value, 19, theme::Text, inside);
+    const std::string_view shown = endThatFits(assets.body, value, 19, rect.size.x - 34.0F);
+    text(target, assets.body, shown, 19, theme::Text, inside);
     if (focused) {
-        const float caretX = inside.x + textWidth(assets.body, value, 19) + 3.0F;
+        const float caretX = inside.x + textWidth(assets.body, shown, 19) + 3.0F;
         fillRect(
             target, {{caretX, rect.position.y + 10.0F}, {3.0F, rect.size.y - 20.0F}}, theme::Blue);
     }

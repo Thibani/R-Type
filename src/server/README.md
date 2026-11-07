@@ -6,13 +6,14 @@ clients comply with.
 | File                                | Content                                                  |
 |-------------------------------------|----------------------------------------------------------|
 | `main.cpp`                          | Entry point: options, network thread, World, GameLoop, Ctrl+C |
-| `ServerOptions.hpp`                 | Command line parsing (`-p`, `-h`)                        |
+| `ServerOptions.hpp`                 | Command line parsing (`-p`, `--accounts`, `-h`)          |
+| `AccountStore.hpp`                  | The accounts, in memory and in their file (no ECS, no network) |
 | `ServerSystems.hpp`                 | `installSystems()`: every system, in order; `installSimulation()` |
 | `Spawn.hpp`                         | The weapons as data (`weapons::`); create ships, Bydos, projectiles |
 | `Run.hpp`                           | `currentState()` (what GAME_STATE says), `startNewGame()` |
 | `Network.hpp`                       | Frame time → time point, send a packet, shutdown notice  |
 | `Components/ReceivedPacket.hpp`     | A valid packet received this frame; `IncompatibleClient` |
-| `Components/NetClient.hpp`          | A connected player's session; `Disconnecting`            |
+| `Components/NetClient.hpp`          | A session; `LoggedIn` (part of the game); `Disconnecting` |
 | `Components/ClientMessage.hpp`      | A game payload from a connected player                   |
 | `Components/Player.hpp`             | `PlayerInput`, `RespawnTimer`, `Eliminated` (on the player), `PlayerShip` (on the ship) |
 | `Components/Match.hpp`              | `Match`: game running or over, team lives left           |
@@ -26,6 +27,7 @@ clients comply with.
 | `Systems/NetReceiveSystem.hpp`      | Received datagrams → `ReceivedPacket`, rate limit, drops malformed |
 | `Systems/ConnectionSystem.hpp`      | CONNECT_REQUEST → session + ACCEPT, or REJECT            |
 | `Systems/SessionReceiveSystem.hpp`  | Packets → their session's channel → `ClientMessage`      |
+| `Systems/LoginSystem.hpp`           | AUTH_REQUEST → password hashed on its own thread → AUTH_RESULT, player admitted |
 | `Systems/TimeoutSystem.hpp`         | Silent for 5 s → `Disconnecting`                         |
 | `Systems/SessionCleanupSystem.hpp`  | `Disconnecting` → PLAYER_LEFT to the others, entity gone |
 | `Systems/InputSystem.hpp`           | INPUT → the player's `PlayerInput`                       |
@@ -62,7 +64,8 @@ use the systems directly.
 
 ## Startup and shutdown
 
-1. Parse the command line. Invalid → usage on stderr, exit 84.
+1. Parse the command line. Invalid → usage on stderr, exit 84. Then load the
+   accounts file. It cannot be read or written → message, exit 84.
 2. Open the `NetworkThread` on the port: it binds the UDP socket and starts
    the network thread. Port in use → message, exit 84.
 3. Build an `ecs::World` and an `ecs::GameLoop` that sleeps between steps
@@ -72,10 +75,11 @@ use the systems directly.
 6. Queue DISCONNECT (SERVER_SHUTDOWN) 3 times for every client, then stop the
    network thread: it sends them first, then is joined. Exit 0.
 
-**Two threads.** The game runs on the main thread, which owns the whole
+**Threads.** The game runs on the main thread, which owns the whole
 `ecs::World`; the network thread only moves datagrams, so the game never
-waits for clients. Every system runs on the game thread and none takes a
-lock. See `docs/technical-study/network.md` §7.
+waits for clients. `LoginSystem` hashes passwords on a short-lived thread that
+only receives copies and returns a hash. Every system runs on the game thread
+and none takes a lock. See `docs/technical-study/network.md` §7.
 
 Any exception that escapes is caught in `main`: message on stderr, exit 84.
 
@@ -87,6 +91,7 @@ Any exception that escapes is caught in `main`: message on stderr, exit 84.
 frameStart()  NetReceiveSystem        network thread inbox → ReceivedPacket / IncompatibleClient
               ConnectionSystem        CONNECT_REQUEST → NetClient entity, ACCEPT / REJECT
               SessionReceiveSystem    packet → its session's channel → ClientMessage
+              LoginSystem             AUTH_REQUEST → account checked, player admitted (LoggedIn)
               TimeoutSystem           silent session → Disconnecting
               InputSystem             ClientMessage (INPUT) → the player's PlayerInput
               RestartSystem           ClientMessage (RESTART) after GAME OVER → new game
@@ -370,7 +375,8 @@ instantly.
 | Packet only servers may send | Rejected by `decode(…, ClientToServer)`                    |
 | Flood from one address      | 120 datagrams per second and per address, the rest dropped  |
 | Flood from everywhere       | The network thread queues 1024 datagrams at most; the rest is dropped, counted |
-| Injection into a session    | Address *and* random 32-bit token must match                |
+| Injection into a session    | Address, token *and* session key must match: anything not sealed with the key is dropped |
+| Reading, modifying or replaying packets | Every packet of a session is encrypted (protocol §3.3) |
 | Reflection / amplification  | A REJECT (21 bytes) only answers a request at least as large |
 | Guessable tokens            | `std::random_device`, backed by the OS secure generator     |
 

@@ -1,5 +1,6 @@
 #include "client/Network/ServerConnection.hpp"
 
+#include "network/Crypto/SealedDatagram.hpp"
 #include "network/Protocol/PacketCodec.hpp"
 
 #include <asio/io_context.hpp>
@@ -29,13 +30,15 @@ ServerConnection::ServerConnection(network::UdpSocket socket) noexcept
 }
 
 void ServerConnection::connect(
-    std::string_view host, std::uint16_t port, std::string name, Clock::time_point now)
+    std::string_view host, std::uint16_t port, Credentials credentials, Clock::time_point now)
 {
     _channel = network::ReliableChannel(0); // A new session starts from sequence 0
     _accepted.reset();
     _token = 0;
+    _cipher.reset();
+    _keys = network::crypto::generateKeyPair(); // A new key for each session
     _attempts = 0;
-    _name = std::move(name);
+    _credentials = std::move(credentials);
 
     // Synchronous and done once per click: a name like "localhost" also works
     asio::io_context context;
@@ -61,14 +64,22 @@ std::vector<Payload> ServerConnection::receive(Clock::time_point now)
         if (!received || !*received) {
             break; // Socket error or nothing left this frame
         }
-        if (_status != Status::Connecting && _status != Status::Connected) {
+        if (_status == Status::Idle || _status == Status::Failed) {
             continue; // No session: drain and ignore
         }
         if ((*received)->from != _server) {
             continue; // Only the server we talk to may speak
         }
-        const auto packet
-            = decode(std::span(buffer).first((*received)->size), Direction::ServerToClient);
+        std::span<const std::byte> datagram = std::span(buffer).first((*received)->size);
+        DatagramBuffer opened{};
+        if (_cipher) { // Connected: whatever is not sealed with our key is not the server
+            const auto size = network::crypto::openDatagram(*_cipher, datagram, opened);
+            if (!size) {
+                continue;
+            }
+            datagram = std::span(opened).first(*size);
+        }
+        const auto packet = decode(datagram, Direction::ServerToClient);
         if (!packet) {
             continue; // §7: a malformed datagram changes nothing
         }
@@ -93,13 +104,23 @@ void ServerConnection::handle(
         if (accept == nullptr || packet.sessionToken == 0) {
             return; // Anything else waits: the server resends it until acknowledged
         }
+        const auto sessionKey = network::crypto::deriveSessionKey(
+            _keys, accept->publicKey, network::crypto::Role::Client);
+        if (!sessionKey) {
+            fail(Failure::Kind::ProtocolError);
+            return;
+        }
+        _cipher.emplace(*sessionKey, network::crypto::Role::Client);
+        _keys = {}; // The secret key has done its job
         _token = packet.sessionToken;
         _channel.setSessionToken(_token);
         _accepted = *accept;
-        _status = Status::Connected;
+        _status = Status::LoggingIn;
         _lastReceived = now;
         // Only so that our next packets acknowledge it; the payload was handled here
         [[maybe_unused]] const auto delivered = _channel.receive(packet, now);
+        _attempts = 0;
+        sendLogin(now);
         return;
     }
 
@@ -120,11 +141,28 @@ void ServerConnection::handle(
             fail(Failure::Kind::Disconnected);
             return;
         }
-        if (std::holds_alternative<Heartbeat>(payload)
-            || std::holds_alternative<ConnectAccept>(payload)) {
-            continue; // Keep-alive, or a repeated ACCEPT: nothing for the game
+        if (std::holds_alternative<Heartbeat>(payload)) {
+            continue; // Keep-alive: nothing for the game
         }
-        payloads.push_back(std::move(payload));
+        if (const auto* result = std::get_if<AuthResult>(&payload)) {
+            if (_status != Status::LoggingIn) {
+                continue;
+            }
+            _credentials.password.clear();
+            if (result->code != AuthCode::Ok) {
+                sendDisconnect(DisconnectReason::Quit, now); // Frees the player slot at once
+                _failure.auth = result->code;
+                fail(Failure::Kind::AuthFailed);
+                return;
+            }
+            _status = Status::Connected;
+            continue;
+        }
+        if (_status == Status::Connected) {
+            // Before AUTH_RESULT only a snapshot can arrive, not meant for us yet:
+            // a reliable event cannot, since AUTH_RESULT is the first of them
+            payloads.push_back(std::move(payload));
+        }
     }
 }
 
@@ -135,6 +173,16 @@ void ServerConnection::update(Clock::time_point now)
             fail(Failure::Kind::NoAnswer);
         } else {
             sendRequest(now);
+        }
+    } else if (_status == Status::LoggingIn) {
+        if (now - _lastReceived >= Timeout) {
+            fail(Failure::Kind::ConnectionLost);
+        } else if (now - _lastSent >= RetryDelay) {
+            if (_attempts >= MaxLoginAttempts) {
+                fail(Failure::Kind::NoAnswer);
+            } else {
+                sendLogin(now);
+            }
         }
     } else if (_status == Status::Connected) {
         if (now - _lastReceived >= Timeout) {
@@ -166,12 +214,14 @@ void ServerConnection::disconnect(Clock::time_point now)
 {
     sendDisconnect(DisconnectReason::Quit, now);
     _status = Status::Idle;
+    _credentials.password.clear();
     _accepted.reset();
+    _cipher.reset();
 }
 
 void ServerConnection::sendDisconnect(DisconnectReason reason, Clock::time_point now)
 {
-    if (_status != Status::Connected) {
+    if (_status != Status::Connected && _status != Status::LoggingIn) {
         return;
     }
     for (int i = 0; i < DisconnectRepeats; ++i) {
@@ -212,7 +262,16 @@ void ServerConnection::send(const Packet& packet, Clock::time_point now)
     if (!size) {
         return; // Our own payload is invalid: nothing sensible to send
     }
-    if (!_socket.sendTo(std::span(buffer).first(*size), _server)) {
+    std::span<const std::byte> datagram = std::span(buffer).first(*size);
+    DatagramBuffer sealed{};
+    if (_cipher) {
+        const auto sealedSize = network::crypto::sealDatagram(*_cipher, datagram, sealed);
+        if (!sealedSize) {
+            return; // Our own packet is too large: nothing sensible to send
+        }
+        datagram = std::span(sealed).first(*sealedSize);
+    }
+    if (!_socket.sendTo(datagram, _server)) {
         return; // Lost, as UDP allows: the next packet or retry makes up for it
     }
     _lastSent = now;
@@ -220,8 +279,19 @@ void ServerConnection::send(const Packet& packet, Clock::time_point now)
 
 void ServerConnection::sendRequest(Clock::time_point now)
 {
-    send(_channel.wrap(ConnectRequest{.name = _name}, now), now);
+    send(
+        _channel.wrap(ConnectRequest{.name = _credentials.name, .publicKey = _keys.publicKey}, now),
+        now);
     _lastSent = now; // Even if the OS refused it: retry in 500 ms, not at once
+    ++_attempts;
+}
+
+void ServerConnection::sendLogin(Clock::time_point now)
+{
+    send(_channel.wrap(
+             AuthRequest{.mode = _credentials.mode, .password = _credentials.password}, now),
+        now);
+    _lastSent = now;
     ++_attempts;
 }
 
@@ -229,7 +299,9 @@ void ServerConnection::fail(Failure::Kind kind)
 {
     _status = Status::Failed;
     _failure.kind = kind;
+    _credentials.password.clear();
     _accepted.reset();
+    _cipher.reset();
 }
 
 std::string describe(const ServerConnection::Failure& failure)
@@ -244,6 +316,23 @@ std::string describe(const ServerConnection::Failure& failure)
         return "Connection lost: no news from the server for 5 seconds.";
     case Kind::ProtocolError:
         return "The server sent invalid data.";
+    case Kind::AuthFailed:
+        switch (failure.auth) {
+        case AuthCode::Ok: // Not a failure: never reported
+        case AuthCode::WrongCredentials:
+            return "Wrong name or password.";
+        case AuthCode::NameTaken:
+            return "This name is already taken.";
+        case AuthCode::AlreadyConnected:
+            return "This account is already in the game.";
+        case AuthCode::InvalidPassword:
+            return "The password must have 8 to 64 characters.";
+        case AuthCode::InvalidName:
+            return "The server refused this name.";
+        case AuthCode::ServerError:
+            return "The server could not handle your account.";
+        }
+        break;
     case Kind::Rejected:
         switch (failure.reject) {
         case RejectReason::ServerFull:

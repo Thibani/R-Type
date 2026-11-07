@@ -87,7 +87,7 @@ void ReplicationSystem::update(ecs::World& world, const ecs::Time& time)
     const TimePoint now = toTimePoint(time);
     const bool scoreDue = !_lastScoreUpdate || now - *_lastScoreUpdate >= ScoreUpdateInterval;
     bool scoreSent = false;
-    world.query<NetClient>([&](ecs::Entity /*entity*/, NetClient& client) {
+    world.query<NetClient, LoggedIn>([&](ecs::Entity /*entity*/, NetClient& client, LoggedIn&) {
         for (const PlayerDied& death : _deaths) {
             client.channel.queueReliable(death);
         }

@@ -1,9 +1,11 @@
 // The settings file and the key bindings: no window, files in a temporary folder.
 
 #include "client/Components/Settings.hpp"
+#include "client/Gamepad.hpp"
 #include "client/Settings.hpp"
 #include "client/Singleton.hpp"
 #include "client/Systems/SettingsSystem.hpp"
+#include "client/Ui/Layout.hpp"
 #include "client/Ui/Theme.hpp"
 #include "ecs/Time/Time.hpp"
 #include "ecs/World/World.hpp"
@@ -130,6 +132,24 @@ TEST(Settings, GarbageGivesTheDefaults)
 
     EXPECT_EQ(settings.volume, Settings{}.volume);
     EXPECT_EQ(settings.keys, Settings::DefaultKeys);
+}
+
+TEST(Settings, InterfaceSizeIsReadBack)
+{
+    Settings settings;
+    settings.interfaceSize = 150;
+
+    const std::string text = client::formatSettings(settings);
+
+    EXPECT_NE(text.find("interface = 150"), std::string::npos);
+    EXPECT_EQ(client::parseSettings(text).interfaceSize, 150);
+}
+
+TEST(Settings, UnknownInterfaceSizeKeepsTheDefault)
+{
+    for (const char* text : {"interface = 110", "interface = 0", "interface = big", "interface = -75"}) {
+        EXPECT_EQ(client::parseSettings(text).interfaceSize, Settings{}.interfaceSize) << text;
+    }
 }
 
 TEST(Settings, ColourModeIsReadBack)
@@ -287,6 +307,247 @@ TEST(ColourModes, TintKeepsTheDetailsOfASprite)
     expectDarkToLight({{0xFF, 0xBD, 0x00}, {0xFF, 0xDE, 0x00}, {0xFF, 0xFF, 0x7B}}, {0xFF, 0xBD, 0x00});
     // The body of the Bydo
     expectDarkToLight({{0x52, 0x00, 0x00}, {0x6B, 0x08, 0x00}, {0xCE, 0x08, 0x00}, {0xFF, 0x63, 0x5A}, {0xFF, 0xA5, 0x9C}}, {0xCE, 0x08, 0x00});
+}
+
+// --- Interface size ---------------------------------------------------------------
+
+namespace {
+
+bool contains(sf::FloatRect outer, sf::FloatRect inner)
+{
+    return inner.position.x >= outer.position.x && inner.position.y >= outer.position.y
+        && inner.position.x + inner.size.x <= outer.position.x + outer.size.x
+        && inner.position.y + inner.size.y <= outer.position.y + outer.size.y;
+}
+
+} // namespace
+
+TEST(InterfaceSize, DefaultShowsTheWholeCanvas)
+{
+    const sf::FloatRect area = client::layout::visibleArea(client::Session{}, 100);
+
+    EXPECT_EQ(area.position, (sf::Vector2f{0.0F, 0.0F}));
+    EXPECT_EQ(area.size, (sf::Vector2f{1280.0F, 720.0F}));
+}
+
+TEST(InterfaceSize, EverySizeKeepsTheCanvasRatio)
+{
+    for (const int size : Settings::InterfaceSizes) {
+        const sf::FloatRect area = client::layout::visibleArea(client::Session{}, size);
+        EXPECT_NEAR(area.size.x / area.size.y, 16.0F / 9.0F, 0.001F) << size;
+    }
+}
+
+TEST(InterfaceSize, EveryControlStaysVisibleAtEverySize)
+{
+    using client::Screen;
+    using client::Session;
+    for (const int size : Settings::InterfaceSizes) {
+        for (const Screen screen : {Screen::Connect, Screen::WaitingRoom, Screen::Game, Screen::GameOver}) {
+            for (const bool menu : {false, true}) {
+                for (const bool settings : {false, true}) {
+                    Session session;
+                    session.screen = screen;
+                    session.menuOpen = menu;
+                    session.settingsOpen = settings;
+                    const sf::FloatRect area = client::layout::visibleArea(session, size);
+                    for (const sf::FloatRect control : client::layout::focusables(session, size)) {
+                        EXPECT_TRUE(contains(area, control))
+                            << "size " << size << ", screen " << static_cast<int>(screen);
+                    }
+                }
+            }
+        }
+    }
+}
+
+TEST(InterfaceSize, PanelsStayVisibleAtEverySize)
+{
+    using namespace client::layout;
+    for (const int size : Settings::InterfaceSizes) {
+        client::Session session;
+        EXPECT_TRUE(contains(visibleArea(session, size), ConnectPanel)) << size;
+        session.screen = client::Screen::Game;
+        EXPECT_TRUE(contains(visibleArea(session, size), MenuPanel)) << size;
+        session.settingsOpen = true;
+        EXPECT_TRUE(contains(visibleArea(session, size), SettingsPanel)) << size;
+    }
+}
+
+TEST(InterfaceSize, SettingsRowsNeverOverlapAndStayInThePanel)
+{
+    using namespace client::layout;
+    for (int a = 0; a <= BackRow; ++a) {
+        EXPECT_TRUE(contains(SettingsPanel, settingsRow(a))) << a;
+        for (int b = a + 1; b <= BackRow; ++b) {
+            EXPECT_FALSE(settingsRow(a).findIntersection(settingsRow(b)).has_value()) << a << " " << b;
+        }
+    }
+}
+
+// --- Moving the focus ---------------------------------------------------------------
+
+namespace {
+
+/// Where the focus lands after one push from `from`.
+int pushed(const std::vector<sf::FloatRect>& rects, int from, int dx, int dy)
+{
+    return client::layout::neighbour(rects, from, dx, dy);
+}
+
+std::vector<sf::FloatRect> settingsRows()
+{
+    std::vector<sf::FloatRect> rows;
+    for (int row = 0; row <= client::layout::BackRow; ++row) {
+        rows.push_back(client::layout::settingsRow(row));
+    }
+    return rows;
+}
+
+} // namespace
+
+TEST(Focus, SettingsColumnsAreReachedSideways)
+{
+    using namespace client::layout;
+    const auto rows = settingsRows();
+    const int moveUp = FirstKeyRow;
+    const int fire = FirstKeyRow + static_cast<int>(Action::Fire);
+    const int pod = FirstKeyRow + static_cast<int>(Action::Pod);
+
+    EXPECT_EQ(pushed(rows, ResetRow, 1, 0), fire); // Beside it, not further down
+    EXPECT_EQ(pushed(rows, pod, -1, 0), BackRow);
+    EXPECT_EQ(pushed(rows, moveUp, -1, 0), VolumeRow);
+    EXPECT_EQ(pushed(rows, InterfaceSizeRow, 0, 1), ResetRow);
+    EXPECT_EQ(pushed(rows, ResetRow, 0, 1), BackRow);
+}
+
+TEST(Focus, StopsAtTheEdges)
+{
+    using namespace client::layout;
+    const auto rows = settingsRows();
+
+    EXPECT_EQ(pushed(rows, VolumeRow, 0, -1), VolumeRow);
+    EXPECT_EQ(pushed(rows, VolumeRow, -1, 0), VolumeRow);
+    EXPECT_EQ(pushed(rows, BackRow, 0, 1), BackRow);
+}
+
+TEST(Focus, ConnectionFormIsAGrid)
+{
+    using namespace client::layout;
+    const auto form = focusables(client::Session{}, 100);
+
+    EXPECT_EQ(pushed(form, NameField, 1, 0), PasswordField);
+    EXPECT_EQ(pushed(form, PasswordField, 0, 1), PortField);
+    EXPECT_EQ(pushed(form, PortField, 0, 1), CreateAccountButton);
+    EXPECT_EQ(pushed(form, LoginButton, 0, 1), SettingsButton);
+    EXPECT_EQ(pushed(form, QuitButton, -1, 0), SettingsButton);
+}
+
+TEST(Focus, NothingToFocusLeavesItAlone)
+{
+    EXPECT_EQ(pushed({}, 0, 1, 0), 0);
+}
+
+// --- Gamepad -----------------------------------------------------------------------
+
+namespace {
+
+std::optional<unsigned> buttonOf(const Settings& settings, Action action)
+{
+    return settings.buttons.at(static_cast<std::size_t>(action));
+}
+
+} // namespace
+
+TEST(Gamepad, ButtonsAreReadBack)
+{
+    Settings settings;
+    ASSERT_TRUE(client::bindButton(settings, Action::Fire, 2));
+    ASSERT_TRUE(client::bindButton(settings, Action::Up, 11));
+
+    const std::string text = client::formatSettings(settings);
+    const Settings read = client::parseSettings(text);
+
+    EXPECT_NE(text.find("button.fire = 2"), std::string::npos);
+    EXPECT_NE(text.find("button.down = none"), std::string::npos);
+    EXPECT_EQ(read.buttons, settings.buttons);
+}
+
+TEST(Gamepad, BadButtonsKeepTheirDefault)
+{
+    for (const char* text : {"button.fire = 7", "button.fire = 32", "button.fire = -1", "button.fire = A"}) {
+        EXPECT_EQ(buttonOf(client::parseSettings(text), Action::Fire), 0U) << text;
+    }
+    EXPECT_FALSE(buttonOf(client::parseSettings("button.fire = none"), Action::Fire).has_value());
+}
+
+TEST(Gamepad, TwoActionsOnOneButtonResetTheButtons)
+{
+    const Settings settings = client::parseSettings("button.up = 3\nbutton.down = 3\nkey.fire = X\n");
+
+    EXPECT_EQ(settings.buttons, Settings::DefaultButtons);
+    EXPECT_EQ(keyOf(settings, Action::Fire), Key::X); // The keys are not touched
+}
+
+TEST(Gamepad, ABoundButtonIsSwapped)
+{
+    Settings settings; // Fire = 0
+
+    ASSERT_TRUE(client::bindButton(settings, Action::Up, 0));
+
+    EXPECT_EQ(buttonOf(settings, Action::Up), 0U);
+    EXPECT_FALSE(buttonOf(settings, Action::Fire).has_value()); // Fire gets Up's: none
+}
+
+TEST(Gamepad, StartCannotBeBound)
+{
+    Settings settings;
+
+    EXPECT_FALSE(client::bindButton(settings, Action::Fire, client::gamepad::StartButton));
+    EXPECT_FALSE(client::bindButton(settings, Action::Fire, client::gamepad::MaxButtons));
+    EXPECT_EQ(buttonOf(settings, Action::Fire), 0U);
+}
+
+TEST(Gamepad, StickAndDPadMoveTheShip)
+{
+    using client::gamepad::PadState;
+    namespace input = network::protocol::input;
+    const Settings settings;
+
+    EXPECT_EQ(client::gamepad::mask(PadState{.x = -100.0F}, settings), input::Left);
+    EXPECT_EQ(client::gamepad::mask(PadState{.x = 80.0F, .y = 80.0F}, settings), input::Right | input::Down);
+    EXPECT_EQ(client::gamepad::mask(PadState{.povX = 100.0F}, settings), input::Right);
+    // The D-pad's up, as SFML reports it on this system
+    EXPECT_EQ(client::gamepad::mask(PadState{.povY = client::gamepad::povY(-100.0F)}, settings), input::Up);
+}
+
+TEST(Gamepad, ARestingStickDoesNothing)
+{
+    using client::gamepad::PadState;
+    const Settings settings;
+
+    EXPECT_EQ(client::gamepad::mask(PadState{.x = 30.0F, .y = -45.0F}, settings), 0);
+    EXPECT_EQ(client::gamepad::mask(PadState{}, settings), 0);
+}
+
+TEST(Gamepad, BoundButtonsFireAndMove)
+{
+    using client::gamepad::PadState;
+    namespace input = network::protocol::input;
+    Settings settings; // Fire = 0
+    ASSERT_TRUE(client::bindButton(settings, Action::Up, 12)); // A D-pad reported as buttons
+
+    EXPECT_EQ(client::gamepad::mask(PadState{.buttons = 1U << 0U}, settings), input::Fire);
+    EXPECT_EQ(client::gamepad::mask(PadState{.buttons = 1U << 12U}, settings), input::Up);
+    EXPECT_EQ(client::gamepad::mask(PadState{.buttons = 1U << 5U}, settings), 0); // Unbound
+}
+
+TEST(Gamepad, DisconnectedPadIsAtRest)
+{
+    // No pad on the test machine: reading any of them must give a resting pad
+    for (unsigned joystick = 0; joystick < 8; ++joystick) {
+        EXPECT_EQ(client::gamepad::mask(client::gamepad::read(joystick), Settings{}), 0);
+    }
 }
 
 // --- Key bindings -----------------------------------------------------------------

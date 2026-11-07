@@ -2,20 +2,24 @@
 // network thread, and real clients talking over the loopback interface. Server time is driven by
 // GameLoop::runFrame, so a 5 second timeout takes no real time.
 
+#include "TemporaryFile.hpp"
 #include "ecs/Loop/GameLoop.hpp"
 #include "ecs/System/System.hpp"
 #include "ecs/World/World.hpp"
 #include "game/Components/Motion.hpp"
 #include "game/Ship.hpp"
+#include "network/Crypto/SealedDatagram.hpp"
 #include "network/Protocol/PacketCodec.hpp"
 #include "network/Reliability/ReliableChannel.hpp"
 #include "network/Transport/NetworkThread.hpp"
 #include "network/Transport/UdpSocket.hpp"
+#include "server/AccountStore.hpp"
 #include "server/Components/ClientMessage.hpp"
 #include "server/Components/NetClient.hpp"
 #include "server/Components/Player.hpp"
 #include "server/Network.hpp"
 #include "server/ServerSystems.hpp"
+#include "server/Systems/LoginSystem.hpp"
 #include "server/Systems/NetReceiveSystem.hpp"
 #include "server/Systems/SessionReceiveSystem.hpp"
 
@@ -27,11 +31,15 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <set>
 #include <span>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <variant>
@@ -66,6 +74,17 @@ std::unique_ptr<network::NetworkThread> openNetworkOrFail()
     return std::move(*network);
 }
 
+server::AccountStore loadOrFail(
+    const std::filesystem::path& file, network::crypto::PasswordCost cost)
+{
+    auto accounts = server::AccountStore::load(file, cost);
+    if (!accounts) {
+        ADD_FAILURE() << "cannot load the accounts: " << accounts.error();
+        std::abort();
+    }
+    return std::move(*accounts);
+}
+
 /// Copies the ClientMessages seen this frame, before they are discarded.
 class MessageRecorder final : public ecs::System {
 public:
@@ -88,9 +107,12 @@ private:
 
 class TestServer {
 public:
-    TestServer()
+    /// By default with its own empty accounts file, and the cheapest hash.
+    explicit TestServer(const std::filesystem::path* accountsFile = nullptr,
+        network::crypto::PasswordCost cost = testing_players::FastCost)
+        : _accounts(loadOrFail(accountsFile != nullptr ? *accountsFile : _ownFile.path(), cost))
     {
-        server::installSystems(_world, _loop, *_network);
+        server::installSystems(_world, _loop, *_network, _accounts);
         _loop.frameStart().add<MessageRecorder>(messages); // After every server system
     }
 
@@ -167,6 +189,8 @@ public:
     std::vector<Payload> messages; // ClientMessages, as gameplay would see them
 
 private:
+    testing_players::TemporaryFile _ownFile;
+    server::AccountStore _accounts;
     // Declared first, so destroyed last: the thread outlives the systems using it
     std::unique_ptr<network::NetworkThread> _network = openNetworkOrFail();
     ecs::World _world;
@@ -186,12 +210,39 @@ public:
         sendRaw(_channel.wrap(std::move(payload), ReliableChannel::Clock::now()));
     }
 
+    /// Sends `packet` as a real client would: sealed if it belongs to a session.
     void sendRaw(const Packet& packet)
+    {
+        const auto datagram = packet.sessionToken != 0 ? sealed(packet) : inClear(packet);
+        sendBytes(datagram);
+    }
+
+    /// The datagram of `packet`, without encryption.
+    [[nodiscard]]
+    static std::vector<std::byte> inClear(const Packet& packet)
     {
         DatagramBuffer buffer{};
         const auto size = encode(packet, buffer);
-        ASSERT_TRUE(size.has_value());
-        sendBytes(std::span(buffer).first(*size));
+        EXPECT_TRUE(size.has_value());
+        return {buffer.begin(), buffer.begin() + static_cast<std::ptrdiff_t>(size.value_or(0))};
+    }
+
+    /// The datagram of `packet`, sealed with this client's key (connected only).
+    [[nodiscard]]
+    std::vector<std::byte> sealed(const Packet& packet)
+    {
+        const auto plain = inClear(packet);
+        DatagramBuffer buffer{};
+        const auto size = network::crypto::sealDatagram(*_cipher, plain, buffer);
+        EXPECT_TRUE(size.has_value());
+        return {buffer.begin(), buffer.begin() + static_cast<std::ptrdiff_t>(size.value_or(0))};
+    }
+
+    /// The next packet of this session, not sent yet.
+    [[nodiscard]]
+    Packet wrap(Payload payload)
+    {
+        return _channel.wrap(std::move(payload), ReliableChannel::Clock::now());
     }
 
     void sendBytes(std::span<const std::byte> bytes)
@@ -201,7 +252,7 @@ public:
 
     void connect(const std::string& name)
     {
-        send(ConnectRequest{.name = name});
+        send(ConnectRequest{.name = name, .publicKey = keys.publicKey});
     }
 
     /// Reads every datagram waiting, in delivery order.
@@ -213,12 +264,34 @@ public:
             if (!received || !*received) {
                 return;
             }
-            const auto packet
-                = decode(std::span(buffer).first((*received)->size), Direction::ServerToClient);
+            std::span<const std::byte> datagram = std::span(buffer).first((*received)->size);
+            rawDatagrams.emplace_back(datagram.begin(), datagram.end());
+
+            // Only the connection answers travel in clear (§3.3)
+            const auto header = decodeHeader(datagram);
+            ASSERT_TRUE(header.has_value());
+            const bool connectionAnswer
+                = header->type == std::to_underlying(PacketType::ConnectAccept)
+                || header->type == std::to_underlying(PacketType::ConnectReject);
+            DatagramBuffer opened{};
+            if (!connectionAnswer) {
+                ASSERT_TRUE(_cipher.has_value()) << "sealed packet before CONNECT_ACCEPT";
+                const auto size = network::crypto::openDatagram(*_cipher, datagram, opened);
+                ASSERT_TRUE(size.has_value()) << "the server's packet cannot be opened";
+                datagram = std::span(opened).first(*size);
+            }
+
+            const auto packet = decode(datagram, Direction::ServerToClient);
             ASSERT_TRUE(packet.has_value()) << "the server sent an invalid packet";
-            if (std::holds_alternative<ConnectAccept>(packet->payload)) {
+            if (const auto* accept = std::get_if<ConnectAccept>(&packet->payload)) {
                 token = packet->sessionToken;
                 _channel.setSessionToken(token);
+                if (!_cipher) {
+                    const auto key = network::crypto::deriveSessionKey(
+                        keys, accept->publicKey, network::crypto::Role::Client);
+                    ASSERT_TRUE(key.has_value());
+                    _cipher.emplace(*key, network::crypto::Role::Client);
+                }
             }
             const auto payloads = _channel.receive(*packet, ReliableChannel::Clock::now());
             ASSERT_TRUE(payloads.has_value());
@@ -242,11 +315,14 @@ public:
 
     std::uint32_t token{0};
     std::vector<Payload> inbox;
+    std::vector<std::vector<std::byte>> rawDatagrams; // As they came off the network
+    network::crypto::KeyPair keys = network::crypto::generateKeyPair();
 
 private:
     UdpSocket _socket = openOrFail();
     Endpoint _server;
     ReliableChannel _channel;
+    std::optional<network::crypto::SessionCipher> _cipher;
 };
 
 /// Runs short server frames until `client` received a T (for up to a second).
@@ -271,12 +347,33 @@ void deliver(TestServer& server, float seconds = 0.001F)
     server.frame(seconds);
 }
 
-ConnectAccept connectOrFail(TestServer& server, TestClient& client, const std::string& name)
+constexpr std::string_view TestPassword = "correct horse";
+
+/// Up to CONNECT_ACCEPT: an encrypted session, not part of the game yet.
+ConnectAccept openSessionOrFail(TestServer& server, TestClient& client, const std::string& name)
 {
     client.connect(name);
     const auto accepted = waitFor<ConnectAccept>(server, client);
     EXPECT_TRUE(accepted.has_value()) << name << " was not accepted";
     return accepted.value_or(ConnectAccept{});
+}
+
+/// What the server answers to one AUTH_REQUEST.
+AuthCode authenticate(
+    TestServer& server, TestClient& client, AuthMode mode, std::string_view password = TestPassword)
+{
+    client.send(AuthRequest{.mode = mode, .password = std::string(password)});
+    const auto result = waitFor<AuthResult>(server, client);
+    EXPECT_TRUE(result.has_value()) << "no AUTH_RESULT";
+    return result.value_or(AuthResult{.code = AuthCode::ServerError}).code;
+}
+
+/// A new account and a player in the game, as most tests need.
+ConnectAccept connectOrFail(TestServer& server, TestClient& client, const std::string& name)
+{
+    const ConnectAccept accepted = openSessionOrFail(server, client, name);
+    EXPECT_EQ(authenticate(server, client, AuthMode::Register), AuthCode::Ok);
+    return accepted;
 }
 
 } // namespace
@@ -372,7 +469,7 @@ TEST(Session, OtherProtocolVersionIsRejected)
     };
     const auto size = encode(request, buffer);
     ASSERT_TRUE(size.has_value());
-    buffer[2] = std::byte{Version + 1}; // version byte: a client from the future
+    buffer[2] = static_cast<std::byte>(Version + 1); // version byte: a future client
 
     client.sendBytes(std::span(buffer).first(*size));
     const auto rejected = waitFor<ConnectReject>(server, client);
@@ -395,7 +492,7 @@ TEST(Session, RepeatedRequestGetsTheSameAccept)
         .sequence = 1,
         .ack = std::nullopt,
         .reliableId = 0,
-        .payload = ConnectRequest{.name = "Thibani"},
+        .payload = ConnectRequest{.name = "Thibani", .publicKey = client.keys.publicKey},
     });
     const auto second = waitFor<ConnectAccept>(server, client);
     ASSERT_TRUE(second.has_value());
@@ -403,6 +500,145 @@ TEST(Session, RepeatedRequestGetsTheSameAccept)
     EXPECT_EQ(*second, first);
     EXPECT_EQ(client.token, firstToken);
     EXPECT_EQ(server.sessionCount(), 1U);
+}
+
+// --- Encryption (§3.3) -----------------------------------------------------------
+
+TEST(SessionEncryption, EachSessionGetsItsOwnServerKey)
+{
+    TestServer server;
+    TestClient first(server.address());
+    TestClient second(server.address());
+
+    const ConnectAccept firstAccept = connectOrFail(server, first, "First");
+    const ConnectAccept secondAccept = connectOrFail(server, second, "Second");
+
+    EXPECT_NE(firstAccept.publicKey, secondAccept.publicKey);
+}
+
+TEST(SessionEncryption, InvalidClientKeyGetsNoSession)
+{
+    TestServer server;
+    TestClient client(server.address());
+    client.keys.publicKey = {}; // All zeros: the exchange would give a key anybody can compute
+
+    client.connect("Mallory");
+    deliver(server);
+    client.poll();
+
+    EXPECT_EQ(server.sessionCount(), 0U);
+    EXPECT_TRUE(client.inbox.empty());
+}
+
+TEST(SessionEncryption, RequestWithAnotherKeyDoesNotTakeOverTheSession)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)connectOrFail(server, client, "Thibani");
+    client.inbox.clear();
+
+    // Same address (anybody can fake it) but not the same key
+    const network::crypto::KeyPair attacker = network::crypto::generateKeyPair();
+    client.sendRaw(Packet{
+        .sessionToken = 0,
+        .sequence = 1,
+        .ack = std::nullopt,
+        .reliableId = 0,
+        .payload = ConnectRequest{.name = "Thibani", .publicKey = attacker.publicKey},
+    });
+    deliver(server);
+    client.poll();
+    EXPECT_FALSE(client.take<ConnectAccept>().has_value()) << "the attacker must not get an answer";
+
+    // The real client's key still works
+    client.send(Input{.firstTick = 1, .count = 1, .masks = {input::Right}});
+    deliver(server);
+    const server::PlayerInput* player = server.playerInput(0);
+    ASSERT_NE(player, nullptr);
+    EXPECT_EQ(player->lastTick, 1U);
+}
+
+TEST(SessionEncryption, PacketInClearIsDroppedEvenWithTheRightToken)
+{
+    // The token travels in clear, so an attacker knows it
+    TestServer server;
+    TestClient client(server.address());
+    (void)connectOrFail(server, client, "Thibani");
+
+    client.sendBytes(TestClient::inClear(
+        client.wrap(Input{.firstTick = 1, .count = 1, .masks = {input::Right}})));
+    deliver(server);
+
+    EXPECT_EQ(server.playerInput(0), nullptr) << "the input reached the player";
+    EXPECT_EQ(server.system<server::NetReceiveSystem>().droppedCount(), 1U);
+}
+
+TEST(SessionEncryption, ModifiedPacketIsDropped)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)connectOrFail(server, client, "Thibani");
+
+    auto datagram
+        = client.sealed(client.wrap(Input{.firstTick = 1, .count = 1, .masks = {input::Right}}));
+    datagram.back() ^= std::byte{0x01};
+    client.sendBytes(datagram);
+    deliver(server);
+
+    EXPECT_EQ(server.playerInput(0), nullptr) << "the input reached the player";
+    EXPECT_EQ(server.system<server::NetReceiveSystem>().droppedCount(), 1U);
+}
+
+TEST(SessionEncryption, ReplayedPacketIsDropped)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)connectOrFail(server, client, "Thibani");
+
+    const auto datagram
+        = client.sealed(client.wrap(Input{.firstTick = 1, .count = 1, .masks = {input::Right}}));
+    client.sendBytes(datagram);
+    client.sendBytes(datagram);
+    deliver(server);
+
+    const server::PlayerInput* player = server.playerInput(0);
+    ASSERT_NE(player, nullptr);
+    EXPECT_EQ(player->lastTick, 1U); // The first copy did arrive
+    EXPECT_EQ(server.system<server::NetReceiveSystem>().droppedCount(), 1U);
+}
+
+TEST(SessionEncryption, ForgedPacketsDoNotKeepASessionAlive)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)connectOrFail(server, client, "Thibani");
+
+    client.sendBytes(TestClient::inClear(client.wrap(Heartbeat{})));
+    deliver(server, 3.0F);
+    client.sendBytes(TestClient::inClear(client.wrap(Heartbeat{})));
+    deliver(server, 3.0F); // 6 seconds with only forged packets: more than the 5 s timeout
+    server.frame();
+
+    EXPECT_EQ(server.sessionCount(), 0U);
+}
+
+TEST(SessionEncryption, NothingOfTheGameIsReadableOnTheNetwork)
+{
+    TestServer server;
+    TestClient watcher(server.address());
+    (void)connectOrFail(server, watcher, "Watcher");
+    TestClient newcomer(server.address());
+    (void)connectOrFail(server, newcomer, "SecretName");
+
+    (void)waitFor<PlayerJoined>(server, watcher); // Carries the name "SecretName"
+    ASSERT_FALSE(watcher.rawDatagrams.empty());
+
+    const std::string_view name = "SecretName";
+    for (const auto& datagram : watcher.rawDatagrams) {
+        const std::string_view text(
+            reinterpret_cast<const char*>(datagram.data()), datagram.size());
+        EXPECT_EQ(text.find(name), std::string_view::npos);
+    }
 }
 
 // --- Inside a session -----------------------------------------------------------
@@ -476,13 +712,13 @@ TEST(Session, PacketWithAWrongTokenIsIgnored)
     TestClient client(server.address());
     (void)connectOrFail(server, client, "Thibani");
 
-    client.sendRaw(Packet{
+    client.sendBytes(TestClient::inClear(Packet{
         .sessionToken = client.token + 1,
         .sequence = 100,
         .ack = std::nullopt,
         .reliableId = 0,
         .payload = Input{.firstTick = 1, .count = 1, .masks = {}},
-    });
+    }));
     deliver(server);
 
     EXPECT_TRUE(server.messages.empty());
@@ -764,4 +1000,330 @@ TEST(Session, FloodingAddressIsRateLimited)
 
     EXPECT_EQ(server.system<server::NetReceiveSystem>().rateLimitedCount(),
         200 - server::NetReceiveSystem::MaxPacketsPerSecond);
+}
+
+// --- Accounts (§8.1, issue #73) -------------------------------------------------
+
+TEST(Login, CreatingAnAccountPutsThePlayerInTheGame)
+{
+    TestServer server;
+    TestClient client(server.address());
+
+    (void)openSessionOrFail(server, client, "Dave");
+    EXPECT_EQ(authenticate(server, client, AuthMode::Register), AuthCode::Ok);
+    server.frame();
+
+    EXPECT_EQ(server.shipCount(), 1U);
+}
+
+TEST(Login, CreatedAccountCanLogInAgain)
+{
+    TestServer server;
+    {
+        TestClient first(server.address());
+        (void)connectOrFail(server, first, "Dave");
+        first.send(Disconnect{.reason = DisconnectReason::Quit});
+        deliver(server);
+    }
+    TestClient second(server.address());
+
+    (void)openSessionOrFail(server, second, "Dave");
+
+    EXPECT_EQ(authenticate(server, second, AuthMode::Login), AuthCode::Ok);
+}
+
+TEST(Login, WrongPasswordIsRefused)
+{
+    TestServer server;
+    TestClient owner(server.address());
+    (void)connectOrFail(server, owner, "Dave");
+    TestClient other(server.address());
+    (void)openSessionOrFail(server, other, "Dave");
+
+    EXPECT_EQ(authenticate(server, other, AuthMode::Login, "not the password"),
+        AuthCode::WrongCredentials);
+    server.frame();
+
+    EXPECT_EQ(server.shipCount(), 1U);
+}
+
+TEST(Login, UnknownNameGetsTheSameAnswerAsAWrongPassword)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)openSessionOrFail(server, client, "Nobody");
+
+    EXPECT_EQ(authenticate(server, client, AuthMode::Login), AuthCode::WrongCredentials);
+    server.frame();
+
+    EXPECT_EQ(server.shipCount(), 0U);
+}
+
+TEST(Login, NameAlreadyTakenIsRefused)
+{
+    TestServer server;
+    TestClient owner(server.address());
+    (void)connectOrFail(server, owner, "Dave");
+    TestClient other(server.address());
+    (void)openSessionOrFail(server, other, "Dave");
+
+    EXPECT_EQ(authenticate(server, other, AuthMode::Register), AuthCode::NameTaken);
+}
+
+TEST(Login, ShortPasswordIsRefusedAtCreation)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)openSessionOrFail(server, client, "Dave");
+
+    EXPECT_EQ(
+        authenticate(server, client, AuthMode::Register, "1234567"), AuthCode::InvalidPassword);
+}
+
+TEST(Login, NameWithAControlCharacterIsRefusedAtCreation)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)openSessionOrFail(server, client, "Da\nve");
+
+    EXPECT_EQ(authenticate(server, client, AuthMode::Register), AuthCode::InvalidName);
+}
+
+TEST(Login, SecondConnectionToAnAccountIsRefused)
+{
+    TestServer server;
+    TestClient first(server.address());
+    (void)connectOrFail(server, first, "Dave");
+    TestClient second(server.address());
+    (void)openSessionOrFail(server, second, "Dave");
+
+    EXPECT_EQ(authenticate(server, second, AuthMode::Login), AuthCode::AlreadyConnected);
+    server.frame();
+
+    EXPECT_EQ(server.shipCount(), 1U);
+}
+
+TEST(Login, OnlyOneAttemptPerConnection)
+{
+    TestServer server;
+    TestClient owner(server.address());
+    (void)connectOrFail(server, owner, "Dave");
+    TestClient guesser(server.address());
+    (void)openSessionOrFail(server, guesser, "Dave");
+    ASSERT_EQ(
+        authenticate(server, guesser, AuthMode::Login, "first guess"), AuthCode::WrongCredentials);
+
+    guesser.send(AuthRequest{.mode = AuthMode::Login, .password = std::string(TestPassword)});
+
+    EXPECT_FALSE(waitFor<AuthResult>(server, guesser).has_value());
+}
+
+TEST(Login, RepeatedRequestGetsOneAnswer)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)openSessionOrFail(server, client, "Dave");
+    const AuthRequest request{.mode = AuthMode::Register, .password = std::string(TestPassword)};
+
+    client.send(request);
+    client.send(request); // The first one seems lost: the client sends it again
+    ASSERT_TRUE(waitFor<AuthResult>(server, client).has_value());
+
+    EXPECT_FALSE(waitFor<AuthResult>(server, client).has_value());
+}
+
+TEST(Login, AccountsSurviveAServerRestart)
+{
+    const testing_players::TemporaryFile file;
+    {
+        TestServer server(&file.path());
+        TestClient client(server.address());
+        (void)connectOrFail(server, client, "Dave");
+    }
+    TestServer restarted(&file.path());
+    TestClient client(restarted.address());
+    (void)openSessionOrFail(restarted, client, "Dave");
+
+    EXPECT_EQ(authenticate(restarted, client, AuthMode::Login), AuthCode::Ok);
+}
+
+TEST(Login, PasswordIsNeitherInTheFileNorOnTheNetwork)
+{
+    const testing_players::TemporaryFile file;
+    TestServer server(&file.path());
+    TestClient client(server.address());
+    (void)connectOrFail(server, client, "Dave");
+
+    std::ifstream input(file.path(), std::ios::binary);
+    const std::string content{
+        std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+    EXPECT_NE(content.find("Dave"), std::string::npos);
+    EXPECT_EQ(content.find(TestPassword), std::string::npos);
+
+    const auto datagram = client.sealed(
+        client.wrap(AuthRequest{.mode = AuthMode::Login, .password = std::string(TestPassword)}));
+    const auto* const bytes = reinterpret_cast<const char*>(datagram.data()); // NOLINT
+    EXPECT_EQ(std::string_view(bytes, datagram.size()).find(TestPassword), std::string_view::npos);
+}
+
+TEST(Login, EveryPasswordGivesARequestOfTheSameSize)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)openSessionOrFail(server, client, "Dave");
+
+    const auto sizeWith = [&](const std::string& password) {
+        return client
+            .sealed(client.wrap(AuthRequest{.mode = AuthMode::Login, .password = password}))
+            .size();
+    };
+
+    EXPECT_EQ(sizeWith("12345678"), sizeWith(std::string(64, 'x'))); // Its length stays hidden
+}
+
+TEST(Login, RequestInClearIsDropped)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)openSessionOrFail(server, client, "Dave");
+
+    client.sendBytes(TestClient::inClear(client.wrap(
+        AuthRequest{.mode = AuthMode::Register, .password = std::string(TestPassword)})));
+
+    EXPECT_FALSE(waitFor<AuthResult>(server, client).has_value());
+    EXPECT_EQ(server.shipCount(), 0U);
+}
+
+TEST(Login, NothingOfTheGameBeforeLoggingIn)
+{
+    TestServer server;
+    TestClient player(server.address());
+    (void)connectOrFail(server, player, "Dave");
+    TestClient stranger(server.address());
+    (void)openSessionOrFail(server, stranger, "Stranger");
+
+    stranger.send(Input{.firstTick = 1, .count = 1, .masks = {input::Fire}});
+    for (int i = 0; i < 50; ++i) {
+        server.frame(0.05F); // Enough time for snapshots and spawns
+        std::this_thread::sleep_for(1ms);
+        stranger.poll();
+    }
+
+    EXPECT_FALSE(stranger.take<Snapshot>().has_value());
+    EXPECT_FALSE(stranger.take<EntitySpawn>().has_value());
+    EXPECT_FALSE(stranger.take<PlayerJoined>().has_value());
+    EXPECT_FALSE(stranger.take<GameState>().has_value());
+    EXPECT_EQ(server.playerInput(1), nullptr);
+    EXPECT_EQ(server.shipCount(), 1U);
+    player.poll();
+    while (const auto joined = player.take<PlayerJoined>()) {
+        EXPECT_NE(joined->name, "Stranger");
+    }
+}
+
+TEST(Login, OthersLearnAboutAPlayerOnlyOnceLoggedIn)
+{
+    TestServer server;
+    TestClient first(server.address());
+    (void)connectOrFail(server, first, "One");
+    TestClient second(server.address());
+    (void)openSessionOrFail(server, second, "Two");
+    EXPECT_FALSE(waitFor<PlayerJoined>(server, first).has_value());
+
+    EXPECT_EQ(authenticate(server, second, AuthMode::Register), AuthCode::Ok);
+
+    const auto joined = waitFor<PlayerJoined>(server, first);
+    ASSERT_TRUE(joined.has_value());
+    EXPECT_EQ(joined->name, "Two");
+}
+
+TEST(Login, AuthResultComesBeforeEverythingElse)
+{
+    TestServer server;
+    TestClient first(server.address());
+    (void)connectOrFail(server, first, "One");
+    TestClient second(server.address());
+    (void)openSessionOrFail(server, second, "Two");
+
+    second.send(AuthRequest{.mode = AuthMode::Register, .password = std::string(TestPassword)});
+    const auto hasJoined = [&] {
+        return std::ranges::any_of(second.inbox,
+            [](const Payload& payload) { return std::holds_alternative<PlayerJoined>(payload); });
+    };
+    for (int i = 0; i < 1000 && !hasJoined(); ++i) {
+        server.frame();
+        second.poll();
+        std::this_thread::sleep_for(1ms);
+    }
+    ASSERT_TRUE(hasJoined());
+
+    // The inbox keeps the delivery order: the first event must be the result
+    const auto firstEvent = std::ranges::find_if(second.inbox, [](const Payload& payload) {
+        return !std::holds_alternative<Heartbeat>(payload)
+            && !std::holds_alternative<Snapshot>(payload);
+    });
+    ASSERT_NE(firstEvent, second.inbox.end());
+    EXPECT_TRUE(std::holds_alternative<AuthResult>(*firstEvent));
+}
+
+TEST(Login, LeavingBeforeLoggingInIsNotAnnounced)
+{
+    TestServer server;
+    TestClient player(server.address());
+    (void)connectOrFail(server, player, "Dave");
+    TestClient stranger(server.address());
+    (void)openSessionOrFail(server, stranger, "Stranger");
+
+    stranger.send(Disconnect{.reason = DisconnectReason::Quit});
+    deliver(server);
+    deliver(server);
+
+    EXPECT_EQ(server.sessionCount(), 1U);
+    EXPECT_FALSE(waitFor<PlayerLeft>(server, player).has_value());
+}
+
+TEST(Login, SessionWithoutLoginIsClosedAfterTheDelay)
+{
+    TestServer server;
+    TestClient stranger(server.address());
+    (void)openSessionOrFail(server, stranger, "Stranger");
+
+    // The heartbeats keep it alive: only the login delay can close it
+    const float seconds = std::chrono::duration<float>(server::LoginSystem::LoginTimeout).count();
+    for (int second = 0; second < static_cast<int>(seconds); ++second) {
+        EXPECT_EQ(server.sessionCount(), 1U) << second;
+        stranger.send(Heartbeat{});
+        std::this_thread::sleep_for(5ms);
+        server.frame(1.0F);
+    }
+    server.frame();
+
+    EXPECT_EQ(server.sessionCount(), 0U);
+    EXPECT_TRUE(waitFor<Disconnect>(server, stranger).has_value());
+}
+
+TEST(Login, TheGameDoesNotFreezeDuringTheHash)
+{
+    const testing_players::TemporaryFile file;
+    TestServer server(&file.path(), network::crypto::DefaultPasswordCost); // The real, slow hash
+    TestClient client(server.address());
+    (void)openSessionOrFail(server, client, "Dave");
+
+    const auto start = std::chrono::steady_clock::now();
+    client.send(AuthRequest{.mode = AuthMode::Register, .password = std::string(TestPassword)});
+    std::chrono::steady_clock::duration longestFrame{};
+    std::optional<AuthResult> result;
+    while (!result && std::chrono::steady_clock::now() - start < 30s) {
+        const auto before = std::chrono::steady_clock::now();
+        server.frame();
+        longestFrame = std::max(longestFrame, std::chrono::steady_clock::now() - before);
+        client.poll();
+        result = client.take<AuthResult>();
+        std::this_thread::sleep_for(1ms); // Each frame counts 1 ms: time passes as in real life
+    }
+    const auto total = std::chrono::steady_clock::now() - start;
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->code, AuthCode::Ok);
+    EXPECT_LT(longestFrame, total / 2); // Hashing on the game thread: one frame would take it all
 }

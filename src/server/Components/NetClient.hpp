@@ -1,5 +1,6 @@
 #pragma once
 
+#include "network/Crypto/Crypto.hpp"
 #include "network/Protocol/Packets.hpp"
 #include "network/Protocol/Protocol.hpp"
 #include "network/Reliability/ReliableChannel.hpp"
@@ -22,11 +23,20 @@ struct NetClient {
     std::uint8_t playerId{}; // 0..3, also the ship colour
     std::string name;
     network::ReliableChannel channel;
+    network::crypto::SessionCipher cipher; // Seals and opens every packet of the session
+    network::crypto::PublicKey clientPublicKey; // A request with another key is not this client
+    network::crypto::PublicKey serverPublicKey; // Repeated in every CONNECT_ACCEPT
+    network::ReliableChannel::Clock::time_point connectedAt; // For the login timeout
+    bool loginRequested{false}; // One attempt per connection
     network::ReliableChannel::Clock::time_point lastReceived; // For the 5 s timeout
     network::ReliableChannel::Clock::time_point lastSent; // For the 250 ms heartbeat
     std::set<std::uint16_t> knownEntities; // netIds sent in ENTITY_SPAWN, not destroyed since
     std::optional<network::protocol::GameState> knownState; // The last GAME_STATE it was sent
 };
+
+/// On a `NetClient` that has logged in to its account: only those are part of
+/// the game. Before that, the session only carries the login, encrypted.
+struct LoggedIn { };
 
 /// Marks a session to close at the end of the frame (`SessionCleanupSystem`),
 /// which tells the other players with PLAYER_LEFT.

@@ -20,8 +20,9 @@ void PlayerShipSystem::update(ecs::World& world, const ecs::Time& time)
 {
     std::array<bool, MaxPlayers> connected{};
     std::array<bool, MaxPlayers> hasShip{};
-    world.query<NetClient>(
-        [&](ecs::Entity /*entity*/, NetClient& client) { connected.at(client.playerId) = true; });
+    world.query<NetClient, LoggedIn>([&](ecs::Entity /*entity*/, NetClient& client, LoggedIn&) {
+        connected.at(client.playerId) = true;
+    });
 
     // Out of lives, or the game is over: no new ship until the next game
     const bool gameOver = singleton<Match>(world).phase != GamePhase::Running;

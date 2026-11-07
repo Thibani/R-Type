@@ -1,5 +1,6 @@
 #pragma once
 
+#include "network/Crypto/Crypto.hpp"
 #include "network/Protocol/Protocol.hpp"
 
 #include <array>
@@ -29,6 +30,7 @@ struct ConnectRequest {
     static constexpr bool Reliable = false;
 
     std::string name; // At most 16 bytes of valid UTF-8, no '\0'
+    crypto::PublicKey publicKey{}; // The client's half of the key exchange (§3.3)
 
     friend bool operator==(const ConnectRequest&, const ConnectRequest&) = default;
 };
@@ -42,6 +44,7 @@ struct ConnectAccept {
     std::uint8_t tickRate{};
     std::uint8_t snapshotRate{};
     std::uint8_t maxPlayers{};
+    crypto::PublicKey publicKey{}; // The server's half of the key exchange (§3.3)
 
     friend bool operator==(const ConnectAccept&, const ConnectAccept&) = default;
 };
@@ -72,6 +75,31 @@ struct Heartbeat {
     static constexpr bool Reliable = false;
 
     friend bool operator==(const Heartbeat&, const Heartbeat&) = default;
+};
+
+/// Logs in to an account or creates one, for the name of CONNECT_REQUEST.
+/// Always sealed. Sent again every 500 ms until AUTH_RESULT arrives.
+struct AuthRequest {
+    static constexpr PacketType Type = PacketType::AuthRequest;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = false;
+
+    AuthMode mode{AuthMode::Login};
+    std::string password; // At most 64 bytes of valid UTF-8, no '\0'
+
+    friend bool operator==(const AuthRequest&, const AuthRequest&) = default;
+};
+
+/// Reliable, and the session's first reliable message: the events that follow
+/// a successful login can never be delivered before it.
+struct AuthResult {
+    static constexpr PacketType Type = PacketType::AuthResult;
+    static constexpr Direction Way = Direction::ServerToClient;
+    static constexpr bool Reliable = true;
+
+    AuthCode code{AuthCode::Ok};
+
+    friend bool operator==(const AuthResult&, const AuthResult&) = default;
 };
 
 // --- Client -> server (§4.2) -------------------------------------------------
@@ -209,8 +237,8 @@ struct GameState {
 // --- Whole packet ------------------------------------------------------------
 
 using Payload = std::variant<ConnectRequest, ConnectAccept, ConnectReject, Disconnect, Heartbeat,
-    Input, Snapshot, EntitySpawn, EntityDestroy, PlayerJoined, PlayerLeft, PlayerDied, GameState,
-    Restart>;
+    AuthRequest, AuthResult, Input, Snapshot, EntitySpawn, EntityDestroy, PlayerJoined, PlayerLeft,
+    PlayerDied, GameState, Restart>;
 
 /// Acknowledgement carried by a packet (HAS_ACK flag, §6.1).
 struct Ack {

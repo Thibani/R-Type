@@ -38,11 +38,12 @@ sf::Angle heading(const Appearance& appearance, const game::Velocity* velocity)
     return sf::radians(std::atan2(velocity->dy, velocity->dx));
 }
 
-void drawEntity(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
+void drawEntity(sf::RenderTarget& target, const Assets& assets, const Settings& settings,
     const game::Position& position, const Appearance& appearance, sf::Angle rotation, float seconds)
 {
     const sf::Vector2f centre{position.x, position.y};
-    const auto frame = spriteFrame(assets, mode, appearance.look, appearance.player, seconds);
+    const auto frame
+        = spriteFrame(assets, settings.colourMode, appearance.look, appearance.player, seconds);
     if (!frame) {
         // §5.2: a kind this client does not know is shown, never a crash
         const sf::Vector2f half{PlaceholderSize / 2.0F, PlaceholderSize / 2.0F};
@@ -59,9 +60,12 @@ void drawEntity(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
     target.draw(sprite);
 
     if (appearance.look == Look::PlayerShip && appearance.player < theme::Players.size()) {
-        const float above = static_cast<float>(frame->rect.size.y) * frame->scale / 2.0F + 22.0F;
+        // The tag is interface: it follows the interface size, not the arena
+        const unsigned size = 20U * static_cast<unsigned>(settings.interfaceSize) / 100U;
+        const float above = (static_cast<float>(frame->rect.size.y) * frame->scale / 2.0F)
+            + static_cast<float>(size) + 2.0F;
         widgets::tag(target, assets, "P" + std::to_string(appearance.player + 1),
-            centre - sf::Vector2f{0.0F, above}, 20);
+            centre - sf::Vector2f{0.0F, above}, size);
     }
 }
 
@@ -95,12 +99,12 @@ void RenderSystem::update(ecs::World& world, const ecs::Time& time)
             _window.draw(dot);
         });
 
-    const ColourMode mode = singleton<Settings>(world).colourMode;
+    const Settings& settings = singleton<Settings>(world);
     world.query<game::Position, Appearance>(
         [&](ecs::Entity entity, game::Position& position, Appearance& appearance) {
             const auto* velocity = world.tryGetComponent<game::Velocity>(entity);
-            drawEntity(_window, _assets, mode, position, appearance, heading(appearance, velocity),
-                time.elapsedSeconds());
+            drawEntity(_window, _assets, settings, position, appearance,
+                heading(appearance, velocity), time.elapsedSeconds());
         });
 }
 

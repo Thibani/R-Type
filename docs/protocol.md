@@ -1,17 +1,19 @@
-# R-Type Network Protocol — Version 3
+# R-Type Network Protocol — Version 4
 
 | Status   | Implemented                 |
 |----------|-----------------------------|
-| Version  | 3                           |
+| Version  | 4                           |
 | Transport| UDP only                    |
-| Issue    | #21 (design), #10 (documentation) |
+| Issue    | #21 (design), #10 (documentation), #97 (encryption), #73 (accounts) |
 
-**Changes since version 2:** input bit 5 is `POD` (moves the Force around
-the ship); new entity kinds 13–15 (the Force and the pickups).
+**Version 4** joins the two lines of work that each made a version 3:
 
-**Changes from version 1 to 2:** `GAME_STATE` carries the level, the lives and
-the distance to the next boss (10 bytes instead of 7); new `RESTART` packet
-(client → server) to play again after a game over; new entity kinds 4–12.
+- accounts and encryption: `AUTH_REQUEST` / `AUTH_RESULT`, public keys in the
+  connection packets, every packet of a session sealed ([§3.3](#33-encryption));
+- the endless mode: `GAME_STATE` carries the level, the lives and the distance
+  to the next boss (10 bytes); `RESTART` (client → server) plays again after a
+  game over; input bit 5 is `POD` (moves the Force around the ship); entity
+  kinds 4–15 (enemies, the boss, the Force and the pickups).
 
 This document specifies the binary protocol spoken between `r-type_client`
 and `r-type_server`. It is meant to be complete enough to write a new client
@@ -39,8 +41,12 @@ are to be interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/
 
 ```text
  Client                                   Server
-   | -- CONNECT_REQUEST ------------------> |
-   | <------------------- CONNECT_ACCEPT -- |
+   | -- CONNECT_REQUEST ------------------> |  in clear: public key of the client
+   | <------------------- CONNECT_ACCEPT -- |  in clear: public key of the server
+   |        everything below is encrypted   |
+   | -- AUTH_REQUEST ---------------------> |  log in, or create the account
+   | <----------- AUTH_RESULT (reliable) -- |
+   |         if OK, the player is in game   |
    | <-------- PLAYER_JOINED (reliable) --- |  one per player already in game
    | <-------- ENTITY_SPAWN  (reliable) --- |  one per existing entity
    |                                        |
@@ -88,6 +94,9 @@ Player names use a fixed 16-byte field holding UTF-8 text, padded with `0x00`.
 A name **MUST NOT** contain `0x00` before its padding, and **MUST** be valid
 UTF-8. A name of 16 bytes has no terminator.
 
+A password follows the same rules in a 64-byte field. The field has a fixed size
+so that the length of the password does not show in the size of the packet.
+
 ---
 
 ## 3. Packet header
@@ -114,7 +123,7 @@ Every datagram starts with this 20-byte header.
 | Offset | Size | Field          | Description                                                  |
 |-------:|-----:|----------------|--------------------------------------------------------------|
 | 0      | 2    | `magic`        | Always `0x5254` (`"RT"`). Filters out stray traffic.          |
-| 2      | 1    | `version`      | Protocol version. This document describes version `2`.       |
+| 2      | 1    | `version`      | Protocol version. This document describes version `4`.       |
 | 3      | 1    | `type`         | Packet type, see [§4](#4-packet-types).                       |
 | 4      | 1    | `flags`        | Bit field, see below.                                         |
 | 5      | 1    | `reserved`     | **MUST** be `0`.                                              |
@@ -130,7 +139,7 @@ Every datagram starts with this 20-byte header.
 |----:|------------|----------------------------------------------------------------------|
 | 0   | `RELIABLE` | The payload starts with a `u16 reliableId` and must be acknowledged. |
 | 1   | `HAS_ACK`  | `ack` and `ackBits` are meaningful. Clear until a packet is received.|
-| 2–7 | —          | Reserved, **MUST** be `0` in version 3.                              |
+| 2–7 | —          | Reserved, **MUST** be `0` in version 4.                              |
 
 ### 3.2 Versioning
 
@@ -142,6 +151,55 @@ Every datagram starts with this 20-byte header.
 - Reserved bits and fields leave room for later extensions (compression,
   delta snapshots) without changing the header size.
 
+### 3.3 Encryption
+
+Every packet of a session is encrypted and authenticated. Only `CONNECT_REQUEST`,
+`CONNECT_ACCEPT` and `CONNECT_REJECT` travel in clear, because they happen before
+a key exists. A peer **MUST** drop any other packet of a session that is not
+sealed with its key.
+
+**Key exchange.** Each side creates an X25519 key pair for this session and
+sends its public key (`CONNECT_REQUEST`, `CONNECT_ACCEPT`). No key is hard-coded.
+
+```text
+shared      = X25519(our secret key, the peer's public key)
+session key = BLAKE2b-256(shared | client public key | server public key)
+```
+
+A public key that makes `shared` all zeros is invalid and refused.
+
+**Sealing.** The header stays readable, since the receiver needs the token to find
+the session. The payload is encrypted with XChaCha20-Poly1305, with the header as
+additional data: changing a single byte of the datagram makes it fail.
+
+```text
+datagram        = header (20) | counter (8, big-endian) | encrypted payload | tag (16)
+payloadSize     = size of the payload + 24
+additional data = the 20 bytes of the header above
+nonce (24)      = sender (1: 0 client, 1 server) | counter (8, big-endian) | zeros (15)
+```
+
+**Counter.** Each side counts its own sealed packets from 0 and never reuses a
+value. `sequence` cannot be used instead: at 16 bits it wraps after about 18 minutes
+at 60 packets per second, and a nonce must never be used twice with one key. A
+resent reliable message is sealed again, with a new counter.
+
+**Replay.** A receiver refuses a counter already received, or more than 63 behind
+the newest one (UDP can reorder packets). It records a counter only once the tag
+is verified, so a forged packet cannot block real ones.
+
+**Effect on the 1200-byte limit.** Sealing adds 24 bytes per packet. Only `SNAPSHOT`
+can get near the limit: it goes from 89 to 88 entities per part.
+
+**What it does not hide or prevent:**
+
+- the name in `CONNECT_REQUEST`, and in each header the type, token, sequence and acks;
+- an active attacker present during the connection: the exchange does not prove who
+  the peer is, so one could run one exchange with each side and read what the client
+  sends, **including its password** in `AUTH_REQUEST`. This is a known limit of the
+  project: it needs a server key known in advance by the clients, which we do not
+  distribute. Do not reuse a valuable password.
+
 ---
 
 ## 4. Packet types
@@ -151,11 +209,13 @@ Sizes are payload sizes, header excluded. Reliable packets include their
 
 | Type   | Name              | Direction | Reliable | Payload size       |
 |--------|-------------------|-----------|----------|--------------------|
-| `0x01` | `CONNECT_REQUEST` | C → S     | no       | 16                 |
-| `0x02` | `CONNECT_ACCEPT`  | S → C     | no       | 4                  |
+| `0x01` | `CONNECT_REQUEST` | C → S     | no       | 48                 |
+| `0x02` | `CONNECT_ACCEPT`  | S → C     | no       | 36                 |
 | `0x03` | `CONNECT_REJECT`  | S → C     | no       | 1                  |
 | `0x04` | `DISCONNECT`      | both      | no       | 1                  |
 | `0x05` | `HEARTBEAT`       | both      | no       | 0                  |
+| `0x06` | `AUTH_REQUEST`    | C → S     | no       | 65                 |
+| `0x07` | `AUTH_RESULT`     | S → C     | **yes**  | 3                  |
 | `0x10` | `INPUT`           | C → S     | no       | 6 … 13 (`5 + count`) |
 | `0x11` | `RESTART`         | C → S     | no       | 0                  |
 | `0x20` | `SNAPSHOT`        | S → C     | no       | `11 + 13 × count`  |
@@ -166,7 +226,11 @@ Sizes are payload sizes, header excluded. Reliable packets include their
 | `0x25` | `PLAYER_DIED`     | S → C     | **yes**  | 5                  |
 | `0x26` | `GAME_STATE`      | S → C     | **yes**  | 10                 |
 
-Ranges `0x00`, `0x06–0x0F`, `0x12–0x1F` and `0x27–0xFF` are reserved.
+Ranges `0x00`, `0x08–0x0F`, `0x12–0x1F` and `0x27–0xFF` are reserved.
+
+These sizes are before encryption: every type except `CONNECT_REQUEST`,
+`CONNECT_ACCEPT` and `CONNECT_REJECT` adds 24 bytes on the network
+([§3.3](#33-encryption)).
 
 ### 4.1 Connection
 
@@ -174,7 +238,8 @@ Ranges `0x00`, `0x06–0x0F`, `0x12–0x1F` and `0x27–0xFF` are reserved.
 
 | Offset | Size | Field  | Description                    |
 |-------:|-----:|--------|--------------------------------|
-| 0      | 16   | `name` | Player name ([§2.2](#22-strings)) |
+| 0      | 16   | `name` | Name of the player's account ([§2.2](#22-strings)) |
+| 16     | 32   | `publicKey` | The client's X25519 public key ([§3.3](#33-encryption)). The same for every retry of a connection. |
 
 `sessionToken` **MUST** be `0`.
 
@@ -186,6 +251,7 @@ Ranges `0x00`, `0x06–0x0F`, `0x12–0x1F` and `0x27–0xFF` are reserved.
 | 1      | 1    | `tickRate`     | Server simulation rate in Hz (e.g. `60`).     |
 | 2      | 1    | `snapshotRate` | Snapshots per second (e.g. `30`).             |
 | 3      | 1    | `maxPlayers`   | Players per game (`4`).                       |
+| 4      | 32   | `publicKey`    | The server's X25519 public key ([§3.3](#33-encryption)). |
 
 The header's `sessionToken` carries the new, non-zero session token. The
 client **MUST** put it in every following packet.
@@ -209,6 +275,34 @@ then forget the session.
 
 Empty payload. Keeps the session alive and carries acknowledgements when the
 sender has nothing else to send.
+
+#### `AUTH_REQUEST` (`0x06`) — C → S
+
+Logs in to the account named in `CONNECT_REQUEST`, or creates it.
+
+| Offset | Size | Field      | Description                                  |
+|-------:|-----:|------------|----------------------------------------------|
+| 0      | 1    | `mode`     | `0` LOGIN, `1` REGISTER                      |
+| 1      | 64   | `password` | [§2.2](#22-strings). To create an account: at least 8 bytes. |
+
+#### `AUTH_RESULT` (`0x07`) — S → C
+
+Reliable, and always the first reliable message of a session.
+
+| Offset | Size | Field        | Description                       |
+|-------:|-----:|--------------|-----------------------------------|
+| 0      | 2    | `reliableId` | [§6.2](#62-reliable-messages)     |
+| 2      | 1    | `code`       | See below                         |
+
+| Code | Name                | Meaning                                                    |
+|-----:|---------------------|------------------------------------------------------------|
+| `0`  | `OK`                | The player is in the game                                  |
+| `1`  | `WRONG_CREDENTIALS` | Unknown name or wrong password: the same code for both     |
+| `2`  | `NAME_TAKEN`        | REGISTER: this account already exists                      |
+| `3`  | `ALREADY_CONNECTED` | LOGIN: right password, but this account is in the game     |
+| `4`  | `INVALID_PASSWORD`  | REGISTER: fewer than 8 bytes                               |
+| `5`  | `INVALID_NAME`      | REGISTER: empty name, or a control character in it         |
+| `6`  | `SERVER_ERROR`      | The server could not hash or save                          |
 
 ### 4.2 Client → server
 
@@ -269,7 +363,8 @@ Entity state (13 bytes):
 | 9      | 2    | `vx`     | Velocity, quantized.                        |
 | 11     | 2    | `vy`     |                                             |
 
-At most `(1200 − 20 − 11) / 13 = 89` entities fit in one part.
+At most `(1200 − 20 − 24 − 11) / 13 = 88` entities fit in one part, encryption
+included.
 
 A client **MUST** ignore a snapshot whose `serverTick` is older than the
 newest one it applied (it arrived out of order). Parts of the same tick are
@@ -428,7 +523,7 @@ four players are distinct. `0xFF` means "no player" (`owner` of an enemy).
   messages wait until the window moves. Without this rule, losing a single
   message while many others are in flight would disconnect a healthy peer.
 
-In version 3 only the server sends reliable messages.
+In version 4 only the server sends reliable messages.
 
 ---
 
@@ -440,7 +535,7 @@ and drops the datagram at the first failure:
 
 1. Size is between 20 and 1200 bytes.
 2. `magic` is `0x5254`.
-3. `version` is `1` (see [§3.2](#32-versioning) for `CONNECT_REQUEST`).
+3. `version` is `3` (see [§3.2](#32-versioning) for `CONNECT_REQUEST`).
 4. `type` is known and allowed in this direction (e.g. a server drops
    `SNAPSHOT`).
 5. `reserved` is `0` and reserved flag bits are `0`.
@@ -453,6 +548,10 @@ and drops the datagram at the first failure:
 10. `sessionToken` matches the session of the sender's address (or is `0`
     for `CONNECT_REQUEST`).
 
+Encryption comes first ([§3.3](#33-encryption)): when the address and the
+`sessionToken` match a session, the datagram is opened before rules 3 to 10
+apply to its content. A datagram that cannot be opened is dropped.
+
 The parser reads through a bounded reader that fails on any read past the
 end of the buffer. Counts are never trusted for allocation: they are checked
 against the remaining bytes first (rule 8).
@@ -462,13 +561,19 @@ against the remaining bytes first (rule 8).
 - **Sessions.** A session is identified by the client address (IP + port)
   *and* its token. Tokens are random, non-zero and generated with a
   cryptographically secure source, so a third party cannot inject packets
-  into someone else's session by guessing.
+  into someone else's session by guessing. The token is visible on the
+  network: what really protects a session is its key, since a packet that
+  is not sealed with it is dropped.
 - **Amplification.** A reply to an unauthenticated address
-  (`CONNECT_ACCEPT` 24 bytes, `CONNECT_REJECT` 21 bytes) is never larger
-  than the request that triggered it (`CONNECT_REQUEST` 36 bytes), so the
+  (`CONNECT_ACCEPT` 56 bytes, `CONNECT_REJECT` 21 bytes) is never larger
+  than the request that triggered it (`CONNECT_REQUEST` 68 bytes), so the
   server cannot be abused to flood a spoofed address.
 - **Rate limiting.** The server drops packets from an address sending more
   than 120 packets per second.
+- **Accounts.** One `AUTH_REQUEST` is handled per session: guessing another
+  password takes a new connection. A session not logged in after 10 seconds
+  is closed. An unknown name is hashed like a known one, so the delay of the
+  answer does not reveal which names exist.
 - **Input sanity.** `INPUT` ticks more than 120 ticks ahead of the last
   processed one are ignored.
 
@@ -485,10 +590,23 @@ against the remaining bytes first (rule 8).
      or the name is invalid;
    - otherwise `CONNECT_ACCEPT` with a new token and `playerId`.
    A duplicate request from an address that already has a session receives
-   the same `CONNECT_ACCEPT` again (the first one may have been lost).
-3. The server sends the newcomer, reliably: `PLAYER_JOINED` for every other
-   player, `ENTITY_SPAWN` for every existing entity, then `GAME_STATE`. It
+   the same `CONNECT_ACCEPT` again (the first one may have been lost). A
+   request with another `publicKey` gets no answer and does not change the
+   session: an address can be faked. An invalid `publicKey` gets no answer.
+3. The client sends `AUTH_REQUEST`, sealed, every 500 ms, up to 20 times, until
+   it receives `AUTH_RESULT`. The server handles only the first one it receives.
+   Until the result is `OK`, the session is not part of the game: the server sends
+   it only `AUTH_RESULT` and heartbeats, and ignores everything from it except
+   `AUTH_REQUEST`, `HEARTBEAT` and `DISCONNECT`.
+4. If the result is not `OK`, the client sends `DISCONNECT`, and must open a new
+   session to try again. The server closes a session still not logged in after
+   **10 seconds** (`DISCONNECT` TIMEOUT).
+5. If it is `OK`, the server sends the newcomer, reliably: `PLAYER_JOINED` for every
+   other player, `ENTITY_SPAWN` for every existing entity, then `GAME_STATE`. It
    sends `PLAYER_JOINED` for the newcomer to every other client.
+
+An account can be in the game only once. A session that is not logged in still uses
+one of the 4 player slots, for at most 10 seconds.
 
 ### 8.2 Keep-alive and timeout
 
@@ -519,9 +637,9 @@ Ticks are counters, not clock times, so the game speed never depends on the
 CPU speed.
 
 **Bandwidth estimate.** With 4 ships, 30 Bydos and 60 missiles (94 entities),
-a snapshot takes 2 parts, about 1280 bytes in total with headers. At 30 Hz that is about
-**38 KB/s per client** downstream, events excluded. Upstream, `INPUT` at
-60 Hz with 8 masks is 33 bytes × 60 ≈ **2 KB/s per client**.
+a snapshot takes 2 parts, about 1330 bytes in total with headers and encryption. At 30 Hz
+that is about **40 KB/s per client** downstream, events excluded. Upstream, `INPUT` at
+60 Hz with 8 masks is 57 bytes × 60 ≈ **3.4 KB/s per client**.
 
 ---
 
@@ -531,25 +649,26 @@ a snapshot takes 2 parts, about 1280 bytes in total with headers. At 30 Hz that 
 
 ```text
 52 54             magic "RT"
-03                version 3
+04                version 4
 01                type CONNECT_REQUEST
 00                flags: none (nothing received yet, so no HAS_ACK)
 00                reserved
-00 10             payloadSize 16
+00 30             payloadSize 48
 00 00 00 00       sessionToken 0 (not connected)
 00 00             sequence 0
 00 00             ack      (ignored, HAS_ACK clear)
 00 00 00 00       ackBits  (ignored)
 54 68 69 62 61 6E 69 00 00 00 00 00 00 00 00 00   name "Thibani", zero-padded
+AB AB AB ... (32 bytes)                           publicKey (random in reality)
 ```
 
-Total: 36 bytes.
+Total: 68 bytes.
 
 ---
 
 ## 11. Possible extensions
 
-Kept out of version 3, but the header leaves room for them:
+Kept out of version 4, but the header leaves room for them:
 
 - a `COMPRESSED` flag bit for LZ4 or zlib payloads;
 - delta snapshots relative to the last acknowledged snapshot;

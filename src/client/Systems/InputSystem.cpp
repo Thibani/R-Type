@@ -3,10 +3,10 @@
 #include "client/Components/Controls.hpp"
 #include "client/Components/Session.hpp"
 #include "client/Components/Settings.hpp"
+#include "client/Gamepad.hpp"
 #include "client/Settings.hpp"
 #include "client/Singleton.hpp"
 #include "client/Ui/Layout.hpp"
-#include "client/Ui/Theme.hpp"
 #include "client/Ui/View.hpp"
 #include "ecs/Loop/GameLoop.hpp"
 #include "ecs/World/World.hpp"
@@ -70,6 +70,8 @@ std::string* focusedField(Session& session)
     switch (session.focus) {
     case layout::NameField:
         return &session.name;
+    case layout::PasswordField:
+        return &session.password;
     case layout::AddressField:
         return &session.address;
     case layout::PortField:
@@ -90,6 +92,12 @@ void type(Session& session, char32_t c)
         std::string longer = *field;
         appendUtf8(longer, c);
         if (isValidName(longer)) { // At most 16 bytes of UTF-8 (protocol §2.2)
+            *field = longer;
+        }
+    } else if (session.focus == layout::PasswordField) {
+        std::string longer = *field;
+        appendUtf8(longer, c);
+        if (longer.size() <= MaxPasswordSize) {
             *field = longer;
         }
     } else if (session.focus == layout::AddressField) {
@@ -116,12 +124,6 @@ void closeSettings(Session& session)
     session.focus = session.screen == Screen::Connect ? layout::SettingsButton : layout::MenuSettingsButton;
 }
 
-void changeVolume(Settings& settings, int step)
-{
-    settings.volume = std::clamp(settings.volume + step, 0, Settings::MaxVolume);
-    settings.dirty = true;
-}
-
 void changeColourMode(Settings& settings, int step)
 {
     constexpr int count = static_cast<int>(ColourModeCount);
@@ -129,29 +131,39 @@ void changeColourMode(Settings& settings, int step)
     settings.dirty = true;
 }
 
-/// Left or Right (`direction` -1 or 1) on the focused row of the settings.
-void adjustSettings(const Session& session, Settings& settings, int direction)
+void changeInterfaceSize(Settings& settings, int step)
 {
-    if (session.focus == layout::VolumeRow) {
-        changeVolume(settings, direction * Settings::VolumeStep);
-    } else if (session.focus == layout::ColourRow) {
-        changeColourMode(settings, direction);
-    }
+    const auto& sizes = Settings::InterfaceSizes;
+    const auto count = std::ssize(sizes);
+    const auto current = std::ranges::find(sizes, settings.interfaceSize) - sizes.begin();
+    settings.interfaceSize = sizes.at(static_cast<std::size_t>((current + step + count) % count));
+    settings.dirty = true;
 }
- 
+
+/// Arrows, stick or D-pad in a menu (`dx`, `dy`: one of them 0, the other -1
+/// or 1): the focus moves to the nearest control that way. Values change with
+/// Enter, so Left and Right always move, even on a setting row.
+void navigate(Session& session, const Settings& settings, int dx, int dy)
+{
+    session.focus = layout::neighbour(layout::focusables(session, settings.interfaceSize), session.focus, dx, dy);
+}
+
 /// Does what the focused (or clicked) row of the settings does.
 void activateSettings(Session& session, Settings& settings, int index)
 {
     if (index == layout::VolumeRow) {
-        // A click or Enter raises it and wraps to muted; ← → step both ways
+        // Enter, A or a click raises it and wraps to muted
         settings.volume = settings.volume >= Settings::MaxVolume ? 0 : settings.volume + Settings::VolumeStep;
         settings.dirty = true;
     } else if (index == layout::ColourRow) {
         changeColourMode(settings, 1);
+    } else if (index == layout::InterfaceSizeRow) {
+        changeInterfaceSize(settings, 1);
     } else if (index < layout::ResetRow) {
         session.capturing = static_cast<Action>(index - layout::FirstKeyRow); // Next key pressed is bound
     } else if (index == layout::ResetRow) {
         settings.keys = Settings::DefaultKeys;
+        settings.buttons = Settings::DefaultButtons;
         settings.dirty = true;
     } else {
         closeSettings(session);
@@ -170,8 +182,10 @@ void activate(Session& session, Settings& settings, int index, ecs::GameLoop& lo
         if (index == layout::QuitButton) {
             session.request = Request::Quit;
             loop.stop();
-        } else if (index == layout::ConnectButton) {
-            session.request = Request::Connect;
+        } else if (index == layout::LoginButton) {
+            session.request = Request::Login;
+        } else if (index == layout::CreateAccountButton) {
+            session.request = Request::CreateAccount;
         } else if (index == layout::SettingsButton) {
             openSettings(session);
         } else {
@@ -196,9 +210,9 @@ void activate(Session& session, Settings& settings, int index, ecs::GameLoop& lo
     }
 }
 
-void moveFocus(Session& session, int step)
+void moveFocus(Session& session, const Settings& settings, int step)
 {
-    const int count = static_cast<int>(layout::focusables(session).size());
+    const int count = static_cast<int>(layout::focusables(session, settings.interfaceSize).size());
     if (count > 0) {
         session.focus = (session.focus + step + count) % count;
     }
@@ -211,6 +225,18 @@ void capture(Session& session, Settings& settings, Action action, sf::Keyboard::
     if (key == sf::Keyboard::Key::Escape) {
         session.capturing.reset();
     } else if (bindKey(settings, action, key)) {
+        settings.dirty = true;
+        session.capturing.reset();
+    }
+}
+
+/// While a settings row waits: the pad button pressed becomes the binding.
+/// Start cancels, like Esc.
+void capturePad(Session& session, Settings& settings, Action action, unsigned button)
+{
+    if (button == gamepad::StartButton) {
+        session.capturing.reset();
+    } else if (bindButton(settings, action, button)) {
         settings.dirty = true;
         session.capturing.reset();
     }
@@ -232,6 +258,46 @@ void escape(Session& session, ecs::GameLoop& loop)
     }
 }
 
+/// Enter, or A on a pad: activates the focus. In the form, logs in from any field.
+void confirm(Session& session, Settings& settings, ecs::GameLoop& loop)
+{
+    activate(session, settings,
+        !session.settingsOpen && session.screen == Screen::Connect
+                && session.focus < layout::LoginButton
+            ? layout::LoginButton
+            : session.focus,
+        loop);
+}
+
+bool inMenu(const Session& session) noexcept
+{
+    return session.screen != Screen::Game || session.menuOpen || session.settingsOpen;
+}
+
+void onPadButton(Session& session, Settings& settings, unsigned button, ecs::GameLoop& loop)
+{
+    if (session.capturing) {
+        capturePad(session, settings, *session.capturing, button);
+        return;
+    }
+    // Start opens and closes the menu; B goes back. A pad never quits the game
+    const bool back = button == gamepad::StartButton || (button == gamepad::BackButton && inMenu(session));
+    if (back && (session.screen != Screen::Connect || session.settingsOpen)) {
+        escape(session, loop);
+    } else if (button == gamepad::AcceptButton && inMenu(session)) {
+        confirm(session, settings, loop);
+    }
+}
+
+/// A stick or D-pad pushed in a menu: moves the focus, or adjusts a setting.
+void onPadPush(Session& session, const Settings& settings, bool vertical, int direction)
+{
+    if (direction == 0 || !inMenu(session) || session.capturing) {
+        return;
+    }
+    navigate(session, settings, vertical ? 0 : direction, vertical ? direction : 0);
+}
+
 void onKey(Session& session, Settings& settings, const sf::Event::KeyPressed& key, ecs::GameLoop& loop)
 {
     using sf::Keyboard::Key;
@@ -239,37 +305,30 @@ void onKey(Session& session, Settings& settings, const sf::Event::KeyPressed& ke
         capture(session, settings, *session.capturing, key.code);
         return;
     }
-    const bool inMenu = session.screen != Screen::Game || session.menuOpen || session.settingsOpen;
+    const bool menu = inMenu(session);
     switch (key.code) {
     case Key::Escape:
         escape(session, loop);
         break;
     case Key::Tab:
-        moveFocus(session, key.shift ? -1 : 1);
+        moveFocus(session, settings, key.shift ? -1 : 1);
         break;
     case Key::Down:
     case Key::Up:
-        if (inMenu) { // In the game, arrows move the ship
-            moveFocus(session, key.code == Key::Down ? 1 : -1);
+        if (menu) { // In the game, arrows move the ship
+            navigate(session, settings, 0, key.code == Key::Down ? 1 : -1);
         }
         break;
     case Key::Left:
     case Key::Right:
-        if (session.settingsOpen) {
-            adjustSettings(session, settings, key.code == Key::Right ? 1 : -1);
+        if (menu) {
+            navigate(session, settings, key.code == Key::Right ? 1 : -1, 0);
         }
         break;
     case Key::Enter:
-        if (!inMenu) {
-            break;
+        if (menu) {
+            confirm(session, settings, loop);
         }
-        // In the form, Enter connects from any field
-        activate(session, settings,
-            !session.settingsOpen && session.screen == Screen::Connect
-                    && session.focus < layout::ConnectButton
-                ? layout::ConnectButton
-                : session.focus,
-            loop);
         break;
     case Key::Backspace:
         if (std::string* field = focusedField(session)) {
@@ -317,15 +376,19 @@ void InputSystem::update(ecs::World& world, const ecs::Time& /*time*/)
             _loop.stop();
         } else if (const auto* key = event->getIf<sf::Event::KeyPressed>()) {
             onKey(session, settings, *key, _loop);
+        } else if (const auto* pressed = event->getIf<sf::Event::JoystickButtonPressed>()) {
+            onPadButton(session, settings, pressed->button, _loop);
+        } else if (const auto* moved = event->getIf<sf::Event::JoystickMoved>()) {
+            onPadMoved(session, settings, *moved);
         } else if (const auto* typed = event->getIf<sf::Event::TextEntered>()) {
             type(session, typed->unicode);
         } else if (const auto* click = event->getIf<sf::Event::MouseButtonPressed>()) {
             if (click->button != sf::Mouse::Button::Left || session.capturing) {
                 continue;
             }
-            const sf::Vector2f point = _window.mapPixelToCoords(
-                click->position, letterboxed({theme::UiWidth, theme::UiHeight}, _window.getSize()));
-            const auto targets = layout::focusables(session);
+            const sf::Vector2f point = _window.mapPixelToCoords(click->position,
+                letterboxed(layout::visibleArea(session, settings.interfaceSize), _window.getSize()));
+            const auto targets = layout::focusables(session, settings.interfaceSize);
             for (std::size_t i = 0; i < targets.size(); ++i) {
                 if (targets.at(i).contains(point)) {
                     session.focus = static_cast<int>(i);
@@ -335,9 +398,48 @@ void InputSystem::update(ecs::World& world, const ecs::Time& /*time*/)
             }
         }
     }
-    // Held keys only steer the ship in the game itself, never through a menu
-    const bool playing = session.screen == Screen::Game && !session.menuOpen && !session.settingsOpen;
-    singleton<PlayerControls>(world).mask = playing && _window.hasFocus() ? heldKeys(settings) : 0;
+    // Held keys and pads only steer the ship in the game itself, never through a menu
+    std::uint8_t mask = 0;
+    if (!inMenu(session) && _window.hasFocus()) {
+        mask = heldKeys(settings);
+        for (unsigned joystick = 0; joystick < sf::Joystick::Count; ++joystick) {
+            mask = static_cast<std::uint8_t>(mask | gamepad::mask(gamepad::read(joystick), settings));
+        }
+    }
+    singleton<PlayerControls>(world).mask = mask;
+}
+
+void InputSystem::onPadMoved(Session& session, Settings& settings, const sf::Event::JoystickMoved& moved)
+{
+    using sf::Joystick::Axis;
+    std::size_t slot = 0;
+    float position = moved.position;
+    switch (moved.axis) {
+    case Axis::X:
+        slot = 0;
+        break;
+    case Axis::Y:
+        slot = 1;
+        break;
+    case Axis::PovX:
+        slot = 2;
+        break;
+    case Axis::PovY:
+        slot = 3;
+        position = gamepad::povY(position);
+        break;
+    default:
+        return; // Triggers and the second stick do nothing
+    }
+    if (moved.joystickId >= _padDirections.size()) {
+        return;
+    }
+    int& last = _padDirections.at(moved.joystickId).at(slot);
+    const int direction = gamepad::direction(position);
+    if (direction != last) {
+        last = direction;
+        onPadPush(session, settings, slot % 2 == 1, direction);
+    }
 }
 
 } // namespace client

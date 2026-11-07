@@ -1,13 +1,13 @@
 #include "server/Systems/ConnectionSystem.hpp"
 
 #include "ecs/World/World.hpp"
+#include "network/Crypto/Crypto.hpp"
 #include "network/Protocol/Packets.hpp"
 #include "server/Components/NetClient.hpp"
 #include "server/Components/ReceivedPacket.hpp"
 #include "server/Network.hpp"
 
 #include <array>
-#include <iostream>
 #include <optional>
 #include <utility>
 #include <variant>
@@ -39,6 +39,7 @@ void accept(network::NetworkThread& socket, NetClient& client, TimePoint now)
         .tickRate = ConnectionSystem::TickRate,
         .snapshotRate = ConnectionSystem::SnapshotRate,
         .maxPlayers = MaxPlayers,
+        .publicKey = client.serverPublicKey,
     };
     sendPacket(socket, client.channel.wrap(payload, now), client.endpoint);
     client.lastSent = now;
@@ -115,14 +116,20 @@ void ConnectionSystem::update(ecs::World& world, const ecs::Time& time)
         if (request.packet.sessionToken != 0) {
             continue; // §4.1: MUST be 0
         }
+        const auto& connectRequest = std::get<ConnectRequest>(request.packet.payload);
         if (NetClient* existing = findClient(world, request.from)) {
+            if (connectRequest.publicKey != existing->clientPublicKey) {
+                // Anybody can fake an address: this key must not replace the
+                // session's. A real new client retries until this session times out.
+                continue;
+            }
             trackRequest(existing->channel, request.packet, now);
             existing->lastReceived = now;
             accept(_socket, *existing, now); // The previous ACCEPT was lost
             continue;
         }
 
-        std::string name = std::get<ConnectRequest>(request.packet.payload).name;
+        std::string name = connectRequest.name;
         if (name.empty()) {
             reject(_socket, request.from, RejectReason::InvalidName);
             continue;
@@ -133,13 +140,14 @@ void ConnectionSystem::update(ecs::World& world, const ecs::Time& time)
             continue;
         }
 
-        // Everyone already here learns about the newcomer, and the other way round
-        const PlayerJoined newcomerJoined{.playerId = *playerId, .name = name};
-        std::vector<PlayerJoined> alreadyHere;
-        world.query<NetClient>([&](ecs::Entity /*entity*/, NetClient& other) {
-            other.channel.queueReliable(newcomerJoined);
-            alreadyHere.push_back(PlayerJoined{.playerId = other.playerId, .name = other.name});
-        });
+        // Here, not earlier: the key exchange costs CPU, and a refused request must
+        // not trigger it. The secret key is not kept once the exchange is done.
+        const network::crypto::KeyPair keys = network::crypto::generateKeyPair();
+        const auto sessionKey = network::crypto::deriveSessionKey(
+            keys, connectRequest.publicKey, network::crypto::Role::Server);
+        if (!sessionKey) {
+            continue; // No honest client sends an invalid key: no answer
+        }
 
         const std::uint32_t token = newToken(world);
         const ecs::Entity entity = world.createEntity();
@@ -150,19 +158,19 @@ void ConnectionSystem::update(ecs::World& world, const ecs::Time& time)
                 .playerId = *playerId,
                 .name = std::move(name),
                 .channel = network::ReliableChannel(token),
+                .cipher
+                = network::crypto::SessionCipher(*sessionKey, network::crypto::Role::Server),
+                .clientPublicKey = connectRequest.publicKey,
+                .serverPublicKey = keys.publicKey,
+                .connectedAt = now,
+                .loginRequested = false,
                 .lastReceived = now,
                 .lastSent = now,
                 .knownEntities = {},
                 .knownState = std::nullopt,
             });
         trackRequest(client.channel, request.packet, now);
-        for (const PlayerJoined& other : alreadyHere) {
-            client.channel.queueReliable(other);
-        }
         accept(_socket, client, now);
-
-        std::cout << "r-type_server: player " << static_cast<int>(client.playerId) << " '"
-                  << client.name << "' joined from " << client.endpoint << '\n';
     }
 }
 

@@ -6,8 +6,8 @@ reusable Entity-Component-System (ECS) game engine.
 > **Status:** Part 2 in progress. Up to 4 players join an authoritative server
 > with the graphical client, fly their ships, shoot the Bydos that come in
 > waves and shoot back, and share a team score. A client that crashes or
-> leaves does not stop the game. Players can set the volume and their keys.
-> Next: more accessibility options, accounts, chat, friends and a lobby, then
+> leaves does not stop the game. Players can set the volume and their keys, and
+> play with an account kept by the server. Next: more accessibility options, chat, friends and a lobby, then
 > game phases, levels, bosses and the endless, campaign and versus modes.
 
 ---
@@ -110,6 +110,7 @@ Pass them at configure time, e.g. `cmake --preset debug -DRTYPE_BUILD_TESTS=OFF`
 ```sh
 ./build/debug/r-type_server              # listens on UDP port 4242
 ./build/debug/r-type_server -p 5000      # another port
+./build/debug/r-type_server --accounts players.txt  # accounts file (default accounts.txt)
 ./build/debug/r-type_server --help
 ```
 
@@ -132,8 +133,9 @@ firewall when asked, or clients on other machines cannot reach it.
 ./build/debug/r-type_client --help
 ```
 
-The options fill the connection form; press Enter to connect. In game: arrows to
-move, Space to fire, Esc for the menu. The `assets/` folder is copied next to the
+The options fill the connection form. Every player needs an account: type a password
+(8 to 64 characters) and choose Create account the first time, then Enter logs in. In game: arrows to
+move, Space to fire, Esc for the menu; with a gamepad, the stick, A and Start. The `assets/` folder is copied next to the
 binary at build time. Exit code `84` on invalid arguments or missing assets.
 Details: [`src/client/README.md`](src/client/README.md).
 

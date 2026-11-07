@@ -51,6 +51,13 @@ DecodeError decodeError(const std::vector<std::byte>& datagram, Direction direct
     return result ? DecodeError{} : result.error();
 }
 
+network::crypto::PublicKey filledKey(std::uint8_t value)
+{
+    network::crypto::PublicKey key{};
+    key.fill(static_cast<std::byte>(value));
+    return key;
+}
+
 } // namespace
 
 // --- Wire format --------------------------------------------------------------
@@ -63,20 +70,107 @@ TEST(PacketCodec, MatchesTheSpecificationExample)
         .sequence = 0,
         .ack = std::nullopt,
         .reliableId = 0,
-        .payload = ConnectRequest{.name = "Thibani"},
+        .payload = ConnectRequest{.name = "Thibani", .publicKey = filledKey(0xAB)},
     };
 
     const auto expected = bytes({
-        0x52, 0x54, 0x03, 0x01, 0x00, 0x00, 0x00,
-        0x10, // magic, version, type, flags, reserved, size
-        0x00, 0x00, 0x00, 0x00, // sessionToken
-        0x00, 0x00, 0x00, 0x00, // sequence, ack
-        0x00, 0x00, 0x00, 0x00, // ackBits
-        0x54, 0x68, 0x69, 0x62, 0x61, 0x6E, 0x69, 0x00, // "Thibani"
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // padding
+        0x52,
+        0x54,
+        0x04,
+        0x01,
+        0x00,
+        0x00,
+        0x00,
+        0x30, // magic, version, type, flags, reserved, size
+        0x00,
+        0x00,
+        0x00,
+        0x00, // sessionToken
+        0x00,
+        0x00,
+        0x00,
+        0x00, // sequence, ack
+        0x00,
+        0x00,
+        0x00,
+        0x00, // ackBits
+        0x54,
+        0x68,
+        0x69,
+        0x62,
+        0x61,
+        0x6E,
+        0x69,
+        0x00, // "Thibani"
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00, // padding
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB, // publicKey
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
     });
 
     EXPECT_EQ(encodeOrFail(packet), expected);
+}
+
+TEST(PacketCodec, ConnectPacketsKeepThePublicKey)
+{
+    const Packet request = makePacket(ConnectRequest{.name = "a", .publicKey = filledKey(0x11)});
+    const auto decodedRequest = decode(encodeOrFail(request), Direction::ClientToServer);
+    ASSERT_TRUE(decodedRequest.has_value());
+    EXPECT_EQ(std::get<ConnectRequest>(decodedRequest->payload).publicKey, filledKey(0x11));
+
+    const Packet accept = makePacket(ConnectAccept{.playerId = 0,
+        .tickRate = 60,
+        .snapshotRate = 30,
+        .maxPlayers = 4,
+        .publicKey = filledKey(0x22)});
+    const auto decodedAccept = decode(encodeOrFail(accept), Direction::ServerToClient);
+    ASSERT_TRUE(decodedAccept.has_value());
+    EXPECT_EQ(std::get<ConnectAccept>(decodedAccept->payload).publicKey, filledKey(0x22));
+}
+
+TEST(PacketCodecValidation, RejectsConnectRequestWithoutItsWholeKey)
+{
+    auto datagram = encodeOrFail(makePacket(ConnectRequest{.name = "a"}));
+    datagram.pop_back();
+    datagram[7] = static_cast<std::byte>(47); // payloadSize still matches the datagram
+
+    EXPECT_EQ(decodeError(datagram, Direction::ClientToServer), DecodeError::BadPayloadSize);
 }
 
 TEST(PacketCodec, EncodesHeaderFields)
@@ -86,7 +180,7 @@ TEST(PacketCodec, EncodesHeaderFields)
     const auto datagram = encodeOrFail(packet);
 
     const auto expected = bytes({
-        0x52, 0x54, 0x03, 0x25, // magic, version, PLAYER_DIED
+        0x52, 0x54, 0x04, 0x25, // magic, version, PLAYER_DIED
         0x03, 0x00, 0x00, 0x05, // RELIABLE | HAS_ACK, reserved, payloadSize 5
         0xCA, 0xFE, 0xBA, 0xBE, // sessionToken
         0x00, 0x2A, 0x00, 0x29, // sequence 42, ack 41
@@ -106,10 +200,8 @@ TEST(PacketCodec, PayloadSizesMatchTheSpecification)
     Input input{.firstTick = 0, .count = 8, .masks = {}};
 
     const std::vector<Expected> cases{
-        {.payload = ConnectRequest{.name = "a"}, .size = 16},
-        {.payload
-            = ConnectAccept{.playerId = 0, .tickRate = 60, .snapshotRate = 30, .maxPlayers = 4},
-            .size = 4},
+        {.payload = ConnectRequest{.name = "a"}, .size = 48},
+        {.payload = ConnectAccept{.playerId = 0, .tickRate = 60, .snapshotRate = 30, .maxPlayers = 4}, .size = 36},
         {.payload = ConnectReject(), .size = 1},
         {.payload = Disconnect(), .size = 1},
         {.payload = Heartbeat(), .size = 0},
@@ -468,4 +560,66 @@ TEST(PacketCodecEncoding, ValidatesNames)
     EXPECT_FALSE(isValidName("\xED\xA0\x80")); // UTF-16 surrogate
     EXPECT_FALSE(isValidName("\xF4\x90\x80\x80")); // Above U+10FFFF
     EXPECT_FALSE(isValidName("\xE6\x97")); // Truncated sequence
+}
+
+// --- Accounts (§4.1) ------------------------------------------------------------
+
+namespace {
+
+/// The datagram of an AUTH_REQUEST, with `password` written as is in its 64-byte field.
+std::vector<std::byte> authRequestWith(std::uint8_t mode, std::string_view password)
+{
+    auto datagram = encodeOrFail(makePacket(AuthRequest{.mode = AuthMode::Login, .password = ""}));
+    datagram[HeaderSize] = static_cast<std::byte>(mode);
+    for (std::size_t i = 0; i < password.size(); ++i) {
+        datagram[HeaderSize + 1 + i] = static_cast<std::byte>(password[i]);
+    }
+    return datagram;
+}
+
+} // namespace
+
+TEST(PacketCodecAuth, AuthRequestIsAlways65Bytes)
+{
+    for (const std::size_t size : {std::size_t{0}, std::size_t{8}, MaxPasswordSize}) {
+        const auto datagram = encodeOrFail(
+            makePacket(AuthRequest{.mode = AuthMode::Login, .password = std::string(size, 'x')}));
+        EXPECT_EQ(datagram.size(), HeaderSize + 65) << size;
+    }
+}
+
+TEST(PacketCodecAuth, TooLongPasswordCannotBeEncoded)
+{
+    DatagramBuffer buffer{};
+    const auto size = encode(makePacket(AuthRequest{.mode = AuthMode::Login,
+                                 .password = std::string(MaxPasswordSize + 1, 'x')}),
+        buffer);
+    ASSERT_FALSE(size.has_value());
+    EXPECT_EQ(size.error(), EncodeError::InvalidPayload);
+}
+
+TEST(PacketCodecAuth, InvalidAuthRequestIsRejected)
+{
+    const auto errorOf = [](const std::vector<std::byte>& datagram) {
+        return decodeError(datagram, Direction::ClientToServer);
+    };
+    EXPECT_EQ(errorOf(authRequestWith(2, "password")), DecodeError::InvalidValue); // Unknown mode
+    EXPECT_EQ(errorOf(authRequestWith(0, std::string_view("a\0b", 3))),
+        DecodeError::InvalidValue); // Data after the padding
+    EXPECT_EQ(errorOf(authRequestWith(0, "\xFF\xFE")), DecodeError::InvalidValue); // Not UTF-8
+}
+
+TEST(PacketCodecAuth, AuthResultWithAnUnknownCodeIsRejected)
+{
+    auto datagram = encodeOrFail(makePacket(AuthResult{.code = AuthCode::Ok}));
+    datagram.back() = std::byte{7};
+    EXPECT_EQ(decodeError(datagram, Direction::ServerToClient), DecodeError::InvalidValue);
+}
+
+TEST(PacketCodecAuth, AuthPacketsOnlyTravelOneWay)
+{
+    EXPECT_EQ(decodeError(encodeOrFail(makePacket(AuthRequest{})), Direction::ServerToClient),
+        DecodeError::WrongDirection);
+    EXPECT_EQ(decodeError(encodeOrFail(makePacket(AuthResult{})), Direction::ClientToServer),
+        DecodeError::WrongDirection);
 }

@@ -8,7 +8,8 @@ server (`docs/protocol.md`).
 ./r-type_client [-s address] [-p port] [-n name]   # defaults: 127.0.0.1 4242 Player
 ```
 
-The options fill the connection form; Enter connects. Graphics, input and
+The options fill the connection form; type a password, then Enter logs in, or
+use Create account. Graphics, input and
 audio use **SFML 3.1** (fetched by CPM). Sprites, fonts and sounds are in
 `assets/`, copied next to the executable at build time.
 
@@ -23,8 +24,9 @@ Technology choices: [`docs/technical-study/client.md`](../../docs/technical-stud
 | `main.cpp`                         | Entry point: options, assets, socket, window, World, loop  |
 | `ClientOptions.hpp`                | Command line parsing (`-s`, `-p`, `-n`, `-h`)               |
 | `Settings.hpp`                     | Settings file (read, write, where it lives), key names, `bindKey()` |
+| `Gamepad.hpp`                      | Gamepads: stick, D-pad and bound buttons → INPUT mask; menu buttons |
 | `ClientSystems.hpp`                | `installSystems()`: every system, in order                 |
-| `Network/ServerConnection.hpp`     | Session with the server: connect, retries, heartbeat, timeout |
+| `Network/ServerConnection.hpp`     | Session with the server: connect, key exchange, encryption, retries, heartbeat, timeout |
 | `Replication.hpp`                  | Server payloads → entities and `Session` (no window, testable) |
 | `Assets.hpp`                       | Textures, fonts, sounds; sprite frame of each `Look`       |
 | `Singleton.hpp`                    | `singleton<T>(world)`: state shared by several systems     |
@@ -33,7 +35,7 @@ Technology choices: [`docs/technical-study/client.md`](../../docs/technical-stud
 | `Components/Session.hpp`           | Current screen, form, players, score, notices              |
 | `Components/Controls.hpp`          | `PlayerControls` (keys held), `InputHistory` (last 8 ticks)|
 | `Components/SoundEvent.hpp`        | A sound to play this frame                                 |
-| `Components/Settings.hpp`          | `Settings` (volume, colour mode, key bindings), `Action`                |
+| `Components/Settings.hpp`          | `Settings` (volume, colour mode, interface size, key bindings), `Action`                |
 | `Ui/`                              | Hangar theme, screen layout, drawing helpers, letterboxing, sprite animation |
 
 Everything except `main.cpp` is the `rtype_client` library, so the tests can
@@ -67,7 +69,7 @@ other, they share components. `RenderSystem` only reads `Position` and
 | Screen        | When                                                              |
 |---------------|-------------------------------------------------------------------|
 | Connect       | At start, and after any failure (with its reason)                 |
-| Game          | After CONNECT_ACCEPT: a single player can play at once. HUD: team score and level top left; the team's lives (small ships) and each player's hearts top right; centred at the top, the distance to the next boss, then the boss's health |
+| Game          | After AUTH_RESULT (OK): a single player can play at once. HUD: team score and level top left; the team's lives (small ships) and each player's hearts top right; centred at the top, the distance to the next boss, then the boss's health |
 | Waiting room  | Only if the server sends GAME_STATE = WAITING_FOR_PLAYERS         |
 | Game over     | GAME_STATE = GAME_OVER: team score, level reached, crew; **Play again** (RESTART ×3) or Back to menu |
 
@@ -77,11 +79,19 @@ its own copy of the sprites, repainted at startup (`Assets.cpp`, `theme::Palette
 
 **Settings** open over the connection form (Settings button) or over the game
 (Esc menu → Settings; the game keeps running). The actions are the 4
-moves, Fire and **Move the Force** (Left Shift: the Force goes to its next
-slot around the ship). Up/Down choose a row,
-Left/Right change the volume, Enter changes a key: press the new key, or Esc
-to cancel. A key already used by another action is swapped with it. Changes
-apply at once and are saved.
+moves, Fire and **Move the Force** (Left Shift, or pad button 1: the Force
+goes to its next slot around the ship). The arrows (or a pad's stick
+and D-pad) move to the nearest row that way, across both columns. Enter (or A)
+steps the volume, colour mode or interface size to its next value, wrapping
+around, or waits for a new key or button: press it, or Esc to cancel. A key
+already used by another action is swapped with it. Changes apply at once and
+are saved.
+
+**Interface size** keeps every position on the 1280 × 720 canvas: the view
+shows more or less of it (`layout::visibleArea()`), and clicks use the same view.
+The HUD stays in the corners and wraps its chips. Above 100 %, the connection
+form, waiting room and game over use a compact form. 150 % is the maximum because
+it is the largest size at which every screen still fits.
 
 ---
 
@@ -93,12 +103,19 @@ Plain `key = value` text, saved whenever a setting changes:
 # R-Type client settings
 volume = 80
 colour = Off
+interface = 100
 key.up = Up
 key.down = Down
 key.left = Left
 key.right = Right
 key.fire = Space
 key.pod = LShift
+button.up = none
+button.down = none
+button.left = none
+button.right = none
+button.fire = 0
+button.pod = 1
 ```
 
 | System  | Location                                                        |
@@ -120,12 +137,14 @@ key.pod = LShift
 ## Protocol rules applied by the client
 
 - CONNECT_REQUEST every 500 ms, 10 times at most (§8.1).
+- The password is typed hidden, sent only sealed in AUTH_REQUEST (§8.1), and
+  forgotten once logged in, on the form and in `ServerConnection`.
 - HEARTBEAT after 250 ms without sending; session lost after 5 s of silence (§8.2).
 - INPUT once per 60 Hz tick, repeating the last 8 masks (§4.2).
 - Datagrams from another address or with another session token are ignored (§7).
 - Older snapshots are ignored; a destroyed netId is ignored for 5 s (§4.3, §5.1).
 - Unknown entity kinds are drawn as a "?" placeholder (§5.2).
-- The PLAYER_JOINED sent right after CONNECT_ACCEPT for the players already
+- The PLAYER_JOINED sent right after AUTH_RESULT for the players already
   there fill the HUD without a notice; later ones are announced (§8.1).
 - Leaving or quitting sends DISCONNECT 3 times (§8.3).
 

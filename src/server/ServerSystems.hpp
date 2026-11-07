@@ -3,6 +3,7 @@
 #include "ecs/Loop/GameLoop.hpp"
 #include "ecs/World/World.hpp"
 #include "network/Transport/NetworkThread.hpp"
+#include "server/AccountStore.hpp"
 
 namespace server {
 
@@ -11,6 +12,7 @@ namespace server {
 ///     frameStart  NetReceiveSystem      network thread inbox → ReceivedPacket / IncompatibleClient
 ///                 ConnectionSystem      CONNECT_REQUEST → session, ACCEPT / REJECT
 ///                 SessionReceiveSystem  other packets → session, ClientMessage
+///                 LoginSystem           AUTH_REQUEST → account checked, player admitted
 ///                 TimeoutSystem         silent sessions → Disconnecting
 ///                 InputSystem           INPUT → the player's PlayerInput
 ///                 RestartSystem         RESTART after GAME OVER → a new game
@@ -25,8 +27,11 @@ namespace server {
 /// Every system runs on the game thread; `socket` hands datagrams to and from
 /// the network thread.
 ///
+/// `accounts` must outlive `loop`.
+///
 /// `main` and the tests both use it, so they always run the same server.
-void installSystems(ecs::World& world, ecs::GameLoop& loop, network::NetworkThread& socket);
+void installSystems(
+    ecs::World& world, ecs::GameLoop& loop, network::NetworkThread& socket, AccountStore& accounts);
 
 /// The simulation alone (the World's own systems, at the fixed step), in order:
 ///

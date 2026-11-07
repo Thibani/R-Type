@@ -20,12 +20,12 @@ void NetSendSystem::update(ecs::World& world, const ecs::Time& time)
     world.query<NetClient>([&](ecs::Entity /*entity*/, NetClient& client) {
         const auto due = client.channel.takeDue(now);
         for (const Packet& packet : due) {
-            sendPacket(_socket, packet, client.endpoint);
+            sendToClient(_socket, client, packet);
         }
         if (!due.empty()) {
             client.lastSent = now;
         } else if (now - client.lastSent >= HeartbeatInterval) {
-            sendPacket(_socket, client.channel.wrap(Heartbeat{}, now), client.endpoint);
+            sendToClient(_socket, client, client.channel.wrap(Heartbeat{}, now));
             client.lastSent = now;
         }
     });
