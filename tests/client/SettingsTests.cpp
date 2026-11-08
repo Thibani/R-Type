@@ -474,6 +474,16 @@ std::optional<unsigned> buttonOf(const Settings& settings, Action action)
 
 } // namespace
 
+TEST(Gamepad, AMouseSeenAsAJoystickIsNotAPad)
+{
+    // VirtualBox's mouse integration follows the pointer: read as a pad, it held Left and Down
+    EXPECT_TRUE(client::gamepad::isMouseName("VirtualBox mouse integration"));
+    EXPECT_TRUE(client::gamepad::isMouseName("Generic USB Mouse"));
+    EXPECT_FALSE(client::gamepad::isMouseName("Xbox 360 Controller"));
+    EXPECT_FALSE(client::gamepad::isMouseName("Logitech Gamepad F310"));
+    EXPECT_FALSE(client::gamepad::isMouseName(""));
+}
+
 TEST(Gamepad, ButtonsAreReadBack)
 {
     Settings settings;

@@ -753,9 +753,13 @@ void InputSystem::update(ecs::World& world, const ecs::Time& /*time*/)
         } else if (const auto* key = event->getIf<sf::Event::KeyPressed>()) {
             onKey(session, settings, *key, _loop);
         } else if (const auto* pressed = event->getIf<sf::Event::JoystickButtonPressed>()) {
-            onPadButton(session, settings, pressed->button, _loop);
+            if (gamepad::isPad(pressed->joystickId)) { // Not a mouse seen as a joystick
+                onPadButton(session, settings, pressed->button, _loop);
+            }
         } else if (const auto* moved = event->getIf<sf::Event::JoystickMoved>()) {
-            onPadMoved(session, settings, *moved);
+            if (gamepad::isPad(moved->joystickId)) {
+                onPadMoved(session, settings, *moved);
+            }
         } else if (const auto* typed = event->getIf<sf::Event::TextEntered>()) {
             type(session, typed->unicode);
         } else if (const auto* click = event->getIf<sf::Event::MouseButtonPressed>()) {
