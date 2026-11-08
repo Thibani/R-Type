@@ -67,9 +67,9 @@ struct SpriteFrame {
     bool mirrored{false};
 };
 
-/// The frame of `look` (for the boss, `seconds` since the start picks its
-/// animation frame). Ships (`widgets::ship`) and unknown looks have none:
-/// unknown ones are drawn as a "?" placeholder.
+/// The frame of `look` (for the boss, `seconds` since the start picks its animation frame).
+/// Ships (`widgets::ship`) and unknown looks have none: unknown ones are drawn as a "?"
+/// placeholder.
 [[nodiscard]]
 std::optional<SpriteFrame> spriteFrame(
     const Assets& assets, ColourMode mode, Look look, float seconds = 0.0F);
