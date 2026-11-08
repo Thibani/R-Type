@@ -16,6 +16,7 @@
 #include "server/AccountStore.hpp"
 #include "server/Components/ClientMessage.hpp"
 #include "server/Components/Combat.hpp"
+#include "server/Components/Match.hpp"
 #include "server/Components/NetClient.hpp"
 #include "server/Components/Player.hpp"
 #include "server/FriendStore.hpp"
@@ -2914,4 +2915,81 @@ TEST(Leaderboard, TheFileIsWrittenWithinASecond)
     std::ifstream input(server.scoresFile(), std::ios::binary);
     const std::string content{std::istreambuf_iterator<char>(input), {}};
     EXPECT_NE(content.find("S\t77\tDave\n"), std::string::npos) << content;
+}
+
+namespace {
+
+/// The team of every game running loses its last life and its ships, as if shot down.
+void loseEveryLife(TestServer& server)
+{
+    for (const auto& [id, room] : server.rooms()) {
+        server::singleton<server::Match>(room->world).lives = 0;
+        std::vector<ecs::Entity> ships;
+        room->world.query<server::PlayerShip>(
+            [&](ecs::Entity entity, server::PlayerShip& /*ship*/) { ships.push_back(entity); });
+        for (const ecs::Entity ship : ships) {
+            room->world.destroyEntity(ship);
+        }
+        std::vector<ecs::Entity> players;
+        room->world.query<server::InGame>(
+            [&](ecs::Entity player, server::InGame& /*inGame*/) { players.push_back(player); });
+        for (const ecs::Entity player : players) {
+            room->world.addComponent(player, server::Eliminated{}); // No ship comes back
+        }
+    }
+}
+
+/// Runs frames until `client` is told GAME_STATE with `phase`.
+std::optional<GameState> waitForPhase(TestServer& server, TestClient& client, GamePhase phase)
+{
+    while (const auto state = waitFor<GameState>(server, client)) {
+        if (state->phase == phase) {
+            return state;
+        }
+    }
+    return std::nullopt;
+}
+
+} // namespace
+
+TEST(Leaderboard, TheGameOverEntersTheScoreAndPlayAgainStartsANewGame)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)connectOrFail(server, client, "Dave");
+    setScore(server, 640);
+
+    loseEveryLife(server);
+    const auto over = waitForPhase(server, client, GamePhase::GameOver);
+    ASSERT_TRUE(over.has_value());
+    EXPECT_EQ(over->lives, 0);
+    ASSERT_EQ(server.rooms().size(), 1U); // Still there: Play again or Back to menu
+
+    const auto solo = askLeaderboard(server, client, Board::Solo);
+    ASSERT_TRUE(solo.has_value());
+    ASSERT_EQ(solo->best.size(), 1U);
+    EXPECT_EQ(solo->best[0].score, 640U);
+
+    for (int i = 0; i < 3; ++i) { // Unreliable: sent 3 times, like the client
+        client.send(Restart{});
+    }
+    const auto again = waitForPhase(server, client, GamePhase::Running);
+    ASSERT_TRUE(again.has_value());
+    EXPECT_EQ(again->score, 0U);
+    EXPECT_EQ(again->lives, game::run::StartingLives);
+
+    setScore(server, 90);
+    loseEveryLife(server);
+    ASSERT_TRUE(waitForPhase(server, client, GamePhase::GameOver).has_value());
+    const auto both = askLeaderboard(server, client, Board::Solo);
+    ASSERT_TRUE(both.has_value());
+    EXPECT_EQ(both->best.size(), 2U); // Each game counts once
+    EXPECT_EQ(both->lastScore, 90U);
+
+    client.sendReliable(LeaveGame{});
+    deliver(server);
+    deliver(server);
+    const auto after = askLeaderboard(server, client, Board::Solo);
+    ASSERT_TRUE(after.has_value());
+    EXPECT_EQ(after->best.size(), 2U); // Leaving after the game over adds nothing
 }
