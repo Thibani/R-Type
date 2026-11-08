@@ -272,6 +272,22 @@ TEST(ColourModes, EveryColourOfTheBydoSpriteFindsItsPart)
     EXPECT_EQ(bydoPart(sf::Color{0x94, 0xDE, 0xDE}), 2U);
 }
 
+TEST(ColourModes, AverageShadeWeighsColoursAndSkipsGreys)
+{
+    using Counted = std::pair<sf::Color, std::size_t>;
+    const std::array<Counted, 3> colours{
+        Counted{sf::Color{0xFF, 0x00, 0x00}, 3}, // Luma 0.299
+        Counted{sf::Color{0x00, 0xFF, 0x00}, 1}, // Luma 0.587
+        Counted{sf::Color{0x80, 0x80, 0x80}, 100}, // A hull grey: not counted
+    };
+
+    const sf::Color shade = client::theme::averageShade(colours);
+
+    EXPECT_EQ(shade.r, shade.g);
+    EXPECT_NEAR(shade.r, 255.0 * ((3 * 0.299) + 0.587) / 4.0, 1.0);
+    EXPECT_EQ(client::theme::averageShade(std::span<const Counted>{}), (sf::Color{127, 127, 127}));
+}
+
 TEST(ColourModes, TintKeepsGreysAndTransparency)
 {
     const sf::Color from{0xCE, 0x00, 0x00};
