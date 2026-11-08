@@ -102,7 +102,10 @@ The status is written, not only coloured. The list stays up to date during a gam
 **Chat**: a pale box on the main page (click it, or Tab to it) and in the game (Enter). Enter
 sends, Esc cancels, and every key goes to the chat meanwhile, none to the ship. The typing line
 disappears after sending; the messages stay, and PgUp, PgDn or the wheel go through the last 100.
-In the game, only the last 3 show, in a low box, so that the shots stay visible.
+In the game, only the last message shows, for 3 s, in a thin white frame around it with
+nothing behind, so that the shots stay visible. On the main page the chat shows while the
+player types and for 10 s after a message, in a frame as high as its lines; otherwise a thin
+"Click to chat" line says where it is.
 `/msg name text` writes to a friend, anywhere: `Chat.cpp` takes the longest friend's name the
 text starts with, whatever its case. A right click on a friend in the panel gives Message, which
 opens the chat with "To [name]:". Private lines say so in words ("[From name]"), not only in colour.

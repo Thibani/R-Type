@@ -92,6 +92,7 @@ struct Session {
     bool chatOpen{false}; // Typing: every key goes to the chat, none to the ship
     std::string chatInput;
     std::optional<std::string> chatTarget; // "To [name]:", from the right-click menu
+    std::uint32_t chatCount{0}; // Lines ever added: the interface shows the chat when it moves
 
     // Leaderboard, over the main page
     bool leaderboardOpen{false};

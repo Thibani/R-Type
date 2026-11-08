@@ -107,11 +107,14 @@ constexpr sf::Vector2f groupCodeLabel(int interfaceSize) noexcept
     return {groupLeft(interfaceSize), (isCompact(interfaceSize) ? 130.0F : 104.0F) + 6.0F};
 }
 
+/// "Get a code" starts the line while there is no code; once there is one, "New code" goes
+/// after "Code: XXXXXX".
 [[nodiscard]]
-constexpr sf::FloatRect newGroupCode(int interfaceSize) noexcept
+constexpr sf::FloatRect newGroupCode(int interfaceSize, bool hasCode = true) noexcept
 {
-    return isCompact(interfaceSize) ? sf::FloatRect{{680.0F, 130.0F}, {100.0F, 36.0F}}
-                                    : sf::FloatRect{{680.0F, 104.0F}, {104.0F, 40.0F}};
+    const float left = hasCode ? 680.0F : groupLeft(interfaceSize);
+    return isCompact(interfaceSize) ? sf::FloatRect{{left, 130.0F}, {100.0F, 36.0F}}
+                                    : sf::FloatRect{{left, 104.0F}, {104.0F, 40.0F}};
 }
 
 [[nodiscard]]
@@ -378,9 +381,12 @@ inline constexpr int ChatBox = 3;
 inline constexpr float ChatInputHeight = 26.0F;
 inline constexpr float ChatLineHeight = 17.0F;
 inline constexpr unsigned ChatTextSize = 13;
-// In the game, only the last messages show, so that the game stays visible; scrolling back
-// still reaches the others
-inline constexpr std::size_t GameChatMessages = 3;
+// In the game, only the last message shows, for a few seconds, so that the game stays
+// visible; scrolling back still reaches the others. On the main page, the chat shows while
+// the player types, and for a while after a message
+inline constexpr std::size_t GameChatMessages = 1;
+inline constexpr float GameChatSeconds = 3.0F;
+inline constexpr float HomeChatSeconds = 10.0F;
 
 [[nodiscard]]
 constexpr sf::FloatRect homeChat(int interfaceSize) noexcept
@@ -558,7 +564,7 @@ inline std::vector<sf::FloatRect> focusables(const Session& session, int interfa
         const bool invited = !session.invitations.empty();
         std::vector<sf::FloatRect> parts{play(interfaceSize), homeSettings(interfaceSize),
             logOut(interfaceSize), homeChat(interfaceSize),
-            when(leads, newGroupCode(interfaceSize)),
+            when(leads, newGroupCode(interfaceSize, !session.group.code.empty())),
             when(leads && !session.group.code.empty(), deleteGroupCode(interfaceSize)),
             groupCodeInput(interfaceSize), groupJoin(interfaceSize),
             when(members >= 2, leaveGroup(interfaceSize)),

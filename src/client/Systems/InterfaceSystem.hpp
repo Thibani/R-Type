@@ -20,6 +20,8 @@ public:
 private:
     sf::RenderWindow& _window;
     const Assets& _assets;
+    std::uint32_t _chatCount{0}; // Session::chatCount, as of the last frame
+    float _chatChangedAt{-1000.0F}; // When the chat last changed: it shows for a while
 };
 
 } // namespace client

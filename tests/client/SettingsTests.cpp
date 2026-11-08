@@ -148,7 +148,8 @@ TEST(Settings, InterfaceSizeIsReadBack)
 
 TEST(Settings, UnknownInterfaceSizeKeepsTheDefault)
 {
-    for (const char* text : {"interface = 110", "interface = 0", "interface = big", "interface = -75"}) {
+    for (const char* text :
+        {"interface = 110", "interface = 0", "interface = big", "interface = -75"}) {
         EXPECT_EQ(client::parseSettings(text).interfaceSize, Settings{}.interfaceSize) << text;
     }
 }
@@ -198,12 +199,11 @@ Lab seenAs(sf::Color colour, const Matrix& matrix)
     std::array<double, 3> seen{};
     for (std::size_t i = 0; i < 3; ++i) {
         const auto& row = matrix.at(i);
-        seen.at(i) = std::clamp(
-            (row[0] * rgb[0]) + (row[1] * rgb[1]) + (row[2] * rgb[2]), 0.0, 1.0);
+        seen.at(i)
+            = std::clamp((row[0] * rgb[0]) + (row[1] * rgb[1]) + (row[2] * rgb[2]), 0.0, 1.0);
     }
-    const auto curve = [](double t) {
-        return t > 0.008856 ? std::cbrt(t) : (7.787 * t) + (16.0 / 116.0);
-    };
+    const auto curve
+        = [](double t) { return t > 0.008856 ? std::cbrt(t) : (7.787 * t) + (16.0 / 116.0); };
     const double x = curve(((0.4124 * seen[0]) + (0.3576 * seen[1]) + (0.1805 * seen[2])) / 0.9505);
     const double y = curve((0.2126 * seen[0]) + (0.7152 * seen[1]) + (0.0722 * seen[2]));
     const double z = curve(((0.0193 * seen[0]) + (0.1192 * seen[1]) + (0.9505 * seen[2])) / 1.089);
@@ -223,7 +223,8 @@ TEST(ColourModes, EveryElementStaysDistinctForThePlayerItIsMadeFor)
     for (std::size_t mode = 1; mode < client::ColourModeCount; ++mode) {
         const client::theme::Palette& palette = client::theme::Palettes.at(mode);
         std::vector<sf::Color> colours(palette.players.begin(), palette.players.end());
-        colours.insert(colours.end(), {palette.bydo.front(), palette.playerMissile, palette.enemyMissile});
+        colours.insert(
+            colours.end(), {palette.bydo.front(), palette.playerMissile, palette.enemyMissile});
 
         const Matrix& matrix = Dichromacy.at(mode - 1);
         for (std::size_t a = 0; a < colours.size(); ++a) {
@@ -262,11 +263,13 @@ TEST(ColourModes, TheThreeColoursOfTheBydoStayDistinct)
 TEST(ColourModes, EveryColourOfTheBydoSpriteFindsItsPart)
 {
     using client::theme::bydoPart;
-    for (const sf::Color body : {sf::Color{0xCE, 0x08, 0x00}, sf::Color{0x6B, 0x08, 0x00},
-             sf::Color{0xFF, 0x63, 0x5A}, sf::Color{0x52, 0x00, 0x00}, sf::Color{0xFF, 0xA5, 0x9C}}) {
+    for (const sf::Color body :
+        {sf::Color{0xCE, 0x08, 0x00}, sf::Color{0x6B, 0x08, 0x00}, sf::Color{0xFF, 0x63, 0x5A},
+            sf::Color{0x52, 0x00, 0x00}, sf::Color{0xFF, 0xA5, 0x9C}}) {
         EXPECT_EQ(bydoPart(body), 0U);
     }
-    for (const sf::Color eye : {sf::Color{0x00, 0x4A, 0x00}, sf::Color{0xC6, 0xFF, 0xC6}, sf::Color{0x00, 0xDE, 0x00}}) {
+    for (const sf::Color eye :
+        {sf::Color{0x00, 0x4A, 0x00}, sf::Color{0xC6, 0xFF, 0xC6}, sf::Color{0x00, 0xDE, 0x00}}) {
         EXPECT_EQ(bydoPart(eye), 1U);
     }
     EXPECT_EQ(bydoPart(sf::Color{0x94, 0xDE, 0xDE}), 2U);
@@ -277,9 +280,11 @@ TEST(ColourModes, TintKeepsGreysAndTransparency)
     const sf::Color from{0xCE, 0x00, 0x00};
     const sf::Color to{0x12, 0x34, 0x56};
 
-    EXPECT_EQ(client::theme::tinted(sf::Color{0x73, 0x8C, 0x8C}, from, to), (sf::Color{0x73, 0x8C, 0x8C}));
+    EXPECT_EQ(client::theme::tinted(sf::Color{0x73, 0x8C, 0x8C}, from, to),
+        (sf::Color{0x73, 0x8C, 0x8C}));
     EXPECT_EQ(client::theme::tinted(sf::Color::White, from, to), sf::Color::White);
-    EXPECT_EQ(client::theme::tinted(sf::Color{255, 132, 66, 0}, from, to), (sf::Color{255, 132, 66, 0}));
+    EXPECT_EQ(
+        client::theme::tinted(sf::Color{255, 132, 66, 0}, from, to), (sf::Color{255, 132, 66, 0}));
 }
 
 TEST(ColourModes, TintTurnsTheMainColourIntoThePaletteColour)
@@ -303,11 +308,15 @@ TEST(ColourModes, TintKeepsTheDetailsOfASprite)
     };
 
     // Shades that HSL lightness cannot tell apart: the three blues of the player missile
-    expectDarkToLight({{0x00, 0x00, 0xFF}, {0x00, 0x9C, 0xFF}, {0x00, 0xC6, 0xFF}}, {0x00, 0xC6, 0xFF});
+    expectDarkToLight(
+        {{0x00, 0x00, 0xFF}, {0x00, 0x9C, 0xFF}, {0x00, 0xC6, 0xFF}}, {0x00, 0xC6, 0xFF});
     // The enemy missile, around its main colour
-    expectDarkToLight({{0xFF, 0xBD, 0x00}, {0xFF, 0xDE, 0x00}, {0xFF, 0xFF, 0x7B}}, {0xFF, 0xBD, 0x00});
+    expectDarkToLight(
+        {{0xFF, 0xBD, 0x00}, {0xFF, 0xDE, 0x00}, {0xFF, 0xFF, 0x7B}}, {0xFF, 0xBD, 0x00});
     // The body of the Bydo
-    expectDarkToLight({{0x52, 0x00, 0x00}, {0x6B, 0x08, 0x00}, {0xCE, 0x08, 0x00}, {0xFF, 0x63, 0x5A}, {0xFF, 0xA5, 0x9C}}, {0xCE, 0x08, 0x00});
+    expectDarkToLight({{0x52, 0x00, 0x00}, {0x6B, 0x08, 0x00}, {0xCE, 0x08, 0x00},
+                          {0xFF, 0x63, 0x5A}, {0xFF, 0xA5, 0x9C}},
+        {0xCE, 0x08, 0x00});
 }
 
 // --- Interface size ---------------------------------------------------------------
@@ -385,7 +394,8 @@ TEST(InterfaceSize, SettingsRowsNeverOverlapAndStayInThePanel)
     for (int a = 0; a <= BackRow; ++a) {
         EXPECT_TRUE(contains(SettingsPanel, settingsRow(a))) << a;
         for (int b = a + 1; b <= BackRow; ++b) {
-            EXPECT_FALSE(settingsRow(a).findIntersection(settingsRow(b)).has_value()) << a << " " << b;
+            EXPECT_FALSE(settingsRow(a).findIntersection(settingsRow(b)).has_value())
+                << a << " " << b;
         }
     }
 }
@@ -480,7 +490,8 @@ TEST(Gamepad, ButtonsAreReadBack)
 
 TEST(Gamepad, BadButtonsKeepTheirDefault)
 {
-    for (const char* text : {"button.fire = 7", "button.fire = 32", "button.fire = -1", "button.fire = A"}) {
+    for (const char* text :
+        {"button.fire = 7", "button.fire = 32", "button.fire = -1", "button.fire = A"}) {
         EXPECT_EQ(buttonOf(client::parseSettings(text), Action::Fire), 0U) << text;
     }
     EXPECT_FALSE(buttonOf(client::parseSettings("button.fire = none"), Action::Fire).has_value());
@@ -488,7 +499,8 @@ TEST(Gamepad, BadButtonsKeepTheirDefault)
 
 TEST(Gamepad, TwoActionsOnOneButtonResetTheButtons)
 {
-    const Settings settings = client::parseSettings("button.up = 3\nbutton.down = 3\nkey.fire = X\n");
+    const Settings settings
+        = client::parseSettings("button.up = 3\nbutton.down = 3\nkey.fire = X\n");
 
     EXPECT_EQ(settings.buttons, Settings::DefaultButtons);
     EXPECT_EQ(keyOf(settings, Action::Fire), Key::X); // The keys are not touched
@@ -520,10 +532,12 @@ TEST(Gamepad, StickAndDPadMoveTheShip)
     const Settings settings;
 
     EXPECT_EQ(client::gamepad::mask(PadState{.x = -100.0F}, settings), input::Left);
-    EXPECT_EQ(client::gamepad::mask(PadState{.x = 80.0F, .y = 80.0F}, settings), input::Right | input::Down);
+    EXPECT_EQ(client::gamepad::mask(PadState{.x = 80.0F, .y = 80.0F}, settings),
+        input::Right | input::Down);
     EXPECT_EQ(client::gamepad::mask(PadState{.povX = 100.0F}, settings), input::Right);
     // The D-pad's up, as SFML reports it on this system
-    EXPECT_EQ(client::gamepad::mask(PadState{.povY = client::gamepad::povY(-100.0F)}, settings), input::Up);
+    EXPECT_EQ(client::gamepad::mask(PadState{.povY = client::gamepad::povY(-100.0F)}, settings),
+        input::Up);
 }
 
 TEST(Gamepad, ARestingStickDoesNothing)
@@ -911,13 +925,13 @@ TEST(FriendsPanel, TheMenuOpensOnTheRowOfTheFriend)
     EXPECT_FALSE(client::layout::friendMenuButton(session, bar).has_value());
 }
 
-TEST(ChatBox, InTheGameItIsJustHighEnoughForThreeLinesAndTyping)
+TEST(ChatBox, InTheGameItIsLowAndShowsOneMessage)
 {
     using namespace client::layout;
     const sf::FloatRect chat = gameChat({{0.0F, 0.0F}, {1280.0F, 720.0F}});
     EXPECT_GE(chat.size.y, (3.0F * ChatLineHeight) + ChatInputHeight);
     EXPECT_LT(chat.size.y, (4.0F * ChatLineHeight) + ChatInputHeight + 20.0F); // Not a fourth
-    EXPECT_EQ(GameChatMessages, 3U);
+    EXPECT_EQ(GameChatMessages, 1U); // Only the message just sent or received
 }
 
 TEST(ChatBox, TheChatFitsAtEverySizeInTheGame)

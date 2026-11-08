@@ -397,6 +397,7 @@ void applyPayload(ecs::World& world, const Payload& payload, float now)
 void addChatLine(Session& session, ChatLine line)
 {
     session.chat.push_back(std::move(line));
+    ++session.chatCount;
     if (session.chat.size() > MaxChatLines) {
         session.chat.erase(session.chat.begin());
     }
