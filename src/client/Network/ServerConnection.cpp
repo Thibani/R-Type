@@ -187,9 +187,21 @@ void ServerConnection::update(Clock::time_point now)
     } else if (_status == Status::Connected) {
         if (now - _lastReceived >= Timeout) {
             fail(Failure::Kind::ConnectionLost);
-        } else if (now - _lastSent >= HeartbeatDelay) {
+            return;
+        }
+        for (const Packet& packet : _channel.takeDue(now)) {
+            send(packet, now);
+        }
+        if (now - _lastSent >= HeartbeatDelay) {
             send(_channel.wrap(Heartbeat{}, now), now);
         }
+    }
+}
+
+void ServerConnection::sendReliable(Payload payload)
+{
+    if (_status == Status::Connected) {
+        _channel.queueReliable(std::move(payload));
     }
 }
 

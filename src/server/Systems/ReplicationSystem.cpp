@@ -38,7 +38,13 @@ StateUpdate stateUpdate(const std::optional<GameState>& known, const GameState& 
 } // namespace
 
 ReplicationSystem::ReplicationSystem(ecs::World& world)
+    : ReplicationSystem(world, world)
+{
+}
+
+ReplicationSystem::ReplicationSystem(ecs::World& world, ecs::World& sessions)
     : _world(world)
+    , _sessions(sessions)
     , _onDespawn(world.events().subscribe<game::DespawnEvent>(
           [this](const game::DespawnEvent& despawn) { onDespawn(despawn); }))
 {
@@ -87,7 +93,8 @@ void ReplicationSystem::update(ecs::World& world, const ecs::Time& time)
     const TimePoint now = toTimePoint(time);
     const bool scoreDue = !_lastScoreUpdate || now - *_lastScoreUpdate >= ScoreUpdateInterval;
     bool scoreSent = false;
-    world.query<NetClient, LoggedIn>([&](ecs::Entity /*entity*/, NetClient& client, LoggedIn&) {
+    world.query<InGame>([&](ecs::Entity /*entity*/, InGame& player) {
+        NetClient& client = _sessions.getComponent<NetClient>(player.session);
         for (const PlayerDied& death : _deaths) {
             client.channel.queueReliable(death);
         }

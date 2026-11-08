@@ -367,6 +367,61 @@ waiting, since there is one per session.
 
 ---
 
+### Friends (#126)
+
+Friends use a second text file (`--friends`, default `friends.txt`), for the reasons above.
+It is apart from the accounts so that a mistake on friends can never damage a password hash.
+The difference is when it is written: creating an account costs a slow hash, so a client cannot
+do it often, but a friend request costs nothing, and the server accepts 120 packets per second
+per address. Rewriting the whole file for each one would make the game wait for the disk. So
+changes stay in memory and the file is written at most once per second, and when the server
+stops. The price: a crash can lose the last second of changes, which a player can simply redo.
+
+### Private messages (#92)
+
+Messages for an offline friend wait in a third text file (`--messages`, default `messages.txt`),
+written like the friends file and for the same reason. At most 100 wait per player, so the file
+stays small and a message is read at most once, then forgotten. They are in clear: encrypting
+them for their reader would need a key that the reader alone holds, which the accounts do not
+have. This is written in the protocol as a known limit.
+
+### Games in parallel and groups (#71, #72, #111)
+
+Each game has its own `ecs::World` and `ecs::GameLoop` (`GameRoom`). The sessions stay in the
+server's main World for the whole connection, and a player in a game also has an entity in the
+World of that game, which points to their session.
+
+| Option | For | Against |
+|---|---|---|
+| **One World per game (chosen)** | Two games cannot touch each other: no query can see the other's entities. The game systems do not change. The score and the enemies go with the room | One indirection from the player to their session |
+| One World with a game number on each entity | No second World | Every system must filter, including the collisions of `game`: one mistake and a shot crosses into another game |
+| Moving the session between Worlds | The game systems see a `NetClient` as before | Every network system, and the chat and friends, must look through every World |
+
+Groups are plain data (`Groups`), kept in memory: a group is worth nothing after its last member
+leaves. The rules are in that class, tested without a network; `GroupSystem` only reads the orders
+and tells the members. Each member is told the group's state when it differs from the last one
+they were sent, so no change can be forgotten, whatever its cause.
+
+A code has 6 signs out of 32, about a billion values, without those easy to mistake when read
+aloud. Trying them is limited to 5 wrong codes per 30 seconds and per account.
+
+### Leaderboard (#91)
+
+Finished games go to a fourth text file (`--scores`, default `scores.txt`), one line per game,
+written at most once per second like the friends file. A game is a line, not a best score per
+player, as asked: the same team can be in the 10 several times, and "your last game" can be
+ranked even far below them. Each ranking keeps its games sorted, so an answer costs a copy of
+10 lines and a binary search for the player's last game, whatever the number of games.
+
+A game ends when nobody is left in it, and its team score then counts for everyone who started
+it. Until lives exist (#145), leaving is the only end; with them, the score will be taken at
+GAME_OVER instead, which changes only `RoomSystem`.
+
+| Option | For | Against |
+|---|---|---|
+| **Text file, like the other stores (chosen)** | Same tools, same safe replace, readable by hand | The whole file is rewritten at each save |
+| SQLite | Queries, no full rewrite | A new dependency for 10 lines and one rank |
+
 ## 11. Security
 
 | Threat                              | Mitigation                                         | Status |

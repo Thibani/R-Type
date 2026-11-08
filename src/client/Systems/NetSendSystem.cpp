@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <utility>
 
 namespace client {
 
@@ -68,7 +69,18 @@ void NetSendSystem::update(ecs::World& world, const ecs::Time& /*time*/)
         session.screen = Screen::Connect;
         session.focus = 0;
         session.status.clear();
+        session.error.clear();
+    } else if (session.request == Request::Play) {
+        session.error.clear();
+        _connection.sendReliable(JoinGame{}); // A second click during the countdown does nothing
+    } else if (session.request == Request::LeaveGame) {
+        _connection.sendReliable(LeaveGame{});
+        leaveGame(world);
     }
+    for (network::protocol::Payload& payload : session.outgoing) {
+        _connection.sendReliable(std::move(payload));
+    }
+    session.outgoing.clear();
     if (session.request != Request::Quit) {
         session.request = Request::None; // Quit is for main(), after the loop
     }

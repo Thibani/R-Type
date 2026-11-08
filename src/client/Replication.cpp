@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <iterator>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -190,6 +191,172 @@ void apply(ecs::World& world, const GameState& state, float /*now*/)
     }
 }
 
+void apply(ecs::World& world, const JoinResult& result, float /*now*/)
+{
+    Session& session = singleton<Session>(world);
+    if (result.code == JoinCode::Ok) {
+        enterGame(world, result.playerId);
+        return;
+    }
+    addChatLine(session,
+        ChatLine{.kind = ChatLine::Kind::Notice,
+            .name = {},
+            .text = result.code == JoinCode::NotLeader
+                ? "Only the leader can start the game."
+                : "Everyone must be ready, and back from their game."});
+}
+
+/// Requests received first, then who can be played with, then the requests sent.
+int rankOf(FriendState state) noexcept
+{
+    switch (state) {
+    case FriendState::RequestReceived:
+        return 0;
+    case FriendState::Online:
+        return 1;
+    case FriendState::Offline:
+    case FriendState::Removed:
+        return 2;
+    case FriendState::RequestSent:
+        return 3;
+    }
+    return 2;
+}
+
+void apply(ecs::World& world, const FriendEntry& entry, float /*now*/)
+{
+    auto& friends = singleton<Session>(world).friends;
+    std::erase_if(friends, [&](const FriendRow& row) { return row.name == entry.name; });
+    if (entry.state != FriendState::Removed) {
+        friends.push_back(FriendRow{.name = entry.name, .state = entry.state});
+    }
+    std::ranges::sort(friends, [](const FriendRow& a, const FriendRow& b) {
+        return std::pair{rankOf(a.state), a.name} < std::pair{rankOf(b.state), b.name};
+    });
+}
+
+void apply(ecs::World& world, const FriendResult& result, float /*now*/)
+{
+    Session& session = singleton<Session>(world);
+    switch (result.code) {
+    case FriendCode::Ok:
+        session.friendMessage = "Done.";
+        session.friendName.clear();
+        break;
+    case FriendCode::UnknownName:
+        session.friendMessage = "No player has this name.";
+        break;
+    case FriendCode::AlreadyLinked:
+        session.friendMessage = "Already a friend, or already asked.";
+        break;
+    case FriendCode::Yourself:
+        session.friendMessage = "That is your own name.";
+        break;
+    case FriendCode::LimitReached:
+        session.friendMessage = "Limit reached: 50 friends, 50 requests.";
+        break;
+    }
+}
+
+void apply(ecs::World& world, const ChatMessage& message, float /*now*/)
+{
+    const auto kindOf = [](ChatKind kind) {
+        switch (kind) {
+        case ChatKind::Game:
+            return ChatLine::Kind::Game;
+        case ChatKind::Received:
+            return ChatLine::Kind::Received;
+        case ChatKind::Sent:
+            break;
+        }
+        return ChatLine::Kind::Sent;
+    };
+    addChatLine(singleton<Session>(world),
+        ChatLine{.kind = kindOf(message.kind), .name = message.name, .text = message.text});
+}
+
+void apply(ecs::World& world, const ChatRefused& refused, float /*now*/)
+{
+    std::string text = "Too fast: wait a moment.";
+    if (refused.reason == ChatRefusal::NotFriend) {
+        text = "Not in your friends.";
+    } else if (refused.reason == ChatRefusal::MailboxFull) {
+        text = "Too many messages are waiting for them.";
+    }
+    addChatLine(singleton<Session>(world),
+        ChatLine{.kind = ChatLine::Kind::Notice, .name = {}, .text = std::move(text)});
+}
+
+void apply(ecs::World& world, const GroupState& state, float /*now*/)
+{
+    singleton<Session>(world).group = state;
+}
+
+void apply(ecs::World& world, const Leaderboard& board, float /*now*/)
+{
+    Session& session = singleton<Session>(world);
+    if (board.board == session.board) { // An answer for the other tab came too late
+        session.leaderboard = board;
+    }
+}
+
+void apply(ecs::World& world, const GroupResult& result, float /*now*/)
+{
+    const auto textOf = [](GroupOutcome outcome) -> std::string {
+        switch (outcome) {
+        case GroupOutcome::Invited:
+            return "Invitation sent.";
+        case GroupOutcome::UnknownCode:
+            return "No group has this code.";
+        case GroupOutcome::GroupFull:
+            return "This group is full.";
+        case GroupOutcome::Kicked:
+            return "You were removed from this group: only an invitation brings you back.";
+        case GroupOutcome::GroupInGame:
+            return "This group is in a game.";
+        case GroupOutcome::NotLeader:
+            return "Only the leader can do this.";
+        case GroupOutcome::NotMember:
+            return "Not in the group.";
+        case GroupOutcome::Alone:
+            return "You are alone in your group.";
+        case GroupOutcome::TooManyTries:
+            return "Too many wrong codes: wait a moment.";
+        case GroupOutcome::NotAvailable:
+            return "This friend cannot be invited now.";
+        case GroupOutcome::InvitationGone:
+            return "This invitation no longer exists.";
+        case GroupOutcome::RemovedFromGroup:
+            break;
+        }
+        return "The leader removed you from the group.";
+    };
+    addChatLine(singleton<Session>(world),
+        ChatLine{.kind = ChatLine::Kind::Notice, .name = {}, .text = textOf(result.outcome)});
+}
+
+void apply(ecs::World& world, const GroupInvited& invited, float /*now*/)
+{
+    auto& invitations = singleton<Session>(world).invitations;
+    if (std::ranges::find(invitations, invited.name) == invitations.end()) {
+        invitations.push_back(invited.name);
+    }
+}
+
+/// True for what has nothing to do with a game: it counts on the main page too,
+/// and says nothing about the order of the game's events.
+bool isOutsideTheGame(const Payload& payload) noexcept
+{
+    return std::holds_alternative<FriendEntry>(payload)
+        || std::holds_alternative<FriendResult>(payload)
+        || std::holds_alternative<ChatMessage>(payload)
+        || std::holds_alternative<ChatRefused>(payload)
+        || std::holds_alternative<GroupState>(payload)
+        || std::holds_alternative<GroupResult>(payload)
+        || std::holds_alternative<GroupInvited>(payload)
+        || std::holds_alternative<Leaderboard>(payload);
+}
+
 template <typename Other>
 void apply(ecs::World& /*world*/, const Other& /*payload*/, float /*now*/)
 {
@@ -200,7 +367,15 @@ void apply(ecs::World& /*world*/, const Other& /*payload*/, float /*now*/)
 
 void applyPayload(ecs::World& world, const Payload& payload, float now)
 {
-    // §8.1: the PLAYER_JOINED of the players already there come first. Any other
+    const Session& session = singleton<Session>(world);
+    if (isOutsideTheGame(payload)) {
+        std::visit([&](const auto& packet) { apply(world, packet, now); }, payload);
+        return;
+    }
+    if (!session.playerId && !std::holds_alternative<JoinResult>(payload)) {
+        return; // On the main page: late events of a game we left
+    }
+    // §8.4: the PLAYER_JOINED of the players already there come first. Any other
     // reliable event ends them; a SNAPSHOT does not (unreliable, it can overtake one)
     if (!std::holds_alternative<PlayerJoined>(payload)
         && !std::holds_alternative<Snapshot>(payload)) {
@@ -209,25 +384,51 @@ void applyPayload(ecs::World& world, const Payload& payload, float now)
     std::visit([&](const auto& packet) { apply(world, packet, now); }, payload);
 }
 
-void startSession(ecs::World& world, const ConnectAccept& accept, const std::string& name)
+void addChatLine(Session& session, ChatLine line)
+{
+    session.chat.push_back(std::move(line));
+    if (session.chat.size() > MaxChatLines) {
+        session.chat.erase(session.chat.begin());
+    }
+    if (session.chatScroll > 0) { // Reading older lines: they stay where they are
+        session.chatScroll = std::min(session.chatScroll + 1, session.chat.size() - 1);
+    }
+}
+
+void startSession(ecs::World& world)
 {
     clearSession(world);
     Session& session = singleton<Session>(world);
-    session.playerId = accept.playerId;
-    if (accept.playerId < MaxPlayers) {
-        session.players.at(accept.playerId)
-            = PlayerSlot{.present = true, .left = false, .down = false, .name = name};
-    }
-    // The current server spawns our ship at once and may never send GAME_STATE:
-    // play now. A GAME_STATE (WAITING_FOR_PLAYERS) moves us to the waiting room.
-    session.screen = Screen::Game;
-    session.catchingUp = true;
+    session.screen = Screen::Home;
     session.focus = 0;
     session.status.clear();
     session.error.clear();
 }
 
-void clearSession(ecs::World& world)
+void enterGame(ecs::World& world, std::uint8_t playerId)
+{
+    Session& session = singleton<Session>(world);
+    session.playerId = playerId;
+    session.players = {};
+    if (playerId < MaxPlayers) {
+        session.players.at(playerId)
+            = PlayerSlot{.present = true, .left = false, .down = false, .name = session.name};
+    }
+    // The server spawns our ship at once and may never send GAME_STATE: play now.
+    // A GAME_STATE (WAITING_FOR_PLAYERS) moves us to the waiting room.
+    session.screen = Screen::Game;
+    session.catchingUp = true;
+    session.focus = 0;
+    session.friendsHovered = false;
+    session.friendMenu.reset();
+    session.chatOpen = false;
+    session.chatInput.clear();
+    session.chatTarget.reset();
+    session.leaderboardOpen = false;
+    session.error.clear();
+}
+
+void leaveGame(ecs::World& world)
 {
     std::vector<ecs::Entity> networked;
     world.query<NetEntity>(
@@ -235,10 +436,14 @@ void clearSession(ecs::World& world)
     for (const ecs::Entity entity : networked) {
         world.destroyEntity(entity);
     }
-    singleton<NetRegistry>(world) = NetRegistry{};
-    singleton<InputHistory>(world) = InputHistory{}; // A new session counts ticks from 0
+    singleton<NetRegistry>(world).entities.clear();
 
     Session& session = singleton<Session>(world);
+    session.screen = Screen::Home;
+    session.focus = 0;
+    session.chatOpen = false;
+    session.chatInput.clear();
+    session.chatTarget.reset();
     session.playerId.reset();
     session.players = {};
     session.score = 0;
@@ -247,6 +452,29 @@ void clearSession(ecs::World& world)
     session.bossProgress = 0;
     session.menuOpen = false;
     session.notice.clear();
+}
+
+void clearSession(ecs::World& world)
+{
+    leaveGame(world);
+    singleton<NetRegistry>(world) = NetRegistry{};
+    singleton<InputHistory>(world) = InputHistory{}; // A new session counts ticks from 0
+
+    Session& session = singleton<Session>(world);
+    session.friends.clear();
+    session.friendName.clear();
+    session.friendMessage.clear();
+    session.friendScroll = 0;
+    session.friendMenu.reset();
+    session.outgoing.clear();
+    session.chat.clear();
+    session.chatScroll = 0;
+    session.group = {};
+    session.groupCodeInput.clear();
+    session.invitations.clear();
+    session.leaderboardOpen = false;
+    session.board = network::protocol::Board::Solo;
+    session.leaderboard.reset();
 }
 
 } // namespace client

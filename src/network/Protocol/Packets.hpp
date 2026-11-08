@@ -128,6 +128,81 @@ struct Input {
     friend bool operator==(const Input&, const Input&) = default;
 };
 
+/// The player asks to enter the game. Answered by JOIN_RESULT.
+struct JoinGame { // The leader starts the group's game
+    static constexpr PacketType Type = PacketType::JoinGame;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = true;
+
+    friend bool operator==(const JoinGame&, const JoinGame&) = default;
+};
+
+/// The player goes back to the main page, and stays connected.
+struct LeaveGame {
+    static constexpr PacketType Type = PacketType::LeaveGame;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = true;
+
+    friend bool operator==(const LeaveGame&, const LeaveGame&) = default;
+};
+
+/// Asks an account, by its exact name, to become a friend. Answered by FRIEND_RESULT.
+struct FriendRequest {
+    static constexpr PacketType Type = PacketType::FriendRequest;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = true;
+
+    std::string name;
+
+    friend bool operator==(const FriendRequest&, const FriendRequest&) = default;
+};
+
+/// Accepts or refuses the request received from `name`.
+struct FriendAnswer {
+    static constexpr PacketType Type = PacketType::FriendAnswer;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = true;
+
+    std::string name;
+    FriendReply reply{FriendReply::Refuse};
+
+    friend bool operator==(const FriendAnswer&, const FriendAnswer&) = default;
+};
+
+/// Removes a friend, or cancels the request sent to `name`.
+struct FriendRemove {
+    static constexpr PacketType Type = PacketType::FriendRemove;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = true;
+
+    std::string name;
+
+    friend bool operator==(const FriendRemove&, const FriendRemove&) = default;
+};
+
+/// A message for the players of the game.
+struct ChatSend {
+    static constexpr PacketType Type = PacketType::ChatSend;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = true;
+
+    std::string text; // 1 to MaxChatSize bytes of valid UTF-8, no control character
+
+    friend bool operator==(const ChatSend&, const ChatSend&) = default;
+};
+
+/// A private message for a friend, online or not.
+struct PrivateSend {
+    static constexpr PacketType Type = PacketType::PrivateSend;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = true;
+
+    std::string name;
+    std::string text;
+
+    friend bool operator==(const PrivateSend&, const PrivateSend&) = default;
+};
+
 // --- Server -> client (§4.3) -------------------------------------------------
 
 /// State of one entity inside a snapshot. Positions and velocities are
@@ -234,11 +309,237 @@ struct GameState {
     friend bool operator==(const GameState&, const GameState&) = default;
 };
 
+/// Answer to JOIN_GAME. Reliable, and sent before any event of the game.
+struct JoinResult {
+    static constexpr PacketType Type = PacketType::JoinResult;
+    static constexpr Direction Way = Direction::ServerToClient;
+    static constexpr bool Reliable = true;
+
+    JoinCode code{JoinCode::Ok};
+    std::uint8_t playerId{NoPlayer}; // 0..3 if `Ok`, NoPlayer otherwise
+
+    friend bool operator==(const JoinResult&, const JoinResult&) = default;
+};
+
+/// The leader asks for a code, or deletes it.
+struct GroupCode {
+    static constexpr PacketType Type = PacketType::GroupCode;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = true;
+
+    GroupCodeAction action{GroupCodeAction::Generate};
+
+    friend bool operator==(const GroupCode&, const GroupCode&) = default;
+};
+
+/// Joins the group that has this code.
+struct GroupJoin {
+    static constexpr PacketType Type = PacketType::GroupJoin;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = true;
+
+    std::string code; // GroupCodeSize characters of the code's alphabet
+
+    friend bool operator==(const GroupJoin&, const GroupJoin&) = default;
+};
+
+/// Leaves the group for a new one, alone.
+struct GroupLeave {
+    static constexpr PacketType Type = PacketType::GroupLeave;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = true;
+
+    friend bool operator==(const GroupLeave&, const GroupLeave&) = default;
+};
+
+/// The leader removes a member.
+struct GroupKick {
+    static constexpr PacketType Type = PacketType::GroupKick;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = true;
+
+    std::string name; // 1 to 16 bytes
+
+    friend bool operator==(const GroupKick&, const GroupKick&) = default;
+};
+
+/// The leader gives the role to a member.
+struct GroupPromote {
+    static constexpr PacketType Type = PacketType::GroupPromote;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = true;
+
+    std::string name; // 1 to 16 bytes
+
+    friend bool operator==(const GroupPromote&, const GroupPromote&) = default;
+};
+
+/// The leader invites a friend online.
+struct GroupInvite {
+    static constexpr PacketType Type = PacketType::GroupInvite;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = true;
+
+    std::string name; // 1 to 16 bytes
+
+    friend bool operator==(const GroupInvite&, const GroupInvite&) = default;
+};
+
+/// The answer to GROUP_INVITED.
+struct GroupAnswer {
+    static constexpr PacketType Type = PacketType::GroupAnswer;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = true;
+
+    std::string name; // Who invited: 1 to 16 bytes
+    FriendReply reply{FriendReply::Refuse};
+
+    friend bool operator==(const GroupAnswer&, const GroupAnswer&) = default;
+};
+
+/// A member says whether they are ready to play.
+struct GroupReady {
+    static constexpr PacketType Type = PacketType::GroupReady;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = true;
+
+    bool ready{false};
+
+    friend bool operator==(const GroupReady&, const GroupReady&) = default;
+};
+
+/// One member, in GROUP_STATE.
+struct GroupMemberState {
+    std::string name;
+    bool ready{false};
+    bool inGame{false};
+
+    friend bool operator==(const GroupMemberState&, const GroupMemberState&) = default;
+};
+
+/// The whole group, sent whenever something in it changes.
+struct GroupState {
+    static constexpr PacketType Type = PacketType::GroupState;
+    static constexpr Direction Way = Direction::ServerToClient;
+    static constexpr bool Reliable = true;
+
+    std::string code; // Empty: no code
+    std::uint8_t countdown{0}; // Seconds left before the game starts; 0: none
+    std::uint8_t leader{0}; // Index in `members`
+    std::vector<GroupMemberState> members; // 1 to MaxPlayers
+
+    friend bool operator==(const GroupState&, const GroupState&) = default;
+};
+
+/// What came of a group order, when it needs saying.
+struct GroupResult {
+    static constexpr PacketType Type = PacketType::GroupResult;
+    static constexpr Direction Way = Direction::ServerToClient;
+    static constexpr bool Reliable = true;
+
+    GroupOutcome outcome{GroupOutcome::Invited};
+
+    friend bool operator==(const GroupResult&, const GroupResult&) = default;
+};
+
+/// A leader invites this player into their group.
+struct GroupInvited {
+    static constexpr PacketType Type = PacketType::GroupInvited;
+    static constexpr Direction Way = Direction::ServerToClient;
+    static constexpr bool Reliable = true;
+
+    std::string name; // Who invited: 1 to 16 bytes
+
+    friend bool operator==(const GroupInvited&, const GroupInvited&) = default;
+};
+
+/// Answer to FRIEND_REQUEST.
+struct FriendResult {
+    static constexpr PacketType Type = PacketType::FriendResult;
+    static constexpr Direction Way = Direction::ServerToClient;
+    static constexpr bool Reliable = true;
+
+    FriendCode code{FriendCode::Ok};
+
+    friend bool operator==(const FriendResult&, const FriendResult&) = default;
+};
+
+/// One line of the player's friends list, new or changed.
+struct FriendEntry {
+    static constexpr PacketType Type = PacketType::FriendEntry;
+    static constexpr Direction Way = Direction::ServerToClient;
+    static constexpr bool Reliable = true;
+
+    std::string name;
+    FriendState state{FriendState::Offline};
+
+    friend bool operator==(const FriendEntry&, const FriendEntry&) = default;
+};
+
+/// One line of chat. The server fills `name`: a client cannot write as someone else.
+struct ChatMessage {
+    static constexpr PacketType Type = PacketType::ChatMessage;
+    static constexpr Direction Way = Direction::ServerToClient;
+    static constexpr bool Reliable = true;
+
+    ChatKind kind{ChatKind::Game};
+    std::string name;
+    std::string text;
+
+    friend bool operator==(const ChatMessage&, const ChatMessage&) = default;
+};
+
+struct ChatRefused {
+    static constexpr PacketType Type = PacketType::ChatRefused;
+    static constexpr Direction Way = Direction::ServerToClient;
+    static constexpr bool Reliable = true;
+
+    ChatRefusal reason{ChatRefusal::TooFast};
+
+    friend bool operator==(const ChatRefused&, const ChatRefused&) = default;
+};
+
+/// The player asks for one of the two rankings.
+struct LeaderboardRequest {
+    static constexpr PacketType Type = PacketType::LeaderboardRequest;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = true;
+
+    Board board{Board::Solo};
+
+    friend bool operator==(const LeaderboardRequest&, const LeaderboardRequest&) = default;
+};
+
+/// One game of a ranking: its score, and the accounts that started it.
+struct LeaderboardEntry {
+    std::uint32_t score{0};
+    std::vector<std::string> names; // 1 to MaxPlayers
+
+    friend bool operator==(const LeaderboardEntry&, const LeaderboardEntry&) = default;
+};
+
+/// Answer to LEADERBOARD_REQUEST: the best games, then the player's last game.
+struct Leaderboard {
+    static constexpr PacketType Type = PacketType::Leaderboard;
+    static constexpr Direction Way = Direction::ServerToClient;
+    static constexpr bool Reliable = true;
+
+    Board board{Board::Solo};
+    std::vector<LeaderboardEntry> best; // 0 to LeaderboardSize, best first
+    std::uint32_t lastRank{0}; // Rank of the player's last game in this ranking; 0: none
+    std::uint32_t lastScore{0};
+
+    friend bool operator==(const Leaderboard&, const Leaderboard&) = default;
+};
+
 // --- Whole packet ------------------------------------------------------------
 
 using Payload = std::variant<ConnectRequest, ConnectAccept, ConnectReject, Disconnect, Heartbeat,
-    AuthRequest, AuthResult, Input, Snapshot, EntitySpawn, EntityDestroy, PlayerJoined, PlayerLeft,
-    PlayerDied, GameState, Restart>;
+    AuthRequest, AuthResult, Input, JoinGame, LeaveGame, FriendRequest, FriendAnswer, FriendRemove,
+    ChatSend, PrivateSend, Snapshot, EntitySpawn, EntityDestroy, PlayerJoined, PlayerLeft,
+    PlayerDied, GameState, JoinResult, FriendResult, FriendEntry, ChatMessage, ChatRefused,
+    GroupCode, GroupJoin, GroupLeave, GroupKick, GroupPromote, GroupInvite, GroupAnswer, GroupReady,
+    GroupState, GroupResult, GroupInvited, LeaderboardRequest, Leaderboard, Restart>;
 
 /// Acknowledgement carried by a packet (HAS_ACK flag, §6.1).
 struct Ack {

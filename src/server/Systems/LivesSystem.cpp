@@ -33,8 +33,8 @@ void LivesSystem::onDespawn(const game::DespawnEvent& despawn)
     }
     const std::uint8_t playerId = ship->playerId;
     const bool comesBack = match.lives > 0;
-    _world.query<NetClient>([&](ecs::Entity player, const NetClient& client) {
-        if (client.playerId != playerId) {
+    _world.query<InGame>([&](ecs::Entity player, const InGame& inGame) {
+        if (inGame.playerId != playerId) {
             return;
         }
         // Commands: the World is being iterated, and events are being delivered

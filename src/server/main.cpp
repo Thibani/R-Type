@@ -4,7 +4,10 @@
 #include "ecs/World/World.hpp"
 #include "network/Transport/NetworkThread.hpp"
 #include "server/AccountStore.hpp"
+#include "server/FriendStore.hpp"
+#include "server/MessageStore.hpp"
 #include "server/Network.hpp"
+#include "server/ScoreStore.hpp"
 #include "server/ServerOptions.hpp"
 #include "server/ServerSystems.hpp"
 
@@ -52,6 +55,39 @@ int run(std::span<const std::string_view> arguments)
                   << options->accountsFile.string() << ".damaged\n";
     }
 
+    auto friends = server::FriendStore::load(options->friendsFile);
+    if (!friends) {
+        std::cerr << "r-type_server: " << friends.error() << '\n';
+        return ExitFailure;
+    }
+    if (friends->damagedLines() > 0) {
+        std::cerr << "r-type_server: warning: " << friends->damagedLines()
+                  << " damaged line(s) in the friends file, copied to "
+                  << options->friendsFile.string() << ".damaged\n";
+    }
+
+    auto messages = server::MessageStore::load(options->messagesFile);
+    if (!messages) {
+        std::cerr << "r-type_server: " << messages.error() << '\n';
+        return ExitFailure;
+    }
+    if (messages->damagedLines() > 0) {
+        std::cerr << "r-type_server: warning: " << messages->damagedLines()
+                  << " damaged line(s) in the messages file, copied to "
+                  << options->messagesFile.string() << ".damaged\n";
+    }
+
+    auto scores = server::ScoreStore::load(options->scoresFile);
+    if (!scores) {
+        std::cerr << "r-type_server: " << scores.error() << '\n';
+        return ExitFailure;
+    }
+    if (scores->damagedLines() > 0) {
+        std::cerr << "r-type_server: warning: " << scores->damagedLines()
+                  << " damaged line(s) in the scores file, copied to "
+                  << options->scoresFile.string() << ".damaged\n";
+    }
+
     // The network thread starts here; the game runs on this one
     auto socket = network::NetworkThread::open(options->port);
     if (!socket) {
@@ -62,7 +98,7 @@ int run(std::span<const std::string_view> arguments)
 
     ecs::World world;
     ecs::GameLoop loop(world, {.sleepUntilNextStep = true});
-    server::installSystems(world, loop, **socket, *accounts);
+    server::installSystems(world, loop, **socket, *accounts, *friends, *messages, *scores);
 
     runningLoop = &loop;
     std::signal(SIGINT, onStopSignal);
@@ -73,6 +109,15 @@ int run(std::span<const std::string_view> arguments)
     loop.run();
 
     runningLoop = nullptr;
+    if (!friends->save()) { // The last second of changes (FriendSystem)
+        std::cerr << "r-type_server: cannot save the friends file\n";
+    }
+    if (!messages->save()) { // Same for the messages (ChatSystem)
+        std::cerr << "r-type_server: cannot save the messages file\n";
+    }
+    if (!scores->save()) { // Same for the scores (LeaderboardSystem)
+        std::cerr << "r-type_server: cannot save the scores file\n";
+    }
     // The channels only use time for round-trip statistics: any recent value works
     server::notifyShutdown(world, **socket, server::toTimePoint(loop.simulationTime()));
     socket->reset(); // Sends the DISCONNECTs still queued, then joins the network thread

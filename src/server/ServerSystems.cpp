@@ -7,9 +7,12 @@
 #include "game/Systems/MovementSystem.hpp"
 #include "server/Components/Combat.hpp"
 #include "server/Components/Gadgets.hpp"
+#include "server/GameRoom.hpp"
+#include "server/Groups.hpp"
 #include "server/Singleton.hpp"
 #include "server/Systems/AimSystem.hpp"
 #include "server/Systems/BossSystem.hpp"
+#include "server/Systems/ChatSystem.hpp"
 #include "server/Systems/CircleFlightSystem.hpp"
 #include "server/Systems/ConnectionSystem.hpp"
 #include "server/Systems/DamageSystem.hpp"
@@ -17,9 +20,11 @@
 #include "server/Systems/DiscardPacketsSystem.hpp"
 #include "server/Systems/DropSystem.hpp"
 #include "server/Systems/ForceSystem.hpp"
+#include "server/Systems/FriendSystem.hpp"
+#include "server/Systems/GroupSystem.hpp"
 #include "server/Systems/HopSystem.hpp"
 #include "server/Systems/HoverSystem.hpp"
-#include "server/Systems/InputSystem.hpp"
+#include "server/Systems/LeaderboardSystem.hpp"
 #include "server/Systems/LivesSystem.hpp"
 #include "server/Systems/LoginSystem.hpp"
 #include "server/Systems/MatchSystem.hpp"
@@ -27,10 +32,9 @@
 #include "server/Systems/NetSendSystem.hpp"
 #include "server/Systems/PickupSystem.hpp"
 #include "server/Systems/PlayerControlSystem.hpp"
-#include "server/Systems/PlayerShipSystem.hpp"
 #include "server/Systems/ProgressSystem.hpp"
 #include "server/Systems/ReplicationSystem.hpp"
-#include "server/Systems/RestartSystem.hpp"
+#include "server/Systems/RoomSystem.hpp"
 #include "server/Systems/SeekerSystem.hpp"
 #include "server/Systems/SessionCleanupSystem.hpp"
 #include "server/Systems/SessionReceiveSystem.hpp"
@@ -74,22 +78,25 @@ void installSimulation(ecs::World& world)
     world.systems().add<game::DespawnSystem>(world);
 }
 
-void installSystems(
-    ecs::World& world, ecs::GameLoop& loop, network::NetworkThread& socket, AccountStore& accounts)
+void installSystems(ecs::World& world, ecs::GameLoop& loop, network::NetworkThread& socket,
+    AccountStore& accounts, FriendStore& friends, MessageStore& messages, ScoreStore& scores)
 {
+    (void)singleton<Groups>(world); // Created now, like TeamScore: read during the frame
+    (void)singleton<GameRooms>(world);
+
     loop.frameStart().add<NetReceiveSystem>(socket);
     loop.frameStart().add<ConnectionSystem>(socket);
     loop.frameStart().add<SessionReceiveSystem>();
     loop.frameStart().add<LoginSystem>(accounts);
+    loop.frameStart().add<RoomMessageSystem>();
     loop.frameStart().add<TimeoutSystem>();
-    loop.frameStart().add<InputSystem>();
-    loop.frameStart().add<RestartSystem>();
-    loop.frameStart().add<PlayerShipSystem>();
-
-    installSimulation(world);
+    loop.frameStart().add<FriendSystem>(accounts, friends);
+    loop.frameStart().add<GroupSystem>(friends);
+    loop.frameStart().add<ChatSystem>(friends, messages);
+    loop.frameStart().add<LeaderboardSystem>(scores);
 
     loop.frameEnd().add<SessionCleanupSystem>(socket);
-    loop.frameEnd().add<ReplicationSystem>(world);
+    loop.frameEnd().add<RoomSystem>(scores);
     loop.frameEnd().add<NetSendSystem>(socket);
     loop.frameEnd().add<SnapshotSystem>(socket);
     loop.frameEnd().add<DiscardPacketsSystem>();

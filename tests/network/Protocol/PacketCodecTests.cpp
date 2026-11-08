@@ -74,74 +74,16 @@ TEST(PacketCodec, MatchesTheSpecificationExample)
     };
 
     const auto expected = bytes({
-        0x52,
-        0x54,
-        0x04,
-        0x01,
-        0x00,
-        0x00,
-        0x00,
-        0x30, // magic, version, type, flags, reserved, size
-        0x00,
-        0x00,
-        0x00,
-        0x00, // sessionToken
-        0x00,
-        0x00,
-        0x00,
-        0x00, // sequence, ack
-        0x00,
-        0x00,
-        0x00,
-        0x00, // ackBits
-        0x54,
-        0x68,
-        0x69,
-        0x62,
-        0x61,
-        0x6E,
-        0x69,
-        0x00, // "Thibani"
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00, // padding
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB, // publicKey
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB,
-        0xAB,
+        0x52, 0x54, 0x09, 0x01, 0x00, 0x00, 0x00, 0x30, // magic, version, type, flags, reserved, size
+        0x00, 0x00, 0x00, 0x00, // sessionToken
+        0x00, 0x00, 0x00, 0x00, // sequence, ack
+        0x00, 0x00, 0x00, 0x00, // ackBits
+        0x54, 0x68, 0x69, 0x62, 0x61, 0x6E, 0x69, 0x00, // "Thibani"
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // padding
+        0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, // publicKey
+        0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB,
+        0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB,
+        0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB,
     });
 
     EXPECT_EQ(encodeOrFail(packet), expected);
@@ -154,7 +96,7 @@ TEST(PacketCodec, ConnectPacketsKeepThePublicKey)
     ASSERT_TRUE(decodedRequest.has_value());
     EXPECT_EQ(std::get<ConnectRequest>(decodedRequest->payload).publicKey, filledKey(0x11));
 
-    const Packet accept = makePacket(ConnectAccept{.playerId = 0,
+    const Packet accept = makePacket(ConnectAccept{.playerId = NoPlayer,
         .tickRate = 60,
         .snapshotRate = 30,
         .maxPlayers = 4,
@@ -180,7 +122,7 @@ TEST(PacketCodec, EncodesHeaderFields)
     const auto datagram = encodeOrFail(packet);
 
     const auto expected = bytes({
-        0x52, 0x54, 0x04, 0x25, // magic, version, PLAYER_DIED
+        0x52, 0x54, 0x09, 0x25, // magic, version, PLAYER_DIED
         0x03, 0x00, 0x00, 0x05, // RELIABLE | HAS_ACK, reserved, payloadSize 5
         0xCA, 0xFE, 0xBA, 0xBE, // sessionToken
         0x00, 0x2A, 0x00, 0x29, // sequence 42, ack 41
@@ -201,7 +143,7 @@ TEST(PacketCodec, PayloadSizesMatchTheSpecification)
 
     const std::vector<Expected> cases{
         {.payload = ConnectRequest{.name = "a"}, .size = 48},
-        {.payload = ConnectAccept{.playerId = 0, .tickRate = 60, .snapshotRate = 30, .maxPlayers = 4}, .size = 36},
+        {.payload = ConnectAccept{.playerId = NoPlayer, .tickRate = 60, .snapshotRate = 30, .maxPlayers = 4}, .size = 36},
         {.payload = ConnectReject(), .size = 1},
         {.payload = Disconnect(), .size = 1},
         {.payload = Heartbeat(), .size = 0},
@@ -218,6 +160,31 @@ TEST(PacketCodec, PayloadSizesMatchTheSpecification)
         {.payload = PlayerLeft(), .size = 4},
         {.payload = PlayerDied(), .size = 5},
         {.payload = GameState(), .size = 10},
+        {.payload = JoinGame(), .size = 2},
+        {.payload = LeaveGame(), .size = 2},
+        {.payload = JoinResult{.code = JoinCode::Ok, .playerId = 0}, .size = 4},
+        {.payload = FriendRequest{.name = "a"}, .size = 18},
+        {.payload = FriendAnswer{.name = "a", .reply = FriendReply::Accept}, .size = 19},
+        {.payload = FriendRemove{.name = "a"}, .size = 18},
+        {.payload = FriendResult(), .size = 3},
+        {.payload = FriendEntry{.name = "a", .state = FriendState::Online}, .size = 19},
+        {.payload = ChatSend{.text = "abc"}, .size = 6},
+        {.payload = PrivateSend{.name = "a", .text = "abc"}, .size = 22},
+        {.payload = ChatMessage{.kind = ChatKind::Game, .name = "a", .text = "abc"}, .size = 23},
+        {.payload = ChatRefused(), .size = 3},
+        {.payload = GroupCode(), .size = 3},
+        {.payload = GroupJoin{.code = "ABC234"}, .size = 8},
+        {.payload = GroupLeave(), .size = 2},
+        {.payload = GroupKick{.name = "a"}, .size = 18},
+        {.payload = GroupPromote{.name = "a"}, .size = 18},
+        {.payload = GroupInvite{.name = "a"}, .size = 18},
+        {.payload = GroupAnswer{.name = "a", .reply = FriendReply::Accept}, .size = 19},
+        {.payload = GroupReady(), .size = 3},
+        {.payload = GroupState{.code = "", .countdown = 0, .leader = 0, .members = {{.name = "a", .ready = false, .inGame = false}, {.name = "b", .ready = false, .inGame = false}}}, .size = 11 + (2 * 17)},
+        {.payload = GroupResult(), .size = 3},
+        {.payload = GroupInvited{.name = "a"}, .size = 18},
+        {.payload = LeaderboardRequest(), .size = 3},
+        {.payload = Leaderboard{.board = Board::Solo, .best = {{.score = 1, .names = {"a"}}}, .lastRank = 0, .lastScore = 0}, .size = 4 + 68 + 8},
         {.payload = Restart(), .size = 0},
     };
 
@@ -521,7 +488,56 @@ TEST(PacketCodecEncoding, RefusesInvalidPayloads)
     const std::vector<Payload> invalid{
         ConnectRequest{.name = "seventeen bytes!!"},
         ConnectRequest{.name = std::string("a\0b", 3)},
-        ConnectAccept{.playerId = 4, .tickRate = 60, .snapshotRate = 30, .maxPlayers = 4},
+        ConnectAccept{.playerId = 0, .tickRate = 60, .snapshotRate = 30, .maxPlayers = 4},
+        JoinResult{.code = JoinCode::Ok, .playerId = NoPlayer},
+        JoinResult{.code = JoinCode::Ok, .playerId = 4},
+        JoinResult{.code = JoinCode::NotReady, .playerId = 0},
+        JoinResult{.code = static_cast<JoinCode>(3), .playerId = NoPlayer},
+        GroupCode{.action = static_cast<GroupCodeAction>(2)},
+        GroupJoin{.code = ""},
+        GroupJoin{.code = "ABC23"},
+        GroupJoin{.code = "ABC2345"},
+        GroupJoin{.code = "abc234"},
+        GroupJoin{.code = "ABCO23"}, // O is not in the alphabet
+        GroupKick{.name = ""},
+        GroupPromote{.name = ""},
+        GroupInvite{.name = ""},
+        GroupAnswer{.name = "a", .reply = static_cast<FriendReply>(2)},
+        GroupState{.code = "", .countdown = 0, .leader = 0, .members = {}},
+        GroupState{.code = "", .countdown = 0, .leader = 1, .members = {{.name = "a", .ready = false, .inGame = false}}},
+        GroupState{.code = "x", .countdown = 0, .leader = 0, .members = {{.name = "a", .ready = false, .inGame = false}}},
+        GroupState{.code = "", .countdown = 0, .leader = 0, .members = {{.name = "", .ready = false, .inGame = false}}},
+        GroupState{.code = "", .countdown = 0, .leader = 0, .members = std::vector<GroupMemberState>(5, GroupMemberState{.name = "a", .ready = false, .inGame = false})},
+        GroupResult{.outcome = static_cast<GroupOutcome>(12)},
+        GroupInvited{.name = ""},
+        LeaderboardRequest{.board = static_cast<Board>(2)},
+        Leaderboard{.board = static_cast<Board>(2), .best = {}, .lastRank = 0, .lastScore = 0},
+        Leaderboard{.board = Board::Solo, .best = {{.score = 1, .names = {"a", "b"}}}, .lastRank = 0, .lastScore = 0}, // Solo: one name
+        Leaderboard{.board = Board::Multi, .best = {{.score = 1, .names = {}}}, .lastRank = 0, .lastScore = 0},
+        Leaderboard{.board = Board::Multi, .best = {{.score = 1, .names = {"a", "b", "c", "d", "e"}}}, .lastRank = 0, .lastScore = 0},
+        Leaderboard{.board = Board::Multi, .best = {{.score = 1, .names = {"a", ""}}}, .lastRank = 0, .lastScore = 0},
+        Leaderboard{.board = Board::Solo, .best = std::vector<LeaderboardEntry>(11, LeaderboardEntry{.score = 1, .names = {"a"}}), .lastRank = 0, .lastScore = 0},
+        Leaderboard{.board = Board::Solo, .best = {}, .lastRank = 0, .lastScore = 5}, // A score without a rank
+        FriendRequest{.name = ""},
+        FriendRequest{.name = "seventeen bytes!!"},
+        FriendAnswer{.name = "", .reply = FriendReply::Accept},
+        FriendAnswer{.name = "a", .reply = static_cast<FriendReply>(2)},
+        FriendRemove{.name = ""},
+        FriendResult{.code = static_cast<FriendCode>(5)},
+        FriendEntry{.name = "", .state = FriendState::Online},
+        FriendEntry{.name = "a", .state = static_cast<FriendState>(5)},
+        ChatSend{.text = ""},
+        ChatSend{.text = std::string(MaxChatSize + 1, 'x')},
+        ChatSend{.text = "two\nlines"},
+        ChatSend{.text = "a\tb"},
+        ChatSend{.text = std::string("a\0b", 3)},
+        ChatSend{.text = "\xC3"}, // Cut in the middle of a character
+        PrivateSend{.name = "", .text = "a"},
+        PrivateSend{.name = "a", .text = ""},
+        ChatMessage{.kind = static_cast<ChatKind>(3), .name = "a", .text = "b"},
+        ChatMessage{.kind = ChatKind::Game, .name = "", .text = "b"},
+        ChatMessage{.kind = ChatKind::Game, .name = "a", .text = ""},
+        ChatRefused{.reason = static_cast<ChatRefusal>(3)},
         Input{.firstTick = 0, .count = 0, .masks = {}},
         Input{.firstTick = 0, .count = 9, .masks = {}},
         Snapshot{.serverTick = 0, .lastInputTick = 0, .partIndex = 0, .partCount = 1, .entities = std::vector<EntityState>(MaxSnapshotEntities + 1)},
@@ -622,4 +638,39 @@ TEST(PacketCodecAuth, AuthPacketsOnlyTravelOneWay)
         DecodeError::WrongDirection);
     EXPECT_EQ(decodeError(encodeOrFail(makePacket(AuthResult{})), Direction::ClientToServer),
         DecodeError::WrongDirection);
+}
+
+TEST(PacketCodecValidation, RejectsALeaderboardWhoseCountDoesNotMatch)
+{
+    for (const int change : {-1, 1, 10}) {
+        auto datagram = encodeOrFail(makePacket(
+            Leaderboard{.board = Board::Solo, .best = {{.score = 1, .names = {"a"}}}, .lastRank = 1, .lastScore = 1}, 1));
+        const std::size_t count = HeaderSize + 3; // After the reliableId and the board
+        datagram.at(count) = static_cast<std::byte>(1 + change);
+        EXPECT_EQ(decodeError(datagram, Direction::ServerToClient), DecodeError::BadPayloadSize)
+            << change;
+    }
+}
+
+TEST(PacketCodecValidation, RejectsALeaderboardWithAGapInItsNames)
+{
+    auto datagram = encodeOrFail(makePacket(
+        Leaderboard{.board = Board::Multi, .best = {{.score = 1, .names = {"a", "b"}}}, .lastRank = 0, .lastScore = 0}, 1));
+    const std::size_t secondName = HeaderSize + 4 + 4 + NameSize; // reliableId, board, count, score, first name
+    for (std::size_t i = 0; i < NameSize; ++i) {
+        datagram.at(secondName + i) = std::byte{0}; // "a", "", then nothing: fine...
+    }
+    datagram.at(secondName + NameSize) = static_cast<std::byte>('c'); // ...but "a", "", "c" is not
+    EXPECT_EQ(decodeError(datagram, Direction::ServerToClient), DecodeError::InvalidName);
+}
+
+TEST(PacketCodecValidation, RejectsAChatTextWhoseCountDoesNotMatch)
+{
+    for (const int change : {-1, 1, 100}) {
+        auto datagram = encodeOrFail(makePacket(ChatSend{.text = "abc"}, 1));
+        const std::size_t count = HeaderSize + 2; // After the reliableId
+        datagram.at(count) = static_cast<std::byte>(3 + change);
+        EXPECT_EQ(decodeError(datagram, Direction::ClientToServer), DecodeError::BadPayloadSize)
+            << change;
+    }
 }

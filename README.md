@@ -7,7 +7,8 @@ reusable Entity-Component-System (ECS) game engine.
 > with the graphical client, fly their ships, shoot the Bydos that come in
 > waves and shoot back, and share a team score. A client that crashes or
 > leaves does not stop the game. Players can set the volume and their keys, and
-> play with an account kept by the server. Next: more accessibility options, chat, friends and a lobby, then
+> play with an account kept by the server. They have friends, a chat, and groups joined by code or
+> invitation, and the server runs several games at once. Next: more accessibility options, then
 > game phases, levels, bosses and the endless, campaign and versus modes.
 
 ---
@@ -111,6 +112,9 @@ Pass them at configure time, e.g. `cmake --preset debug -DRTYPE_BUILD_TESTS=OFF`
 ./build/debug/r-type_server              # listens on UDP port 4242
 ./build/debug/r-type_server -p 5000      # another port
 ./build/debug/r-type_server --accounts players.txt  # accounts file (default accounts.txt)
+./build/debug/r-type_server --friends pals.txt      # friends file (default friends.txt)
+./build/debug/r-type_server --messages mail.txt     # private messages waiting (default messages.txt)
+./build/debug/r-type_server --scores best.txt       # finished games, for the leaderboard (default scores.txt)
 ./build/debug/r-type_server --help
 ```
 

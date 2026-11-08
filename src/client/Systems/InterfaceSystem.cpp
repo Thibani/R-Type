@@ -1,10 +1,12 @@
 #include "client/Systems/InterfaceSystem.hpp"
 
 #include "client/Assets.hpp"
+#include "client/Chat.hpp"
 #include "client/Components/NetEntity.hpp"
 #include "client/Components/Session.hpp"
 #include "client/Components/Settings.hpp"
 #include "client/Gamepad.hpp"
+#include "client/Replication.hpp"
 #include "client/Settings.hpp"
 #include "client/Singleton.hpp"
 #include "client/Ui/Layout.hpp"
@@ -172,6 +174,338 @@ void drawConnect(sf::RenderTarget& target, const Assets& assets, ColourMode mode
         compact ? sf::Vector2f{716.0F, 545.0F} : sf::Vector2f{64.0F, 682.0F});
 }
 
+std::string chatLabel(const ChatLine& line)
+{
+    switch (line.kind) {
+    case ChatLine::Kind::Game:
+        return line.name + ": " + line.text;
+    case ChatLine::Kind::Received:
+        return "[From " + line.name + "] " + line.text;
+    case ChatLine::Kind::Sent:
+        return "[To " + line.name + "] " + line.text;
+    case ChatLine::Kind::Notice:
+        break;
+    }
+    return line.text;
+}
+
+sf::Color chatColour(ChatLine::Kind kind) noexcept
+{
+    switch (kind) {
+    case ChatLine::Kind::Game:
+        return theme::Text;
+    case ChatLine::Kind::Received:
+    case ChatLine::Kind::Sent:
+        return theme::Gold;
+    case ChatLine::Kind::Notice:
+        break;
+    }
+    return theme::Muted;
+}
+
+/// The chat: the newest messages at the bottom, a pale frame, and the typing line
+/// only while typing. Private messages are told apart by their words, not only their colour.
+/// The chat in `rect`, the newest message at the bottom: at most `messages` of them.
+void drawChat(sf::RenderTarget& target, const Assets& assets, const Session& session,
+    sf::FloatRect rect, bool focused, std::size_t messages = MaxChatLines)
+{
+    box(target, rect, session.chatOpen ? theme::ChatFrameOpen : theme::ChatFrame,
+        focused || session.chatOpen ? theme::Blue : theme::ChatBorder, focused ? 2.0F : 1.0F);
+
+    constexpr float Margin = 8.0F;
+    const float width = rect.size.x - (2.0F * Margin);
+    const auto fits = [&](std::string_view part) {
+        return textWidth(assets.body, part, layout::ChatTextSize) <= width;
+    };
+    float bottom = rect.position.y + rect.size.y - Margin;
+    if (session.chatOpen) {
+        const std::string prefix
+            = session.chatTarget ? "To [" + *session.chatTarget + "]: " : std::string{};
+        const float prefixWidth = textWidth(assets.bodyBold, prefix, layout::ChatTextSize);
+        const sf::FloatRect line{{rect.position.x, bottom - layout::ChatInputHeight + Margin},
+            {rect.size.x, layout::ChatInputHeight}};
+        box(target, line, theme::InputBackground, theme::Hull, 1.0F);
+        const sf::Vector2f inside = line.position + sf::Vector2f{Margin, 6.0F};
+        text(target, assets.bodyBold, prefix, layout::ChatTextSize, theme::Gold, inside);
+        // The end of what is typed, like a field whose text is too long
+        std::string_view shown = session.chatInput;
+        const auto isContinuation
+            = [](char c) { return (static_cast<unsigned char>(c) & 0xC0U) == 0x80U; };
+        while (!shown.empty()
+            && textWidth(assets.body, shown, layout::ChatTextSize) > width - prefixWidth - 6.0F) {
+            shown.remove_prefix(1);
+            while (!shown.empty() && isContinuation(shown.front())) {
+                shown.remove_prefix(1);
+            }
+        }
+        const sf::Vector2f typed = inside + sf::Vector2f{prefixWidth, 0.0F};
+        text(target, assets.body, shown, layout::ChatTextSize, theme::Text, typed);
+        box(target,
+            {{typed.x + textWidth(assets.body, shown, layout::ChatTextSize) + 2.0F,
+                 line.position.y + 6.0F},
+                {2.0F, layout::ChatInputHeight - 12.0F}},
+            theme::Blue, theme::Blue, 0.0F);
+        bottom = line.position.y - 4.0F;
+    }
+
+    const float top = rect.position.y + Margin;
+    std::size_t next
+        = session.chat.size() > session.chatScroll ? session.chat.size() - session.chatScroll : 0;
+    for (std::size_t shown = 0;
+        shown < messages && next > 0 && bottom - layout::ChatLineHeight >= top; ++shown) {
+        const ChatLine& line = session.chat.at(--next);
+        const auto parts = wrapChatText(chatLabel(line), fits);
+        for (auto part = parts.rbegin();
+            part != parts.rend() && bottom - layout::ChatLineHeight >= top; ++part) {
+            bottom -= layout::ChatLineHeight;
+            text(target, assets.body, *part, layout::ChatTextSize, chatColour(line.kind),
+                {rect.position.x + Margin, bottom});
+        }
+    }
+}
+
+/// A small button of the friends panel.
+void rowButton(sf::RenderTarget& target, const Assets& assets, sf::FloatRect rect,
+    std::string_view label, bool focused)
+{
+    box(target, rect, theme::Surface, focused ? theme::Blue : theme::Hull, focused ? 2.0F : 1.0F);
+    centredText(target, assets.bodyBold, label, 13, theme::Text, rect);
+}
+
+/// One member of the group: role, ship, name, state, and for the leader what can be done.
+/// Their colour is the one they will have in the game, which gives them the same order.
+void memberCard(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
+    const Session& session, std::size_t place, int interfaceSize)
+{
+    const auto& group = session.group;
+    const auto& member = group.members.at(place);
+    const bool compact = layout::isCompact(interfaceSize);
+    const sf::FloatRect card = layout::memberCard(interfaceSize, place);
+    const bool isLeader = place == group.leader;
+    if (compact) { // Too short for the point of a banner
+        widgets::panel(
+            target, card, theme::Surface, isLeader ? theme::Gold : theme::Hull, 1.5F, 8.0F);
+    } else {
+        widgets::banner(target, card, theme::Surface, isLeader ? theme::Gold : theme::Hull);
+    }
+    const auto at = [&](float x, float y) { return card.position + sf::Vector2f{x, y}; };
+    const std::string role
+        = std::string(isLeader ? "Leader" : "") + (member.name == session.name ? " (you)" : "");
+    centredText(target, assets.bodyBold, role, 13, isLeader ? theme::Gold : theme::Blue,
+        {at(0.0F, compact ? 6.0F : 16.0F), {card.size.x, 16.0F}});
+    widgets::ship(target, assets, mode,
+        compact ? sf::FloatRect{at(18.0F, 26.0F), {70.0F, 35.0F}}
+                : sf::FloatRect{at(16.0F, 44.0F), {128.0F, 64.0F}},
+        static_cast<std::uint8_t>(place));
+    const sf::FloatRect nameArea{at(6.0F, compact ? 64.0F : 120.0F), {card.size.x - 12.0F, 26.0F}};
+    centredText(target, assets.bodyBold, member.name,
+        widgets::fittedSize(assets.bodyBold, member.name, 20, nameArea.size.x), theme::Text,
+        nameArea);
+    const std::string_view state = member.inGame ? "In game"
+        : isLeader                               ? ""
+        : member.ready                           ? "Ready"
+                                                 : "Not ready";
+    centredText(target, assets.body, state, 14,
+        member.ready || member.inGame ? theme::Green : theme::Muted,
+        {at(0.0F, compact ? 90.0F : 152.0F), {card.size.x, 18.0F}});
+
+    if (leadsTheGroup(session) && !isLeader) {
+        const int number = static_cast<int>(place);
+        rowButton(target, assets, layout::kickMember(interfaceSize, place), "Kick",
+            session.focus == layout::FirstKickButton + number);
+        rowButton(target, assets, layout::promoteMember(interfaceSize, place), "Lead",
+            session.focus == layout::FirstPromoteButton + number);
+    }
+}
+
+/// What the big button says: it starts the game for the leader, and says "ready" for the others.
+std::string playLabel(const Session& session)
+{
+    if (session.group.countdown > 0) {
+        return "Starting in " + std::to_string(session.group.countdown);
+    }
+    if (leadsTheGroup(session)) {
+        return "Play";
+    }
+    const auto me = std::ranges::find(
+        session.group.members, session.name, &network::protocol::GroupMemberState::name);
+    return me != session.group.members.end() && me->ready ? "Not ready" : "Ready";
+}
+
+/// The code of the group, who may use it, and how to join another group.
+void drawGroupCode(
+    sf::RenderTarget& target, const Assets& assets, const Session& session, int interfaceSize)
+{
+    const auto& code = session.group.code;
+    const std::string label = code.empty() ? "No code" : "Code: " + code;
+    const sf::Vector2f where = layout::groupCodeLabel(interfaceSize);
+    const float room = layout::newGroupCode(interfaceSize).position.x - where.x - 8.0F;
+    text(target, assets.bodyBold, label, widgets::fittedSize(assets.bodyBold, label, 22, room),
+        code.empty() ? theme::Muted : theme::Gold, where);
+    if (leadsTheGroup(session)) {
+        rowButton(target, assets, layout::newGroupCode(interfaceSize),
+            code.empty() ? "Get a code" : "New code", session.focus == layout::NewGroupCodeButton);
+        if (!code.empty()) {
+            rowButton(target, assets, layout::deleteGroupCode(interfaceSize), "Delete",
+                session.focus == layout::DeleteGroupCodeButton);
+        }
+    }
+    widgets::field(target, assets, layout::groupCodeInput(interfaceSize), "Join with a code",
+        session.groupCodeInput, session.focus == layout::GroupCodeField);
+    rowButton(target, assets, layout::groupJoin(interfaceSize), "Join",
+        session.focus == layout::GroupJoinButton);
+}
+
+/// The main page is the lobby: the group, the way into the game, and the chat. A place
+/// in the game only exists once in it, so no "P1" here.
+void drawHome(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
+    const Session& session, int interfaceSize)
+{
+    const bool compact = layout::isCompact(interfaceSize);
+    if (!compact) {
+        screenDecoration(target, assets);
+    }
+    drawGroupCode(target, assets, session, interfaceSize);
+    if (session.group.members.empty()) { // Alone, until the first GROUP_STATE comes
+        const sf::FloatRect card = layout::memberCard(interfaceSize, 0);
+        centredText(target, assets.bodyBold, session.name, 20, theme::Text,
+            {card.position, {card.size.x, 40.0F}});
+    }
+    for (std::size_t place = 0; place < session.group.members.size(); ++place) {
+        memberCard(target, assets, mode, session, place, interfaceSize);
+    }
+
+    const sf::FloatRect message = layout::homeMessage(interfaceSize);
+    if (!session.invitations.empty()) {
+        box(target, message, theme::Surface, theme::Gold, 1.0F);
+        const std::string invitation = session.invitations.front() + " invites you to their group";
+        constexpr float Room = 150.0F; // The two buttons
+        text(target, assets.bodyBold, invitation,
+            widgets::fittedSize(assets.bodyBold, invitation, 16, message.size.x - 24.0F - Room),
+            theme::Text, message.position + sf::Vector2f{12.0F, 12.0F});
+        rowButton(target, assets, layout::acceptInvitation(interfaceSize), "Accept",
+            session.focus == layout::AcceptInvitationButton);
+        rowButton(target, assets, layout::refuseInvitation(interfaceSize), "Refuse",
+            session.focus == layout::RefuseInvitationButton);
+    } else if (!session.error.empty()) {
+        errorBox(target, assets, message, session.error);
+    }
+
+    widgets::button(target, assets, layout::play(interfaceSize), playLabel(session), true,
+        session.focus == layout::PlayButton);
+    if (session.group.members.size() >= 2) {
+        widgets::button(target, assets, layout::leaveGroup(interfaceSize), "Leave group", false,
+            session.focus == layout::LeaveGroupButton);
+    }
+    widgets::button(target, assets, layout::homeSettings(interfaceSize), "Settings", false,
+        session.focus == layout::HomeSettingsButton);
+    widgets::button(target, assets, layout::logOut(interfaceSize), "Log out", false,
+        session.focus == layout::LogOutButton);
+    widgets::button(target, assets, layout::openLeaderboard(interfaceSize), "Leaderboard", false,
+        !session.leaderboardOpen && session.focus == layout::LeaderboardButton);
+    centredHelp(target, assets, "Tab: next  ·  Enter: select", compact ? 538.0F : 690.0F);
+    drawChat(target, assets, session, layout::homeChat(interfaceSize),
+        !session.settingsOpen && !session.chatOpen && session.focus == layout::ChatBox);
+}
+
+std::string_view friendStatus(network::protocol::FriendState state) noexcept
+{
+    using network::protocol::FriendState;
+    switch (state) {
+    case FriendState::Online:
+        return "Online";
+    case FriendState::RequestReceived:
+        return "Wants to be your friend";
+    case FriendState::RequestSent:
+        return "Request sent";
+    case FriendState::Offline:
+    case FriendState::Removed:
+        break;
+    }
+    return "Offline";
+}
+
+/// Closed: the name of the bar, friends online and requests waiting, in words and numbers.
+void drawFriendsClosed(
+    sf::RenderTarget& target, const Assets& assets, const Session& session, sf::FloatRect bar)
+{
+    using network::protocol::FriendState;
+    const auto count = [&](FriendState state) {
+        return std::ranges::count(session.friends, state, &FriendRow::state);
+    };
+    box(target, bar, theme::Surface, theme::Hull, 1.0F);
+    centredText(target, assets.body, "Friends", 13, theme::Text,
+        {bar.position + sf::Vector2f{0.0F, 16.0F}, {bar.size.x, 18.0F}});
+    centredText(target, assets.bodyBold, std::to_string(count(FriendState::Online)), 22,
+        theme::Green, {bar.position + sf::Vector2f{0.0F, 40.0F}, {bar.size.x, 28.0F}});
+    centredText(target, assets.body, "online", 12, theme::Muted,
+        {bar.position + sf::Vector2f{0.0F, 68.0F}, {bar.size.x, 16.0F}});
+    if (const auto requests = count(FriendState::RequestReceived); requests > 0) {
+        const sf::FloatRect badge{
+            bar.position + sf::Vector2f{8.0F, 96.0F}, {bar.size.x - 16.0F, 26.0F}};
+        box(target, badge, theme::ErrorBackground, theme::Red, 1.0F);
+        centredText(
+            target, assets.bodyBold, std::to_string(requests) + " new", 12, theme::Red, badge);
+    }
+}
+
+/// Open: adding a friend, then one row per person.
+void drawFriendsOpen(
+    sf::RenderTarget& target, const Assets& assets, const Session& session, sf::FloatRect bar)
+{
+    using network::protocol::FriendState;
+    box(target, bar, theme::Surface, theme::Hull, 1.0F);
+    text(target, assets.display, "Friends", 26, theme::Text,
+        bar.position + sf::Vector2f{layout::FriendsPadding, 10.0F});
+    widgets::field(target, assets, layout::friendNameInput(bar), "Exact name", session.friendName,
+        session.focus == layout::FriendNameField);
+    rowButton(
+        target, assets, layout::friendAdd(bar), "Add", session.focus == layout::FriendAddButton);
+    text(target, assets.body, session.friendMessage, 13, theme::Blue,
+        bar.position + sf::Vector2f{layout::FriendsPadding, 128.0F});
+
+    const auto buttons = layout::friendButtons(session, bar);
+    const auto last
+        = std::min(session.friends.size(), session.friendScroll + layout::friendRowsShown(bar));
+    for (std::size_t row = session.friendScroll; row < last; ++row) {
+        const FriendRow& person = session.friends.at(row);
+        const sf::FloatRect line = layout::friendRow(bar, row - session.friendScroll);
+        const bool asked = person.state == FriendState::RequestReceived;
+        const float room = bar.size.x - (2.0F * layout::FriendsPadding) - (asked ? 136.0F : 68.0F);
+        text(target, assets.bodyBold, person.name,
+            widgets::fittedSize(assets.bodyBold, person.name, 16, room), theme::Text,
+            line.position + sf::Vector2f{layout::FriendsPadding, 5.0F});
+        text(target, assets.body, asked ? "Asked you" : friendStatus(person.state), 13,
+            person.state == FriendState::Online ? theme::Green : theme::Muted,
+            line.position + sf::Vector2f{layout::FriendsPadding, 27.0F});
+    }
+    for (std::size_t i = 0; i < buttons.size(); ++i) {
+        const layout::FriendButton& button = buttons.at(i);
+        const bool focused = session.focus == layout::FirstFriendButton + static_cast<int>(i);
+        std::string_view label = "Remove";
+        if (button.action == layout::FriendAction::Accept) {
+            label = "Accept";
+        } else if (button.action == layout::FriendAction::Refuse) {
+            label = "Refuse";
+        } else if (session.friends.at(button.row).state == FriendState::RequestSent) {
+            label = "Cancel";
+        }
+        rowButton(target, assets, button.rect, label, focused);
+    }
+    if (const auto menu = layout::friendMenuButton(session, bar)) {
+        box(target, *menu, theme::Surface, theme::Blue, 2.0F);
+        centredText(target, assets.bodyBold, "Message", 14, theme::Text, *menu);
+    }
+    if (const auto invite = layout::friendInviteButton(session, bar)) {
+        box(target, *invite, theme::Surface, theme::Blue, 2.0F);
+        centredText(target, assets.bodyBold, "Invite", 14, theme::Text, *invite);
+    }
+    if (session.friends.size() > layout::friendRowsShown(bar)) {
+        text(target, assets.body, "PgUp / PgDn or wheel: more", 13, theme::Muted,
+            bar.position + sf::Vector2f{layout::FriendsPadding, bar.size.y - 24.0F});
+    }
+}
+
 /// Up to 4 banners, centred.
 void drawBanners(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
     const Session& session, std::span<const std::size_t> players, float y, int interfaceSize)
@@ -306,7 +640,8 @@ float drawRunStats(
     const float levelWidth
         = std::max(textWidth(assets.bodyBold, "LEVEL", 13), textWidth(assets.bodyBold, level, 32))
         + 36.0F;
-    widgets::panel(target, {levelAt, {levelWidth, 64.0F}}, theme::Surface, theme::Hull, 1.5F, 10.0F);
+    widgets::panel(
+        target, {levelAt, {levelWidth, 64.0F}}, theme::Surface, theme::Hull, 1.5F, 10.0F);
     text(target, assets.bodyBold, "LEVEL", 13, theme::Muted, levelAt + sf::Vector2f{18.0F, 9.0F});
     text(target, assets.bodyBold, level, 32, theme::Text, levelAt + sf::Vector2f{18.0F, 28.0F});
     return levelAt.x + levelWidth;
@@ -372,7 +707,7 @@ void drawBossBar(sf::RenderTarget& target, const Assets& assets, ecs::World& wor
     const Session& session, sf::FloatRect panel)
 {
     const sf::FloatRect bar{
-        panel.position + sf::Vector2f{18.0F, 34.0F}, {panel.size.x - 36.0F, 16.0F}};
+        panel.position + sf::Vector2f{18.0F, 34.0F}, {panel.size.x - 36.0F, 14.0F}};
     const auto boss = bossHealth(world);
     float filled = static_cast<float>(session.bossProgress) / 100.0F;
     std::string label = "NEXT BOSS  " + std::to_string(session.bossProgress) + " %";
@@ -401,7 +736,7 @@ void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
 {
     constexpr float margin = 20.0F;
     constexpr float gap = 12.0F;
-    constexpr float rowHeight = layout::PlayerCard.y + gap; // The tallest boxes
+    const float rowHeight = layout::PlayerCard.y + gap;
     const float left = area.position.x + margin;
     const float rightEdge = area.position.x + area.size.x - margin;
     const float firstRow = area.position.y + margin;
@@ -409,7 +744,7 @@ void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
     // Team score and level, top left
     const float statsEnd = drawRunStats(target, assets, session, {left, firstRow});
 
-    // Top right, from the right: one chip per player, then the team's lives.
+    // Top right, from the right: one card per player, then the team's lives.
     // On a new row when they would reach the score, or the left of the screen
     const auto health = shipHealth(world);
     const Settings& settings = singleton<Settings>(world);
@@ -437,7 +772,8 @@ void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
         playerCard(target, assets, settings.colourMode, place(layout::PlayerCard), i, slot,
             session.playerId == i, health.at(i));
     }
-    drawLives(target, assets, settings.colourMode, session, place({livesWidth(assets, session), 64.0F}));
+    drawLives(
+        target, assets, settings.colourMode, session, place({livesWidth(assets, session), 64.0F}));
 
     // Centred at the top: the distance to the next boss, then its health
     const sf::FloatRect panel = bossPanel(area, firstRow, statsEnd, firstRowStart, row + rowHeight);
@@ -446,8 +782,7 @@ void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
     // On the left, under every box: the cards can change without hiding it
     if (!session.notice.empty() && now < session.noticeUntil) {
         const float width = textWidth(assets.bodyBold, session.notice, 16) + 28.0F;
-        const float below = std::max(row, panel.position.y) + rowHeight + 8.0F;
-        const sf::FloatRect toast{{left, below}, {width, 40.0F}};
+        const sf::FloatRect toast{{left, firstRow + 76.0F}, {width, 40.0F}};
         widgets::panel(target, toast, theme::Surface, theme::Blue, 1.5F, 8.0F);
         text(target, assets.bodyBold, session.notice, 16, theme::Text,
             toast.position + sf::Vector2f{14.0F, 12.0F});
@@ -563,7 +898,7 @@ void drawSettings(sf::RenderTarget& target, const Assets& assets, const Session&
         layout::InterfaceSizeSelector, std::to_string(settings.interfaceSize) + " %",
         session.focus == layout::InterfaceSizeRow);
 
-    box(target, {{640.0F, 184.0F}, {1.0F, 328.0F}}, theme::Hull, theme::Hull, 0.0F);
+    box(target, {{640.0F, 184.0F}, {1.0F, 360.0F}}, theme::Hull, theme::Hull, 0.0F);
     text(target, assets.display, "Key bindings", 32, theme::Text, {662.0F, 186.0F});
     constexpr std::array<std::string_view, ActionCount> actions{
         "Move up",
@@ -585,9 +920,89 @@ void drawSettings(sf::RenderTarget& target, const Assets& assets, const Session&
         session.focus == layout::BackRow);
 
     if (!settings.saveError.empty()) {
-        errorBox(target, assets, {{245.0F, 520.0F}, {790.0F, 32.0F}}, settings.saveError);
+        // In place of the help line: under both columns
+        errorBox(target, assets, {{245.0F, 550.0F}, {790.0F, 32.0F}}, settings.saveError);
+    } else {
+        centredHelp(target, assets, "Arrows: move  ·  Enter: change  ·  Esc: back", 556.0F);
     }
-    centredHelp(target, assets, "Arrows: move  ·  Enter: change  ·  Esc: back", 562.0F);
+}
+
+/// "Ann, Ben, Cid": the accounts that started a game.
+std::string namesOf(const network::protocol::LeaderboardEntry& entry)
+{
+    std::string names;
+    for (const std::string& name : entry.names) {
+        names += (names.empty() ? "" : ", ") + name;
+    }
+    return names;
+}
+
+/// One game of the ranking. The player's own games say YOU and are outlined: not by
+/// colour alone.
+void leaderboardLine(sf::RenderTarget& target, const Assets& assets, std::size_t row,
+    const network::protocol::LeaderboardEntry& entry, bool isYou)
+{
+    constexpr unsigned Size = layout::LeaderboardTextSize;
+    const sf::FloatRect line = layout::leaderboardRow(row);
+    if (isYou) {
+        box(target, line, theme::Surface, theme::Blue, 1.5F);
+        text(target, assets.bodyBold, "YOU", 12, theme::Blue,
+            line.position + sf::Vector2f{510.0F, 5.0F});
+    }
+    const sf::Vector2f top = line.position + sf::Vector2f{10.0F, 3.0F};
+    text(target, assets.bodyBold, "#" + std::to_string(row + 1), Size, theme::Muted, top);
+    const std::string names = namesOf(entry);
+    text(target, assets.body, names, widgets::fittedSize(assets.body, names, Size, 450.0F),
+        theme::Text, top + sf::Vector2f{44.0F, 0.0F});
+    const std::string score = formatScore(entry.score);
+    text(target, assets.bodyBold, score, Size, theme::Text,
+        {line.position.x + line.size.x - 10.0F - textWidth(assets.bodyBold, score, Size), top.y});
+}
+
+/// A small tab: filled when it is the ranking shown, outlined when focused.
+void leaderboardTab(sf::RenderTarget& target, const Assets& assets, sf::FloatRect rect,
+    std::string_view label, bool shown, bool focused)
+{
+    box(target, rect, shown ? theme::Primary : theme::Surface, focused ? theme::Blue : theme::Hull,
+        focused ? 2.0F : 1.0F);
+    centredText(target, assets.bodyBold, label, layout::LeaderboardTextSize,
+        shown ? theme::OnPrimary : theme::Text, rect);
+}
+
+/// The 10 best games of the ranking shown, then the player's last game there. Nothing more:
+/// an empty ranking shows no line.
+void drawLeaderboard(
+    sf::RenderTarget& target, const Assets& assets, const Session& session, sf::FloatRect area)
+{
+    using network::protocol::Board;
+    box(target, area, theme::Overlay, theme::Overlay, 0.0F);
+    widgets::panel(target, layout::LeaderboardPanel, theme::Surface, theme::Hull, 1.5F, 14.0F);
+    text(target, assets.display, "Leaderboard", 30, theme::Text, {318.0F, 160.0F});
+    leaderboardTab(target, assets, layout::SoloTabRect, "Solo", session.board == Board::Solo,
+        session.focus == layout::SoloTab);
+    leaderboardTab(target, assets, layout::MultiTabRect, "Multi", session.board == Board::Multi,
+        session.focus == layout::MultiTab);
+
+    if (session.leaderboard) {
+        const auto& best = session.leaderboard->best;
+        for (std::size_t row = 0; row < best.size(); ++row) {
+            const bool isYou
+                = std::ranges::find(best[row].names, session.name) != best[row].names.end();
+            leaderboardLine(target, assets, row, best[row], isYou);
+        }
+        if (const std::uint32_t rank = session.leaderboard->lastRank; rank != 0) {
+            const sf::FloatRect last = layout::leaderboardRow(network::protocol::LeaderboardSize);
+            box(target, {{last.position.x, last.position.y - 5.0F}, {last.size.x, 1.0F}},
+                theme::Hull, theme::Hull, 0.0F);
+            text(target, assets.bodyBold,
+                "Your last game: #" + std::to_string(rank) + "  ·  "
+                    + formatScore(session.leaderboard->lastScore) + " points",
+                layout::LeaderboardTextSize, theme::Gold,
+                last.position + sf::Vector2f{10.0F, 3.0F});
+        }
+    }
+    widgets::button(target, assets, layout::CloseLeaderboard, "Back", true,
+        session.focus == layout::CloseLeaderboardButton);
 }
 
 void drawGameOver(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
@@ -599,8 +1014,7 @@ void drawGameOver(sf::RenderTarget& target, const Assets& assets, ColourMode mod
     }
     centredTitle(target, assets, "GAME OVER", compact ? 44U : 80U, compact ? 122.0F : 54.0F);
     centredText(target, assets.body, "TEAM SCORE  ·  LEVEL " + std::to_string(session.level), 14,
-        theme::Gold,
-        {{0.0F, compact ? 172.0F : 146.0F}, {theme::UiWidth, 17.0F}});
+        theme::Gold, {{0.0F, compact ? 172.0F : 146.0F}, {theme::UiWidth, 17.0F}});
     centredText(target, assets.bodyBold, formatScore(session.score), compact ? 28U : 40U,
         theme::Text,
         {{0.0F, compact ? 189.0F : 169.0F}, {theme::UiWidth, compact ? 36.0F : 53.0F}});
@@ -639,11 +1053,36 @@ void InterfaceSystem::update(ecs::World& world, const ecs::Time& time)
     case Screen::Connect:
         drawConnect(_window, _assets, mode, session, layout::isCompact(size));
         break;
+    case Screen::Home:
+        if (layout::leaderboardOpen(session)) {
+            Session behind = session; // Its focus is on the panel, not on the page
+            behind.focus = -1;
+            drawHome(_window, _assets, mode, behind, size);
+        } else {
+            drawHome(_window, _assets, mode, session, size);
+        }
+        if (!session.settingsOpen) {
+            const bool open = layout::friendsOpen(session);
+            const sf::FloatRect bar = layout::friendsBar(area, open);
+            if (open) {
+                drawFriendsOpen(_window, _assets, session, bar);
+            } else {
+                drawFriendsClosed(_window, _assets, session, bar);
+            }
+        }
+        if (layout::leaderboardOpen(session)) {
+            drawLeaderboard(_window, _assets, session, area);
+        }
+        break;
     case Screen::WaitingRoom:
         drawWaitingRoom(_window, _assets, mode, session, size);
         break;
     case Screen::Game:
         drawHud(_window, _assets, world, session, time.elapsedSeconds(), area);
+        if (!session.chat.empty() || session.chatOpen) {
+            drawChat(
+                _window, _assets, session, layout::gameChat(area), false, layout::GameChatMessages);
+        }
         if (session.menuOpen) {
             drawMenu(_window, _assets, session, area);
         }

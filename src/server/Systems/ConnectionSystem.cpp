@@ -7,7 +7,7 @@
 #include "server/Components/ReceivedPacket.hpp"
 #include "server/Network.hpp"
 
-#include <array>
+#include <cstddef>
 #include <optional>
 #include <utility>
 #include <variant>
@@ -35,7 +35,7 @@ void reject(network::NetworkThread& socket, const network::Endpoint& to, RejectR
 void accept(network::NetworkThread& socket, NetClient& client, TimePoint now)
 {
     const ConnectAccept payload{
-        .playerId = client.playerId,
+        .playerId = NoPlayer, // A place in the game comes later, with JOIN_RESULT
         .tickRate = ConnectionSystem::TickRate,
         .snapshotRate = ConnectionSystem::SnapshotRate,
         .maxPlayers = MaxPlayers,
@@ -45,18 +45,11 @@ void accept(network::NetworkThread& socket, NetClient& client, TimePoint now)
     client.lastSent = now;
 }
 
-/// The lowest player id nobody uses, or nullopt when the game is full.
-std::optional<std::uint8_t> freePlayerId(ecs::World& world)
+std::size_t sessionCount(ecs::World& world)
 {
-    std::array<bool, MaxPlayers> used{};
-    world.query<NetClient>(
-        [&](ecs::Entity /*entity*/, NetClient& client) { used.at(client.playerId) = true; });
-    for (std::uint8_t id = 0; id < MaxPlayers; ++id) {
-        if (!used.at(id)) {
-            return id;
-        }
-    }
-    return std::nullopt;
+    std::size_t count = 0;
+    world.query<NetClient>([&](ecs::Entity /*entity*/, NetClient& /*client*/) { ++count; });
+    return count;
 }
 
 /// Lets the session's channel see the request, only so that the next packets
@@ -134,8 +127,7 @@ void ConnectionSystem::update(ecs::World& world, const ecs::Time& time)
             reject(_socket, request.from, RejectReason::InvalidName);
             continue;
         }
-        const auto playerId = freePlayerId(world);
-        if (!playerId) {
+        if (sessionCount(world) >= ConnectionSystem::MaxSessions) {
             reject(_socket, request.from, RejectReason::ServerFull);
             continue;
         }
@@ -155,7 +147,6 @@ void ConnectionSystem::update(ecs::World& world, const ecs::Time& time)
             NetClient{
                 .endpoint = request.from,
                 .token = token,
-                .playerId = *playerId,
                 .name = std::move(name),
                 .channel = network::ReliableChannel(token),
                 .cipher

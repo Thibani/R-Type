@@ -67,6 +67,15 @@ std::expected<Packet, DecodeError> decode(std::span<const std::byte> datagram, D
 [[nodiscard]]
 bool isValidName(std::string_view name) noexcept;
 
+/// True if `text` can be sent in the chat: 1 to 200 bytes, valid UTF-8, no control
+/// character (a line stays one line, on the screen and in the server's file).
+[[nodiscard]]
+bool isValidChatText(std::string_view text) noexcept;
+
+/// True if `code` can be a group's code: GroupCodeSize characters of `GroupCodeAlphabet`.
+[[nodiscard]]
+bool isValidGroupCode(std::string_view code) noexcept;
+
 /// Human readable name of an error, for logs.
 [[nodiscard]]
 std::string_view toString(DecodeError error) noexcept;

@@ -89,13 +89,16 @@ public:
     [[nodiscard]]
     std::vector<network::protocol::Payload> receive(Clock::time_point now);
 
-    /// Sends what is due: CONNECT_REQUEST and AUTH_REQUEST retries, a HEARTBEAT after 250 ms
-    /// of silence. Detects the 5 s timeout.
+    /// Sends what is due: CONNECT_REQUEST and AUTH_REQUEST retries, reliable messages, a
+    /// HEARTBEAT after 250 ms of silence. Detects the 5 s timeout.
     void update(Clock::time_point now);
 
     /// Sends the player's input (connected only).
     void sendInput(const network::protocol::Input& input, Clock::time_point now);
 
+    /// Queues a reliable message (JOIN_GAME, LEAVE_GAME, connected only). `update()`
+    /// sends it, then again until the server acknowledges it.
+    void sendReliable(network::protocol::Payload payload);
     /// Asks for a new game after GAME OVER: RESTART, 3 times as it is
     /// unreliable (connected only; the server ignores the repeats).
     void sendRestart(Clock::time_point now);

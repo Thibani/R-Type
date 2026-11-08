@@ -25,6 +25,8 @@ add_library(rtype_client
     Settings.cpp
     Gamepad.cpp
     Singleton.hpp
+    Chat.hpp
+    Chat.cpp
     Replication.hpp
     Replication.cpp
     Assets.hpp

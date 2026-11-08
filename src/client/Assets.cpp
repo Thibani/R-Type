@@ -22,7 +22,7 @@ constexpr sf::IntRect EnemyMissileFrame{{243, 277}, {12, 10}};
 /// The sheets that are the same in every colour mode (only players, Bydos
 /// and missiles are recoloured): enemies and gadgets.
 struct SharedSheet {
-    sf::Texture Skin::*texture;
+    sf::Texture Skin::* texture;
     const char* file;
 };
 constexpr std::array<SharedSheet, 11> SharedSheets{
@@ -118,7 +118,8 @@ bool loadSkin(Skin& skin, ColourMode mode, sf::Image bydos, sf::Image missiles,
 {
     const theme::Palette& palette = theme::Palettes.at(static_cast<std::size_t>(mode));
     if (mode != ColourMode::Off) {
-        const theme::Palette& original = theme::Palettes.at(static_cast<std::size_t>(ColourMode::Off));
+        const theme::Palette& original
+            = theme::Palettes.at(static_cast<std::size_t>(ColourMode::Off));
         repaint(bydos, BydoFrame, [&](sf::Color pixel) {
             const std::size_t part = theme::bydoPart(pixel);
             return theme::tinted(pixel, original.bydo.at(part), palette.bydo.at(part));
@@ -165,7 +166,8 @@ std::expected<void, std::string> Assets::load(Assets& assets, const std::filesys
         }
     }
     for (std::size_t mode = 0; mode < assets.skins.size(); ++mode) {
-        if (!loadSkin(assets.skins.at(mode), static_cast<ColourMode>(mode), bydos, missiles, shared)) {
+        if (!loadSkin(
+                assets.skins.at(mode), static_cast<ColourMode>(mode), bydos, missiles, shared)) {
             return std::unexpected("cannot create the textures of the colour modes");
         }
     }
