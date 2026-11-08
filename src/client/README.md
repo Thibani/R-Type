@@ -78,7 +78,9 @@ gameplay also have slow gold streaks: never in the game, where they could look l
 
 Esc opens the in-game menu (the game keeps running) or leaves the other
 screens. Players are told apart by colour, pattern and P1-P4 tag. Each colour mode has
-its own copy of the sprites, repainted at startup (`Assets.cpp`, `theme::Palettes`).
+its own copy of the sprites, repainted at startup (`Assets.cpp`, `theme::Palettes`):
+every enemy in the Bydo's colours, the Force and its capsule in the player
+missile's.
 
 **Settings** open over the connection form (Settings button) or over the game
 (Esc menu → Settings; the game keeps running). The actions are the 4
