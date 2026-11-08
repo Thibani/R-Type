@@ -39,14 +39,33 @@ void RoomMessageSystem::update(ecs::World& world, const ecs::Time& /*time*/)
         if (place == nullptr || world.hasComponent<Disconnecting>(message.client)) {
             continue; // On the main page, or `SessionCleanupSystem` is announcing their departure
         }
+        const auto room = rooms.find(place->room);
+        if (room == rooms.end()) {
+            continue;
+        }
+        GameRoom& game = *room->second;
+        const bool together = game.names.size() > 1; // Started by a group
+        const bool over = singleton<Match>(game.world).phase == GamePhase::GameOver;
         if (std::holds_alternative<LeaveGame>(message.payload)) {
-            std::cout << "r-type_server: player " << static_cast<int>(place->playerId) << " '"
-                      << world.getComponent<NetClient>(message.client).name
-                      << "' went back to the main page\n";
-            leaveRoom(world, message.client, LeaveReason::Quit);
-        } else if (const auto room = rooms.find(place->room); room != rooms.end()) {
-            ecs::World& game = room->second->world;
-            game.addComponent(game.createEntity(),
+            // After the game over of a group, nobody stays alone in it: the whole group goes
+            // back to the main page, and starts again from there with Ready
+            std::vector<ecs::Entity> leaving{message.client};
+            if (together && over) {
+                game.world.query<InGame>([&](ecs::Entity /*entity*/, InGame& player) {
+                    if (player.session != message.client) {
+                        leaving.push_back(player.session);
+                    }
+                });
+            }
+            for (const ecs::Entity session : leaving) {
+                std::cout << "r-type_server: '" << world.getComponent<NetClient>(session).name
+                          << "' went back to the main page\n";
+                leaveRoom(world, session, LeaveReason::Quit);
+            }
+        } else if (std::holds_alternative<Restart>(message.payload) && together) {
+            continue; // Play again is for a game alone; a group plays again from the main page
+        } else {
+            game.world.addComponent(game.world.createEntity(),
                 ClientMessage{.client = place->player, .payload = std::move(message.payload)});
         }
     }

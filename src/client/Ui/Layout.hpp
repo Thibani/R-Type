@@ -309,10 +309,12 @@ constexpr sf::FloatRect playAgain(int interfaceSize) noexcept
     return {{410.0F, isCompact(interfaceSize) ? 526.0F : 612.0F}, {220.0F, 56.0F}};
 }
 
+/// Beside Play again; alone and centred after the game of a group.
 [[nodiscard]]
-constexpr sf::FloatRect backToMenu(int interfaceSize) noexcept
+constexpr sf::FloatRect backToMenu(int interfaceSize, bool beside = true) noexcept
 {
-    return {{650.0F, isCompact(interfaceSize) ? 526.0F : 612.0F}, {220.0F, 56.0F}};
+    return {
+        {beside ? 650.0F : 530.0F, isCompact(interfaceSize) ? 526.0F : 612.0F}, {220.0F, 56.0F}};
 }
 
 /// The part of the canvas shown at this interface size, around what the screen
@@ -602,6 +604,9 @@ inline std::vector<sf::FloatRect> focusables(const Session& session, int interfa
         }
         return {};
     case Screen::GameOver:
+        if (!playsAlone(session)) { // Play again does not apply: its number stays, empty
+            return {sf::FloatRect{}, backToMenu(interfaceSize, false)};
+        }
         return {playAgain(interfaceSize), backToMenu(interfaceSize)};
     }
     return {};

@@ -112,6 +112,18 @@ struct Session {
     float noticeUntil{0.0F};
 };
 
+/// True if this game had a single player: only then can it be played again from the game
+/// over screen. A group plays again from the main page, with Ready.
+[[nodiscard]]
+inline bool playsAlone(const Session& session)
+{
+    int players = 0;
+    for (const PlayerSlot& slot : session.players) {
+        players += slot.present || slot.left ? 1 : 0;
+    }
+    return players <= 1;
+}
+
 /// True if we lead our group. Alone and not told yet, we do.
 [[nodiscard]]
 inline bool leadsTheGroup(const Session& session)

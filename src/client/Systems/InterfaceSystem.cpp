@@ -1027,10 +1027,15 @@ void drawGameOver(sf::RenderTarget& target, const Assets& assets, ColourMode mod
         }
     }
     drawBanners(target, assets, mode, session, crew, compact ? 232.0F : 238.0F, interfaceSize);
-    widgets::button(target, assets, layout::playAgain(interfaceSize), "Play again", true,
-        session.focus == layout::PlayAgainButton);
-    widgets::button(target, assets, layout::backToMenu(interfaceSize), "Back to menu", false,
-        session.focus == layout::BackToMenuButton);
+    if (playsAlone(session)) {
+        widgets::button(target, assets, layout::playAgain(interfaceSize), "Play again", true,
+            session.focus == layout::PlayAgainButton);
+        widgets::button(target, assets, layout::backToMenu(interfaceSize), "Back to menu", false,
+            session.focus == layout::BackToMenuButton);
+    } else { // A group plays again from the main page, with Ready
+        widgets::button(target, assets, layout::backToMenu(interfaceSize, false), "Back to menu",
+            true, session.focus == layout::BackToMenuButton);
+    }
 }
 
 } // namespace

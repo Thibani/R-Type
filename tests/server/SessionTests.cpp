@@ -2993,3 +2993,58 @@ TEST(Leaderboard, TheGameOverEntersTheScoreAndPlayAgainStartsANewGame)
     ASSERT_TRUE(after.has_value());
     EXPECT_EQ(after->best.size(), 2U); // Leaving after the game over adds nothing
 }
+
+TEST(GroupGameOver, PlayAgainIsForAGameAlone)
+{
+    TestServer server;
+    TestClient first(server.address());
+    TestClient second(server.address());
+    (void)connectTogether(server, first, "One", second, "Two");
+    loseEveryLife(server);
+    ASSERT_TRUE(waitForPhase(server, first, GamePhase::GameOver).has_value());
+
+    for (int i = 0; i < 3; ++i) {
+        first.send(Restart{});
+    }
+    for (int i = 0; i < 30; ++i) {
+        deliver(server, 1.0F / 60.0F);
+    }
+
+    ASSERT_EQ(server.rooms().size(), 1U);
+    auto& room = *server.rooms().begin()->second;
+    EXPECT_EQ(server::singleton<server::Match>(room.world).phase, GamePhase::GameOver);
+}
+
+TEST(GroupGameOver, OneGoingBackBringsTheWholeGroupBack)
+{
+    TestServer server;
+    TestClient first(server.address());
+    TestClient second(server.address());
+    (void)connectTogether(server, first, "One", second, "Two");
+    loseEveryLife(server);
+    ASSERT_TRUE(waitForPhase(server, second, GamePhase::GameOver).has_value());
+
+    first.sendReliable(LeaveGame{});
+    const auto back = waitForGroup(server, second, [](const GroupState& group) {
+        return std::ranges::none_of(
+            group.members, [](const GroupMemberState& member) { return member.inGame; });
+    });
+
+    EXPECT_TRUE(back.has_value()); // Two is told it is out of the game too
+    deliver(server); // The empty game goes at the end of the next frame
+    EXPECT_TRUE(server.rooms().empty());
+}
+
+TEST(GroupGameOver, LeavingDuringTheGameLeavesOnlyThePlayer)
+{
+    TestServer server;
+    TestClient first(server.address());
+    TestClient second(server.address());
+    (void)connectTogether(server, first, "One", second, "Two");
+
+    first.sendReliable(LeaveGame{});
+    deliver(server);
+    deliver(server);
+
+    ASSERT_EQ(server.rooms().size(), 1U); // The game goes on for Two
+}

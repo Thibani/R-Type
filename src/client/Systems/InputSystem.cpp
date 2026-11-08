@@ -524,7 +524,9 @@ void activate(Session& session, Settings& settings, int index, ecs::GameLoop& lo
         session.request = Request::LeaveGame;
         break;
     case Screen::GameOver:
-        session.request = index == layout::PlayAgainButton ? Request::Restart : Request::LeaveGame;
+        session.request = index == layout::PlayAgainButton && playsAlone(session)
+            ? Request::Restart
+            : Request::LeaveGame;
         break;
     case Screen::Game:
         if (index == layout::ResumeButton) {
