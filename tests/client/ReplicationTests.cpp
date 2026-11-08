@@ -6,6 +6,7 @@
 #include "client/Replication.hpp"
 #include "client/Singleton.hpp"
 #include "client/Systems/StarfieldSystem.hpp"
+#include "client/Ui/Layout.hpp"
 #include "ecs/World/World.hpp"
 #include "game/Components/Motion.hpp"
 
@@ -669,4 +670,74 @@ TEST(Replication, GameStateBringsTheDistanceToTheBoss)
         0.0F);
 
     EXPECT_EQ(client::singleton<client::Session>(world).bossProgress, 64);
+}
+
+// --- Game over of a group ---------------------------------------------------------------
+
+TEST(GroupGameOver, OnlyAGameAloneCanBePlayedAgain)
+{
+    ecs::World world;
+    inGame(world, 0, "Ann");
+    auto& session = client::singleton<client::Session>(world);
+    EXPECT_TRUE(client::playsAlone(session));
+
+    client::applyPayload(world, PlayerJoined{.playerId = 1, .name = "Ben"}, 0.0F);
+    EXPECT_FALSE(client::playsAlone(session));
+    client::applyPayload(world, PlayerLeft{.playerId = 1, .reason = LeaveReason::Quit}, 0.0F);
+    EXPECT_FALSE(client::playsAlone(session)); // Ben left, but it was a group's game
+
+    client::applyPayload(world, GameState{.phase = GamePhase::GameOver}, 0.0F);
+    EXPECT_EQ(session.focus, client::layout::BackToMenuButton); // The only button
+}
+
+TEST(GroupGameOver, TheServerBringsUsBackWithTheGroup)
+{
+    ecs::World world;
+    inGame(world, 0, "Ann");
+    auto& session = client::singleton<client::Session>(world);
+    client::applyPayload(world, GameState{.phase = GamePhase::GameOver}, 0.0F);
+    ASSERT_EQ(session.screen, client::Screen::GameOver);
+
+    client::applyPayload(world,
+        GroupState{.code = "",
+            .countdown = 0,
+            .leader = 0,
+            .members = {{.name = "Ann", .ready = false, .inGame = false},
+                {.name = "Ben", .ready = false, .inGame = false}}},
+        0.0F);
+
+    EXPECT_EQ(session.screen, client::Screen::Home);
+    EXPECT_FALSE(session.playerId.has_value());
+}
+
+TEST(GroupGameOver, WhilePlayingTheGroupStateMovesNobody)
+{
+    ecs::World world;
+    inGame(world, 0, "Ann");
+    auto& session = client::singleton<client::Session>(world);
+
+    client::applyPayload(world,
+        GroupState{.code = "",
+            .countdown = 0,
+            .leader = 0,
+            .members = {{.name = "Ann", .ready = false, .inGame = false}}},
+        0.0F);
+
+    EXPECT_EQ(session.screen, client::Screen::Game);
+}
+
+// --- Pause ---------------------------------------------------------------------------------
+
+TEST(Pause, OnlyAGameAloneIsPausedByTheMenu)
+{
+    ecs::World world;
+    inGame(world, 0, "Ann");
+    auto& session = client::singleton<client::Session>(world);
+    EXPECT_FALSE(client::gamePaused(session));
+
+    session.menuOpen = true;
+    EXPECT_TRUE(client::gamePaused(session));
+
+    client::applyPayload(world, PlayerJoined{.playerId = 1, .name = "Ben"}, 0.0F);
+    EXPECT_FALSE(client::gamePaused(session)); // A group's game never stops
 }

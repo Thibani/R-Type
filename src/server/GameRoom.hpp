@@ -28,6 +28,7 @@ public:
     ecs::GameLoop loop{world};
     std::vector<std::string> names; // The accounts that started it, for the leaderboard
     bool scored{false}; // Its score entered the leaderboard: at GAME_OVER, or when it ended
+    bool paused{false}; // A game alone, its player in the Esc menu: nothing moves (PAUSE)
 };
 
 /// Every game running, on a singleton of the main World. A room goes with its last player:

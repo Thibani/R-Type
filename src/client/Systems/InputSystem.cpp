@@ -144,6 +144,16 @@ void type(Session& session, char32_t c)
     }
 }
 
+/// Opens or closes the Esc menu over the game. Alone, the game pauses meanwhile: the server
+/// stops it (PAUSE). In a group's game, the others keep playing.
+void setMenu(Session& session, bool open)
+{
+    session.menuOpen = open;
+    if (playsAlone(session)) {
+        session.outgoing.emplace_back(network::protocol::Pause{.paused = open});
+    }
+}
+
 void openSettings(Session& session)
 {
     session.settingsOpen = true;
@@ -524,11 +534,13 @@ void activate(Session& session, Settings& settings, int index, ecs::GameLoop& lo
         session.request = Request::LeaveGame;
         break;
     case Screen::GameOver:
-        session.request = index == layout::PlayAgainButton ? Request::Restart : Request::LeaveGame;
+        session.request = index == layout::PlayAgainButton && playsAlone(session)
+            ? Request::Restart
+            : Request::LeaveGame;
         break;
     case Screen::Game:
         if (index == layout::ResumeButton) {
-            session.menuOpen = false;
+            setMenu(session, false);
         } else if (index == layout::MenuSettingsButton) {
             openSettings(session);
         } else {
@@ -586,7 +598,7 @@ void escape(Session& session, ecs::GameLoop& loop)
         session.request = Request::Quit;
         loop.stop();
     } else if (session.screen == Screen::Game) {
-        session.menuOpen = !session.menuOpen;
+        setMenu(session, !session.menuOpen);
         session.focus = 0;
     } else if (session.screen == Screen::Home) {
         session.focus = session.focus > layout::ChatBox ? layout::PlayButton : session.focus;
@@ -741,9 +753,13 @@ void InputSystem::update(ecs::World& world, const ecs::Time& /*time*/)
         } else if (const auto* key = event->getIf<sf::Event::KeyPressed>()) {
             onKey(session, settings, *key, _loop);
         } else if (const auto* pressed = event->getIf<sf::Event::JoystickButtonPressed>()) {
-            onPadButton(session, settings, pressed->button, _loop);
+            if (gamepad::isPad(pressed->joystickId)) { // Not a mouse seen as a joystick
+                onPadButton(session, settings, pressed->button, _loop);
+            }
         } else if (const auto* moved = event->getIf<sf::Event::JoystickMoved>()) {
-            onPadMoved(session, settings, *moved);
+            if (gamepad::isPad(moved->joystickId)) {
+                onPadMoved(session, settings, *moved);
+            }
         } else if (const auto* typed = event->getIf<sf::Event::TextEntered>()) {
             type(session, typed->unicode);
         } else if (const auto* click = event->getIf<sf::Event::MouseButtonPressed>()) {

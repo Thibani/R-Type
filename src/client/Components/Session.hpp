@@ -92,6 +92,7 @@ struct Session {
     bool chatOpen{false}; // Typing: every key goes to the chat, none to the ship
     std::string chatInput;
     std::optional<std::string> chatTarget; // "To [name]:", from the right-click menu
+    std::uint32_t chatCount{0}; // Lines ever added: the interface shows the chat when it moves
 
     // Leaderboard, over the main page
     bool leaderboardOpen{false};
@@ -111,6 +112,25 @@ struct Session {
     std::string notice; // Short message ("P4 Dave left the game"), shown until noticeUntil
     float noticeUntil{0.0F};
 };
+
+/// True if this game had a single player: only then can it be played again from the game
+/// over screen. A group plays again from the main page, with Ready.
+[[nodiscard]]
+inline bool playsAlone(const Session& session)
+{
+    int players = 0;
+    for (const PlayerSlot& slot : session.players) {
+        players += slot.present || slot.left ? 1 : 0;
+    }
+    return players <= 1;
+}
+
+/// True while a game played alone is paused: its player is in the Esc menu (PAUSE sent).
+[[nodiscard]]
+inline bool gamePaused(const Session& session)
+{
+    return session.screen == Screen::Game && session.menuOpen && playsAlone(session);
+}
 
 /// True if we lead our group. Alone and not told yet, we do.
 [[nodiscard]]

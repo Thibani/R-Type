@@ -6,6 +6,7 @@
 #include "client/Components/Session.hpp"
 #include "client/Components/SoundEvent.hpp"
 #include "client/Singleton.hpp"
+#include "client/Ui/Layout.hpp"
 #include "game/Components/Motion.hpp"
 
 #include <algorithm>
@@ -186,7 +187,9 @@ void apply(ecs::World& world, const GameState& state, float /*now*/)
     }
     if (next != session.screen) {
         session.screen = next;
-        session.focus = 0;
+        // After the game of a group, Back to menu is the only button
+        session.focus
+            = next == Screen::GameOver && !playsAlone(session) ? layout::BackToMenuButton : 0;
         session.menuOpen = false;
     }
 }
@@ -289,7 +292,14 @@ void apply(ecs::World& world, const ChatRefused& refused, float /*now*/)
 
 void apply(ecs::World& world, const GroupState& state, float /*now*/)
 {
-    singleton<Session>(world).group = state;
+    Session& session = singleton<Session>(world);
+    session.group = state;
+    // After a game over, one member went back to the main page: the server brought the whole
+    // group back with them
+    const auto me = std::ranges::find(state.members, session.name, &GroupMemberState::name);
+    if (session.screen == Screen::GameOver && me != state.members.end() && !me->inGame) {
+        leaveGame(world);
+    }
 }
 
 void apply(ecs::World& world, const Leaderboard& board, float /*now*/)
@@ -387,6 +397,7 @@ void applyPayload(ecs::World& world, const Payload& payload, float now)
 void addChatLine(Session& session, ChatLine line)
 {
     session.chat.push_back(std::move(line));
+    ++session.chatCount;
     if (session.chat.size() > MaxChatLines) {
         session.chat.erase(session.chat.begin());
     }

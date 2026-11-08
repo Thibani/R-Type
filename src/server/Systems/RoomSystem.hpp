@@ -9,7 +9,8 @@
 namespace server {
 
 /// What players in a game send: LEAVE_GAME brings them back to the main page, and each
-/// INPUT or RESTART goes to the World of their game, for its `InputSystem` or `RestartSystem`. Runs
+/// INPUT or RESTART goes to the World of their game, for its `InputSystem` or `RestartSystem`.
+/// PAUSE stops a game played alone until its player resumes it. Runs
 /// in `frameStart()`, after `LoginSystem`.
 class RoomMessageSystem final : public ecs::System {
 public:

@@ -74,7 +74,7 @@ TEST(PacketCodec, MatchesTheSpecificationExample)
     };
 
     const auto expected = bytes({
-        0x52, 0x54, 0x09, 0x01, 0x00, 0x00, 0x00, 0x30, // magic, version, type, flags, reserved, size
+        0x52, 0x54, 0x0A, 0x01, 0x00, 0x00, 0x00, 0x30, // magic, version, type, flags, reserved, size
         0x00, 0x00, 0x00, 0x00, // sessionToken
         0x00, 0x00, 0x00, 0x00, // sequence, ack
         0x00, 0x00, 0x00, 0x00, // ackBits
@@ -122,7 +122,7 @@ TEST(PacketCodec, EncodesHeaderFields)
     const auto datagram = encodeOrFail(packet);
 
     const auto expected = bytes({
-        0x52, 0x54, 0x09, 0x25, // magic, version, PLAYER_DIED
+        0x52, 0x54, 0x0A, 0x25, // magic, version, PLAYER_DIED
         0x03, 0x00, 0x00, 0x05, // RELIABLE | HAS_ACK, reserved, payloadSize 5
         0xCA, 0xFE, 0xBA, 0xBE, // sessionToken
         0x00, 0x2A, 0x00, 0x29, // sequence 42, ack 41
@@ -186,6 +186,7 @@ TEST(PacketCodec, PayloadSizesMatchTheSpecification)
         {.payload = LeaderboardRequest(), .size = 3},
         {.payload = Leaderboard{.board = Board::Solo, .best = {{.score = 1, .names = {"a"}}}, .lastRank = 0, .lastScore = 0}, .size = 4 + 68 + 8},
         {.payload = Restart(), .size = 0},
+        {.payload = Pause(), .size = 3},
     };
 
     for (const auto& [payload, size] : cases) {

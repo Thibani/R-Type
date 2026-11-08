@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
+#include <string_view>
 
 namespace client::gamepad {
 
@@ -32,9 +34,32 @@ std::uint8_t mask(const PadState& pad, const Settings& settings) noexcept
     return static_cast<std::uint8_t>(bits);
 }
 
+bool isMouseName(std::string_view name) noexcept
+{
+    constexpr std::string_view Mouse = "mouse";
+    const auto lower
+        = [](char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c; };
+    for (std::size_t start = 0; start + Mouse.size() <= name.size(); ++start) {
+        bool same = true;
+        for (std::size_t i = 0; i < Mouse.size() && same; ++i) {
+            same = lower(name[start + i]) == Mouse[i];
+        }
+        if (same) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool isPad(unsigned joystick)
+{
+    return sf::Joystick::isConnected(joystick)
+        && !isMouseName(sf::Joystick::getIdentification(joystick).name.toAnsiString());
+}
+
 PadState read(unsigned joystick)
 {
-    if (!sf::Joystick::isConnected(joystick)) {
+    if (!isPad(joystick)) {
         return {};
     }
     using sf::Joystick::Axis;
@@ -56,7 +81,7 @@ PadState read(unsigned joystick)
 bool anyConnected()
 {
     for (unsigned joystick = 0; joystick < sf::Joystick::Count; ++joystick) {
-        if (sf::Joystick::isConnected(joystick)) {
+        if (isPad(joystick)) {
             return true;
         }
     }

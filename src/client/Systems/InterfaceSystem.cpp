@@ -205,62 +205,110 @@ sf::Color chatColour(ChatLine::Kind kind) noexcept
 
 /// The chat: the newest messages at the bottom, a pale frame, and the typing line
 /// only while typing. Private messages are told apart by their words, not only their colour.
-/// The chat in `rect`, the newest message at the bottom: at most `messages` of them.
-void drawChat(sf::RenderTarget& target, const Assets& assets, const Session& session,
-    sf::FloatRect rect, bool focused, std::size_t messages = MaxChatLines)
-{
-    box(target, rect, session.chatOpen ? theme::ChatFrameOpen : theme::ChatFrame,
-        focused || session.chatOpen ? theme::Blue : theme::ChatBorder, focused ? 2.0F : 1.0F);
+/// How the chat shows: on the main page, in the frame of the page; in the game, only the
+/// last messages, in a frame just around them, with nothing behind so that the game shows.
+struct ChatLook {
+    std::size_t messages{MaxChatLines}; // The newest ones, at most
+    bool inGame{false};
+};
 
+/// The typing line at the bottom of `frame`: "To [name]:", then the end of what is typed.
+void drawChatInput(sf::RenderTarget& target, const Assets& assets, const Session& session,
+    sf::FloatRect frame, float margin)
+{
+    const std::string prefix
+        = session.chatTarget ? "To [" + *session.chatTarget + "]: " : std::string{};
+    const float prefixWidth = textWidth(assets.bodyBold, prefix, layout::ChatTextSize);
+    const sf::FloatRect line{
+        {frame.position.x, frame.position.y + frame.size.y - layout::ChatInputHeight},
+        {frame.size.x, layout::ChatInputHeight}};
+    box(target, line, theme::InputBackground, theme::Hull, 1.0F);
+    const sf::Vector2f inside = line.position + sf::Vector2f{margin, 5.0F};
+    text(target, assets.bodyBold, prefix, layout::ChatTextSize, theme::Gold, inside);
+    // The end of what is typed, like a field whose text is too long
+    std::string_view shown = session.chatInput;
+    const auto isContinuation
+        = [](char c) { return (static_cast<unsigned char>(c) & 0xC0U) == 0x80U; };
+    const float room = frame.size.x - (2.0F * margin) - prefixWidth - 6.0F;
+    while (!shown.empty() && textWidth(assets.body, shown, layout::ChatTextSize) > room) {
+        shown.remove_prefix(1);
+        while (!shown.empty() && isContinuation(shown.front())) {
+            shown.remove_prefix(1);
+        }
+    }
+    const sf::Vector2f typed = inside + sf::Vector2f{prefixWidth, 0.0F};
+    text(target, assets.body, shown, layout::ChatTextSize, theme::Text, typed);
+    box(target,
+        {{typed.x + textWidth(assets.body, shown, layout::ChatTextSize) + 2.0F,
+             line.position.y + 5.0F},
+            {2.0F, layout::ChatInputHeight - 10.0F}},
+        theme::Blue, theme::Blue, 0.0F);
+}
+
+/// The chat, at the bottom of `area`, its frame as high as what it shows. It shows while the
+/// player types (or has it focused), and for a while after a message (`recent`). Otherwise,
+/// on the main page, one thin line says where to click; in the game, nothing.
+void drawChat(sf::RenderTarget& target, const Assets& assets, const Session& session,
+    sf::FloatRect area, bool focused, bool recent, ChatLook look)
+{
     constexpr float Margin = 8.0F;
-    const float width = rect.size.x - (2.0F * Margin);
+    const float bottom = area.position.y + area.size.y;
+    if (!session.chatOpen && !focused && !recent) {
+        if (!look.inGame) {
+            const sf::FloatRect hint{{area.position.x, bottom - layout::ChatInputHeight},
+                {area.size.x, layout::ChatInputHeight}};
+            box(target, hint, theme::ChatFrame, theme::ChatBorder, 1.0F);
+            text(target, assets.body, "Click to chat", layout::ChatTextSize, theme::Muted,
+                hint.position + sf::Vector2f{Margin, 5.0F});
+        }
+        return;
+    }
+
+    // The lines that fit, newest last
+    const float width = area.size.x - (2.0F * Margin);
     const auto fits = [&](std::string_view part) {
         return textWidth(assets.body, part, layout::ChatTextSize) <= width;
     };
-    float bottom = rect.position.y + rect.size.y - Margin;
-    if (session.chatOpen) {
-        const std::string prefix
-            = session.chatTarget ? "To [" + *session.chatTarget + "]: " : std::string{};
-        const float prefixWidth = textWidth(assets.bodyBold, prefix, layout::ChatTextSize);
-        const sf::FloatRect line{{rect.position.x, bottom - layout::ChatInputHeight + Margin},
-            {rect.size.x, layout::ChatInputHeight}};
-        box(target, line, theme::InputBackground, theme::Hull, 1.0F);
-        const sf::Vector2f inside = line.position + sf::Vector2f{Margin, 6.0F};
-        text(target, assets.bodyBold, prefix, layout::ChatTextSize, theme::Gold, inside);
-        // The end of what is typed, like a field whose text is too long
-        std::string_view shown = session.chatInput;
-        const auto isContinuation
-            = [](char c) { return (static_cast<unsigned char>(c) & 0xC0U) == 0x80U; };
-        while (!shown.empty()
-            && textWidth(assets.body, shown, layout::ChatTextSize) > width - prefixWidth - 6.0F) {
-            shown.remove_prefix(1);
-            while (!shown.empty() && isContinuation(shown.front())) {
-                shown.remove_prefix(1);
-            }
-        }
-        const sf::Vector2f typed = inside + sf::Vector2f{prefixWidth, 0.0F};
-        text(target, assets.body, shown, layout::ChatTextSize, theme::Text, typed);
-        box(target,
-            {{typed.x + textWidth(assets.body, shown, layout::ChatTextSize) + 2.0F,
-                 line.position.y + 6.0F},
-                {2.0F, layout::ChatInputHeight - 12.0F}},
-            theme::Blue, theme::Blue, 0.0F);
-        bottom = line.position.y - 4.0F;
-    }
-
-    const float top = rect.position.y + Margin;
+    const float typing = session.chatOpen ? layout::ChatInputHeight + 4.0F : 0.0F;
+    const auto room = static_cast<std::size_t>(
+        std::max(0.0F, area.size.y - (2.0F * Margin) - typing) / layout::ChatLineHeight);
+    std::vector<std::pair<std::string, sf::Color>> lines;
     std::size_t next
         = session.chat.size() > session.chatScroll ? session.chat.size() - session.chatScroll : 0;
-    for (std::size_t shown = 0;
-        shown < messages && next > 0 && bottom - layout::ChatLineHeight >= top; ++shown) {
+    for (std::size_t shown = 0; shown < look.messages && next > 0 && lines.size() < room; ++shown) {
         const ChatLine& line = session.chat.at(--next);
         const auto parts = wrapChatText(chatLabel(line), fits);
-        for (auto part = parts.rbegin();
-            part != parts.rend() && bottom - layout::ChatLineHeight >= top; ++part) {
-            bottom -= layout::ChatLineHeight;
-            text(target, assets.body, *part, layout::ChatTextSize, chatColour(line.kind),
-                {rect.position.x + Margin, bottom});
+        for (auto part = parts.rbegin(); part != parts.rend() && lines.size() < room; ++part) {
+            lines.insert(lines.begin(), {*part, chatColour(line.kind)});
         }
+    }
+
+    // In the game the frame is just around the text; on the main page, as wide as its place
+    float frameWidth = area.size.x;
+    if (look.inGame && !session.chatOpen) {
+        float widest = 0.0F;
+        for (const auto& [part, colour] : lines) {
+            widest = std::max(widest, textWidth(assets.body, part, layout::ChatTextSize));
+        }
+        frameWidth = std::min(area.size.x, widest + (2.0F * Margin));
+    }
+    const float height
+        = (2.0F * Margin) + (static_cast<float>(lines.size()) * layout::ChatLineHeight) + typing;
+    const sf::FloatRect frame{{area.position.x, bottom - height}, {frameWidth, height}};
+    const sf::Color fill = look.inGame ? sf::Color::Transparent
+        : session.chatOpen             ? theme::ChatFrameOpen
+                                       : theme::ChatFrame;
+    const sf::Color border = focused || session.chatOpen
+        ? theme::Blue
+        : (look.inGame ? theme::ChatOutline : theme::ChatBorder);
+    box(target, frame, fill, border, focused ? 2.0F : 1.0F);
+    for (std::size_t i = 0; i < lines.size(); ++i) {
+        text(target, assets.body, lines[i].first, layout::ChatTextSize, lines[i].second,
+            {frame.position.x + Margin,
+                frame.position.y + Margin + (static_cast<float>(i) * layout::ChatLineHeight)});
+    }
+    if (session.chatOpen) {
+        drawChatInput(target, assets, session, frame, Margin);
     }
 }
 
@@ -337,13 +385,15 @@ void drawGroupCode(
     sf::RenderTarget& target, const Assets& assets, const Session& session, int interfaceSize)
 {
     const auto& code = session.group.code;
-    const std::string label = code.empty() ? "No code" : "Code: " + code;
-    const sf::Vector2f where = layout::groupCodeLabel(interfaceSize);
-    const float room = layout::newGroupCode(interfaceSize).position.x - where.x - 8.0F;
-    text(target, assets.bodyBold, label, widgets::fittedSize(assets.bodyBold, label, 22, room),
-        code.empty() ? theme::Muted : theme::Gold, where);
+    if (!code.empty()) { // Without a code, nothing to say: "Get a code" takes its place
+        const std::string label = "Code: " + code;
+        const sf::Vector2f where = layout::groupCodeLabel(interfaceSize);
+        const float room = layout::newGroupCode(interfaceSize).position.x - where.x - 8.0F;
+        text(target, assets.bodyBold, label, widgets::fittedSize(assets.bodyBold, label, 22, room),
+            theme::Gold, where);
+    }
     if (leadsTheGroup(session)) {
-        rowButton(target, assets, layout::newGroupCode(interfaceSize),
+        rowButton(target, assets, layout::newGroupCode(interfaceSize, !code.empty()),
             code.empty() ? "Get a code" : "New code", session.focus == layout::NewGroupCodeButton);
         if (!code.empty()) {
             rowButton(target, assets, layout::deleteGroupCode(interfaceSize), "Delete",
@@ -359,7 +409,7 @@ void drawGroupCode(
 /// The main page is the lobby: the group, the way into the game, and the chat. A place
 /// in the game only exists once in it, so no "P1" here.
 void drawHome(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
-    const Session& session, int interfaceSize)
+    const Session& session, int interfaceSize, bool recentChat)
 {
     const bool compact = layout::isCompact(interfaceSize);
     if (!compact) {
@@ -405,7 +455,8 @@ void drawHome(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
         !session.leaderboardOpen && session.focus == layout::LeaderboardButton);
     centredHelp(target, assets, "Tab: next  ·  Enter: select", compact ? 538.0F : 690.0F);
     drawChat(target, assets, session, layout::homeChat(interfaceSize),
-        !session.settingsOpen && !session.chatOpen && session.focus == layout::ChatBox);
+        !session.settingsOpen && !session.chatOpen && session.focus == layout::ChatBox, recentChat,
+        ChatLook{});
 }
 
 std::string_view friendStatus(network::protocol::FriendState state) noexcept
@@ -803,7 +854,9 @@ void drawMenu(
     widgets::panel(target, layout::MenuPanel, theme::Surface, theme::Hull, 1.5F, 18.0F);
     widgets::goldDetail(target, {460.0F, 183.0F}, 72.0F);
     centredTitle(target, assets, "Menu", 64, 205.0F);
-    const std::string_view note = "The game keeps running for the other players.";
+    const std::string_view note = playsAlone(session)
+        ? "The game is paused."
+        : "The game keeps running for the other players.";
     text(target, assets.body, note, 15, theme::Muted,
         {(theme::UiWidth - textWidth(assets.body, note, 15)) / 2.0F, 272.0F});
     widgets::button(
@@ -925,6 +978,7 @@ void drawSettings(sf::RenderTarget& target, const Assets& assets, const Session&
     } else {
         centredHelp(target, assets, "Arrows: move  ·  Enter: change  ·  Esc: back", 556.0F);
     }
+    centredHelp(target, assets, "Arrows: move  ·  Enter: change  ·  Esc: back", 562.0F);
 }
 
 /// "Ann, Ben, Cid": the accounts that started a game.
@@ -1027,10 +1081,15 @@ void drawGameOver(sf::RenderTarget& target, const Assets& assets, ColourMode mod
         }
     }
     drawBanners(target, assets, mode, session, crew, compact ? 232.0F : 238.0F, interfaceSize);
-    widgets::button(target, assets, layout::playAgain(interfaceSize), "Play again", true,
-        session.focus == layout::PlayAgainButton);
-    widgets::button(target, assets, layout::backToMenu(interfaceSize), "Back to menu", false,
-        session.focus == layout::BackToMenuButton);
+    if (playsAlone(session)) {
+        widgets::button(target, assets, layout::playAgain(interfaceSize), "Play again", true,
+            session.focus == layout::PlayAgainButton);
+        widgets::button(target, assets, layout::backToMenu(interfaceSize), "Back to menu", false,
+            session.focus == layout::BackToMenuButton);
+    } else { // A group plays again from the main page, with Ready
+        widgets::button(target, assets, layout::backToMenu(interfaceSize, false), "Back to menu",
+            true, session.focus == layout::BackToMenuButton);
+    }
 }
 
 } // namespace
@@ -1044,6 +1103,11 @@ InterfaceSystem::InterfaceSystem(sf::RenderWindow& window, const Assets& assets)
 void InterfaceSystem::update(ecs::World& world, const ecs::Time& time)
 {
     const Session& session = singleton<Session>(world);
+    const float now = time.elapsedSeconds();
+    if (session.chatCount != _chatCount) { // A message came, or was sent: the chat shows
+        _chatCount = session.chatCount;
+        _chatChangedAt = now;
+    }
     const Settings& settings = singleton<Settings>(world);
     const ColourMode mode = settings.colourMode;
     const int size = settings.interfaceSize;
@@ -1057,9 +1121,10 @@ void InterfaceSystem::update(ecs::World& world, const ecs::Time& time)
         if (layout::leaderboardOpen(session)) {
             Session behind = session; // Its focus is on the panel, not on the page
             behind.focus = -1;
-            drawHome(_window, _assets, mode, behind, size);
+            drawHome(_window, _assets, mode, behind, size, false);
         } else {
-            drawHome(_window, _assets, mode, session, size);
+            drawHome(_window, _assets, mode, session, size,
+                now - _chatChangedAt < layout::HomeChatSeconds);
         }
         if (!session.settingsOpen) {
             const bool open = layout::friendsOpen(session);
@@ -1079,10 +1144,9 @@ void InterfaceSystem::update(ecs::World& world, const ecs::Time& time)
         break;
     case Screen::Game:
         drawHud(_window, _assets, world, session, time.elapsedSeconds(), area);
-        if (!session.chat.empty() || session.chatOpen) {
-            drawChat(
-                _window, _assets, session, layout::gameChat(area), false, layout::GameChatMessages);
-        }
+        drawChat(_window, _assets, session, layout::gameChat(area), false,
+            now - _chatChangedAt < layout::GameChatSeconds,
+            ChatLook{.messages = layout::GameChatMessages, .inGame = true});
         if (session.menuOpen) {
             drawMenu(_window, _assets, session, area);
         }

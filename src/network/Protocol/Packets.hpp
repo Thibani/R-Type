@@ -510,6 +510,17 @@ struct LeaderboardRequest {
     friend bool operator==(const LeaderboardRequest&, const LeaderboardRequest&) = default;
 };
 
+/// The player of a game alone pauses it (Esc menu open) or resumes it. Ignored in a group's game.
+struct Pause {
+    static constexpr PacketType Type = PacketType::Pause;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = true;
+
+    bool paused{false};
+
+    friend bool operator==(const Pause&, const Pause&) = default;
+};
+
 /// One game of a ranking: its score, and the accounts that started it.
 struct LeaderboardEntry {
     std::uint32_t score{0};
@@ -539,7 +550,7 @@ using Payload = std::variant<ConnectRequest, ConnectAccept, ConnectReject, Disco
     ChatSend, PrivateSend, Snapshot, EntitySpawn, EntityDestroy, PlayerJoined, PlayerLeft,
     PlayerDied, GameState, JoinResult, FriendResult, FriendEntry, ChatMessage, ChatRefused,
     GroupCode, GroupJoin, GroupLeave, GroupKick, GroupPromote, GroupInvite, GroupAnswer, GroupReady,
-    GroupState, GroupResult, GroupInvited, LeaderboardRequest, Leaderboard, Restart>;
+    GroupState, GroupResult, GroupInvited, LeaderboardRequest, Leaderboard, Restart, Pause>;
 
 /// Acknowledgement carried by a packet (HAS_ACK flag, §6.1).
 struct Ack {

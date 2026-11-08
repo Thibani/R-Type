@@ -312,6 +312,11 @@ namespace {
         return isValidPlayerName(packet.name);
     }
 
+    bool validate(const Pause& /*packet*/) noexcept
+    {
+        return true; // Only 0 and 1 can be read
+    }
+
     bool validate(const LeaderboardRequest& packet) noexcept
     {
         return inRange(packet.board, Board::Solo, Board::Multi);
@@ -626,6 +631,11 @@ namespace {
     void writePayload(ByteWriter& writer, const GroupInvited& packet) noexcept
     {
         writeText<NameSize>(writer, packet.name);
+    }
+
+    void writePayload(ByteWriter& writer, const Pause& packet) noexcept
+    {
+        writer.write(static_cast<std::uint8_t>(packet.paused ? 1 : 0));
     }
 
     void writePayload(ByteWriter& writer, const LeaderboardRequest& packet) noexcept
@@ -980,6 +990,16 @@ namespace {
         return readText<NameSize>(reader, packet.name) ? ReadError{} : DecodeError::InvalidName;
     }
 
+    ReadError readPayload(ByteReader& reader, Pause& packet)
+    {
+        const auto value = reader.read<std::uint8_t>();
+        if (value > 1) {
+            return DecodeError::InvalidValue;
+        }
+        packet.paused = value == 1;
+        return {};
+    }
+
     ReadError readPayload(ByteReader& reader, LeaderboardRequest& packet)
     {
         packet.board = static_cast<Board>(reader.read<std::uint8_t>());
@@ -1221,6 +1241,8 @@ std::expected<Packet, DecodeError> decode(std::span<const std::byte> datagram, D
         return decodeAs<LeaderboardRequest>(*header, payload, direction);
     case PacketType::Leaderboard:
         return decodeAs<Leaderboard>(*header, payload, direction);
+    case PacketType::Pause:
+        return decodeAs<Pause>(*header, payload, direction);
     case PacketType::Snapshot:
         return decodeAs<Snapshot>(*header, payload, direction);
     case PacketType::EntitySpawn:
