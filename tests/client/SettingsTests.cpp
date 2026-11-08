@@ -480,6 +480,16 @@ std::optional<unsigned> buttonOf(const Settings& settings, Action action)
 
 } // namespace
 
+TEST(Gamepad, AMouseSeenAsAJoystickIsNotAPad)
+{
+    // VirtualBox's mouse integration follows the pointer: read as a pad, it held Left and Down
+    EXPECT_TRUE(client::gamepad::isMouseName("VirtualBox mouse integration"));
+    EXPECT_TRUE(client::gamepad::isMouseName("Generic USB Mouse"));
+    EXPECT_FALSE(client::gamepad::isMouseName("Xbox 360 Controller"));
+    EXPECT_FALSE(client::gamepad::isMouseName("Logitech Gamepad F310"));
+    EXPECT_FALSE(client::gamepad::isMouseName(""));
+}
+
 TEST(Gamepad, ButtonsAreReadBack)
 {
     Settings settings;
@@ -927,13 +937,13 @@ TEST(FriendsPanel, TheMenuOpensOnTheRowOfTheFriend)
     EXPECT_FALSE(client::layout::friendMenuButton(session, bar).has_value());
 }
 
-TEST(ChatBox, InTheGameItIsJustHighEnoughForThreeLinesAndTyping)
+TEST(ChatBox, InTheGameItIsLowAndShowsOneMessage)
 {
     using namespace client::layout;
     const sf::FloatRect chat = gameChat({{0.0F, 0.0F}, {1280.0F, 720.0F}});
     EXPECT_GE(chat.size.y, (3.0F * ChatLineHeight) + ChatInputHeight);
     EXPECT_LT(chat.size.y, (4.0F * ChatLineHeight) + ChatInputHeight + 20.0F); // Not a fourth
-    EXPECT_EQ(GameChatMessages, 3U);
+    EXPECT_EQ(GameChatMessages, 1U); // Only the message just sent or received
 }
 
 TEST(ChatBox, TheChatFitsAtEverySizeInTheGame)

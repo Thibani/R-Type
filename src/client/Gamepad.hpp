@@ -3,6 +3,7 @@
 #include "client/Components/Settings.hpp"
 
 #include <cstdint>
+#include <string_view>
 
 /// Gamepads, through SFML's joystick API: what a pad does in the game and in
 /// the menus. Everything but `read()` and `anyConnected()` is plain logic, so
@@ -53,12 +54,22 @@ constexpr float povY(float raw) noexcept
 [[nodiscard]]
 std::uint8_t mask(const PadState& pad, const Settings& settings) noexcept;
 
+/// True for a device named like a mouse. VirtualBox shows its mouse integration as a
+/// joystick whose axes follow the pointer on the whole screen: read as a pad, it would hold
+/// a direction down (left and down when the pointer is there) and cancel the arrow keys.
+[[nodiscard]]
+bool isMouseName(std::string_view name) noexcept;
+
+/// True if `joystick` (0 to 7) is connected and is a pad, not a mouse seen as a joystick.
+[[nodiscard]]
+bool isPad(unsigned joystick);
+
 /// The current state of pad `joystick` (0 to 7), or a resting pad if it is
-/// not connected: plugging or unplugging one never stops anything.
+/// not connected (or not a pad): plugging or unplugging one never stops anything.
 [[nodiscard]]
 PadState read(unsigned joystick);
 
-/// True if at least one pad is connected.
+/// True if at least one pad is connected (a mouse seen as a joystick does not count).
 [[nodiscard]]
 bool anyConnected();
 

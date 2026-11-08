@@ -18,6 +18,7 @@
 #include "server/Components/Combat.hpp"
 #include "server/Components/Match.hpp"
 #include "server/Components/NetClient.hpp"
+#include "server/Components/NetEntity.hpp"
 #include "server/Components/Player.hpp"
 #include "server/FriendStore.hpp"
 #include "server/GameRoom.hpp"
@@ -2992,4 +2993,135 @@ TEST(Leaderboard, TheGameOverEntersTheScoreAndPlayAgainStartsANewGame)
     const auto after = askLeaderboard(server, client, Board::Solo);
     ASSERT_TRUE(after.has_value());
     EXPECT_EQ(after->best.size(), 2U); // Leaving after the game over adds nothing
+}
+
+TEST(GroupGameOver, PlayAgainIsForAGameAlone)
+{
+    TestServer server;
+    TestClient first(server.address());
+    TestClient second(server.address());
+    (void)connectTogether(server, first, "One", second, "Two");
+    loseEveryLife(server);
+    ASSERT_TRUE(waitForPhase(server, first, GamePhase::GameOver).has_value());
+
+    for (int i = 0; i < 3; ++i) {
+        first.send(Restart{});
+    }
+    for (int i = 0; i < 30; ++i) {
+        deliver(server, 1.0F / 60.0F);
+    }
+
+    ASSERT_EQ(server.rooms().size(), 1U);
+    auto& room = *server.rooms().begin()->second;
+    EXPECT_EQ(server::singleton<server::Match>(room.world).phase, GamePhase::GameOver);
+}
+
+TEST(GroupGameOver, OneGoingBackBringsTheWholeGroupBack)
+{
+    TestServer server;
+    TestClient first(server.address());
+    TestClient second(server.address());
+    (void)connectTogether(server, first, "One", second, "Two");
+    loseEveryLife(server);
+    ASSERT_TRUE(waitForPhase(server, second, GamePhase::GameOver).has_value());
+
+    first.sendReliable(LeaveGame{});
+    const auto back = waitForGroup(server, second, [](const GroupState& group) {
+        return std::ranges::none_of(
+            group.members, [](const GroupMemberState& member) { return member.inGame; });
+    });
+
+    EXPECT_TRUE(back.has_value()); // Two is told it is out of the game too
+    deliver(server); // The empty game goes at the end of the next frame
+    EXPECT_TRUE(server.rooms().empty());
+}
+
+TEST(GroupGameOver, LeavingDuringTheGameLeavesOnlyThePlayer)
+{
+    TestServer server;
+    TestClient first(server.address());
+    TestClient second(server.address());
+    (void)connectTogether(server, first, "One", second, "Two");
+
+    first.sendReliable(LeaveGame{});
+    deliver(server);
+    deliver(server);
+
+    ASSERT_EQ(server.rooms().size(), 1U); // The game goes on for Two
+}
+
+// --- Pause (§8.9) -------------------------------------------------------------------------
+
+namespace {
+
+/// The simulation tick of the only game running.
+std::uint32_t gameTick(TestServer& server)
+{
+    return server::singleton<server::SimulationTick>(server.rooms().begin()->second->world).value;
+}
+
+/// About half a second of a playing client: inputs and frames.
+void playFor(TestServer& server, TestClient& client)
+{
+    for (int i = 0; i < 30; ++i) {
+        client.send(Heartbeat{});
+        deliver(server, 1.0F / 60.0F);
+    }
+}
+
+} // namespace
+
+TEST(Pause, AGameAloneStopsUntilItsPlayerResumes)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)connectOrFail(server, client, "Dave");
+    playFor(server, client);
+    const std::uint32_t before = gameTick(server);
+    ASSERT_GT(before, 0U);
+
+    client.sendReliable(Pause{.paused = true});
+    deliver(server);
+    const std::uint32_t paused = gameTick(server);
+    playFor(server, client);
+    EXPECT_EQ(gameTick(server), paused); // Not a step: no enemy, no shot, no damage
+
+    client.sendReliable(Pause{.paused = false});
+    playFor(server, client);
+    EXPECT_GT(gameTick(server), paused);
+}
+
+TEST(Pause, AGroupsGameNeverStops)
+{
+    TestServer server;
+    TestClient first(server.address());
+    TestClient second(server.address());
+    (void)connectTogether(server, first, "One", second, "Two");
+    playFor(server, first);
+
+    first.sendReliable(Pause{.paused = true});
+    deliver(server);
+    const std::uint32_t asked = gameTick(server);
+    playFor(server, first);
+
+    EXPECT_GT(gameTick(server), asked); // The other player keeps playing
+}
+
+TEST(Pause, InputsDoNotPileUpMeanwhile)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)connectOrFail(server, client, "Dave");
+    client.sendReliable(Pause{.paused = true});
+    deliver(server);
+
+    for (int i = 0; i < 20; ++i) {
+        client.send(Input{.firstTick = static_cast<std::uint32_t>(100 + i), .count = 1, .masks = {0}});
+        deliver(server);
+    }
+
+    std::size_t waiting = 0;
+    server.rooms().begin()->second->world.query<server::ClientMessage>(
+        [&](ecs::Entity /*entity*/, server::ClientMessage& /*message*/) { ++waiting; });
+    EXPECT_EQ(waiting, 0U);
 }
