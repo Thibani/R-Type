@@ -714,6 +714,45 @@ TEST(Layout, EveryFocusablePartIsInsideTheCanvasAndNoneOverlaps)
     client::Session settings;
     settings.settingsOpen = true;
     check(settings);
+    client::Session leaderboard;
+    leaderboard.screen = Screen::Home;
+    leaderboard.leaderboardOpen = true;
+    check(leaderboard);
+}
+
+TEST(InterfaceSize, TheLeaderboardFitsAtEverySize)
+{
+    using namespace client::layout;
+    for (const int size : Settings::InterfaceSizes) {
+        client::Session session;
+        session.screen = client::Screen::Home;
+        session.leaderboardOpen = true;
+        const sf::FloatRect area = visibleArea(session, size);
+        EXPECT_TRUE(contains(area, LeaderboardPanel)) << "size " << size;
+        for (const sf::FloatRect part : focusables(session, size)) {
+            EXPECT_TRUE(contains(LeaderboardPanel, part)) << "size " << size;
+        }
+        // The 10 games, then the last one, between the tabs and Back
+        for (std::size_t row = 0; row <= network::protocol::LeaderboardSize; ++row) {
+            const sf::FloatRect line = leaderboardRow(row);
+            EXPECT_TRUE(contains(LeaderboardPanel, line)) << row;
+            EXPECT_GE(line.position.y, SoloTabRect.position.y + SoloTabRect.size.y) << row;
+            EXPECT_LE(line.position.y + line.size.y, CloseLeaderboard.position.y) << row;
+        }
+    }
+}
+
+TEST(LeaderboardPanel, OnlyOverTheMainPage)
+{
+    client::Session session;
+    session.leaderboardOpen = true;
+    session.screen = client::Screen::Game; // The game started while it was open
+    EXPECT_FALSE(client::layout::leaderboardOpen(session));
+    session.screen = client::Screen::Home;
+    EXPECT_TRUE(client::layout::leaderboardOpen(session));
+    EXPECT_FALSE(client::layout::friendsOpen(session)); // Not both at once
+    session.settingsOpen = true;
+    EXPECT_FALSE(client::layout::leaderboardOpen(session));
 }
 
 TEST(InterfaceSize, TheFriendsPanelFitsAtEverySizeAndCoversNothing)
@@ -870,6 +909,15 @@ TEST(FriendsPanel, TheMenuOpensOnTheRowOfTheFriend)
 
     session.friendMenu = "Gone";
     EXPECT_FALSE(client::layout::friendMenuButton(session, bar).has_value());
+}
+
+TEST(ChatBox, InTheGameItIsJustHighEnoughForThreeLinesAndTyping)
+{
+    using namespace client::layout;
+    const sf::FloatRect chat = gameChat({{0.0F, 0.0F}, {1280.0F, 720.0F}});
+    EXPECT_GE(chat.size.y, (3.0F * ChatLineHeight) + ChatInputHeight);
+    EXPECT_LT(chat.size.y, (4.0F * ChatLineHeight) + ChatInputHeight + 20.0F); // Not a fourth
+    EXPECT_EQ(GameChatMessages, 3U);
 }
 
 TEST(ChatBox, TheChatFitsAtEverySizeInTheGame)

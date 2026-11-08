@@ -53,7 +53,8 @@ inline constexpr sf::FloatRect CreateAccount{{958.0F, 402.0F}, {226.0F, 52.0F}};
 inline constexpr sf::FloatRect OpenSettings{{716.0F, 466.0F}, {226.0F, 52.0F}};
 inline constexpr sf::FloatRect Quit{{958.0F, 466.0F}, {226.0F, 52.0F}};
 
-// Main page: Play (0), Settings (1), Log out (2), the chat, the group, then the friends.
+// Main page: Play (0), Settings (1), Log out (2), the chat, the group, Leaderboard, then
+// the friends.
 // A part that does not apply for now (Kick, for who does not lead) keeps its number, with
 // an empty rectangle: nothing can click it, and the focus goes past it.
 inline constexpr int PlayButton = 0;
@@ -68,6 +69,7 @@ inline constexpr int AcceptInvitationButton = 9;
 inline constexpr int RefuseInvitationButton = 10;
 inline constexpr int FirstKickButton = 11; // + place of the member
 inline constexpr int FirstPromoteButton = 15; // + place of the member
+inline constexpr int LeaderboardButton = 19;
 
 /// The left of the group's part of the page.
 [[nodiscard]]
@@ -188,6 +190,42 @@ constexpr sf::FloatRect logOut(int interfaceSize) noexcept
 {
     return {{isCompact(interfaceSize) ? 240.0F : 64.0F, isCompact(interfaceSize) ? 474.0F : 620.0F},
         {224.0F, 52.0F}};
+}
+
+/// Under the chat, above Settings.
+[[nodiscard]]
+constexpr sf::FloatRect openLeaderboard(int interfaceSize) noexcept
+{
+    return {{isCompact(interfaceSize) ? 240.0F : 64.0F, isCompact(interfaceSize) ? 346.0F : 492.0F},
+        {224.0F, 52.0F}};
+}
+
+// Leaderboard, over the main page. It fits in the view of the largest interface size.
+inline constexpr int SoloTab = 0;
+inline constexpr int MultiTab = 1;
+inline constexpr int CloseLeaderboardButton = 2;
+inline constexpr sf::FloatRect LeaderboardPanel{{300.0F, 150.0F}, {680.0F, 410.0F}};
+inline constexpr sf::FloatRect SoloTabRect{{742.0F, 162.0F}, {110.0F, 30.0F}};
+inline constexpr sf::FloatRect MultiTabRect{{858.0F, 162.0F}, {110.0F, 30.0F}};
+inline constexpr sf::FloatRect CloseLeaderboard{{528.0F, 494.0F}, {224.0F, 52.0F}};
+inline constexpr float LeaderboardRowsTop = 206.0F;
+inline constexpr float LeaderboardRowHeight = 24.0F;
+inline constexpr unsigned LeaderboardTextSize = 14;
+
+/// Line `row` of the ranking (0 to 9), then the player's last game (10).
+[[nodiscard]]
+constexpr sf::FloatRect leaderboardRow(std::size_t row) noexcept
+{
+    const float gap = row >= network::protocol::LeaderboardSize ? 10.0F : 0.0F;
+    return {{316.0F, LeaderboardRowsTop + gap + (static_cast<float>(row) * LeaderboardRowHeight)},
+        {648.0F, LeaderboardRowHeight}};
+}
+
+/// Open over the main page only: entering a game hides it.
+[[nodiscard]]
+constexpr bool leaderboardOpen(const Session& session) noexcept
+{
+    return session.screen == Screen::Home && session.leaderboardOpen && !session.settingsOpen;
 }
 
 // Waiting room and game over: up to 4 banners side by side
@@ -320,33 +358,37 @@ inline int neighbour(const std::vector<sf::FloatRect>& rects, int from, int dx, 
     return best;
 }
 
-// Chat box, on the main page (above Settings and Log out), and in the game (bottom left,
+// Chat box, on the main page (above Leaderboard and Settings), and in the game (bottom left,
 // above the reminder of the keys). On the main page, it is the 4th focusable part.
 inline constexpr int ChatBox = 3;
-inline constexpr float ChatInputHeight = 30.0F;
-inline constexpr float ChatLineHeight = 20.0F;
-inline constexpr unsigned ChatTextSize = 15;
+inline constexpr float ChatInputHeight = 26.0F;
+inline constexpr float ChatLineHeight = 17.0F;
+inline constexpr unsigned ChatTextSize = 13;
+// In the game, only the last messages show, so that the game stays visible; scrolling back
+// still reaches the others
+inline constexpr std::size_t GameChatMessages = 3;
 
 [[nodiscard]]
 constexpr sf::FloatRect homeChat(int interfaceSize) noexcept
 {
-    return isCompact(interfaceSize) ? sf::FloatRect{{225.0F, 130.0F}, {315.0F, 270.0F}}
-                                    : sf::FloatRect{{64.0F, 250.0F}, {440.0F, 290.0F}};
+    return isCompact(interfaceSize) ? sf::FloatRect{{225.0F, 130.0F}, {315.0F, 204.0F}}
+                                    : sf::FloatRect{{64.0F, 282.0F}, {440.0F, 194.0F}};
 }
 
 [[nodiscard]]
 constexpr sf::FloatRect gameChat(sf::FloatRect area) noexcept
 {
-    constexpr sf::Vector2f Size{420.0F, 180.0F};
+    // Three lines and the typing line
+    constexpr sf::Vector2f Size{420.0F, 16.0F + (3.0F * ChatLineHeight) + ChatInputHeight + 4.0F};
     return {{area.position.x + 18.0F, area.position.y + area.size.y - 60.0F - Size.y}, Size};
 }
 
 // Friends bar, on the right of the main page, whatever the interface size. In focus
 // order after the chat box: the name field, Add, then the buttons of the rows.
 // Closed, the bar itself takes the place of the field: moving the focus to it opens it.
-inline constexpr int FriendNameField = 19;
-inline constexpr int FriendAddButton = 20;
-inline constexpr int FirstFriendButton = 21;
+inline constexpr int FriendNameField = 20;
+inline constexpr int FriendAddButton = 21;
+inline constexpr int FirstFriendButton = 22;
 inline constexpr float FriendsClosedWidth = 56.0F;
 inline constexpr float FriendsOpenWidth = 300.0F;
 inline constexpr float FriendsPadding = 16.0F;
@@ -358,7 +400,7 @@ inline constexpr float FriendsBottomLine = 28.0F; // "PgUp / PgDn" under the row
 [[nodiscard]]
 constexpr bool friendsOpen(const Session& session) noexcept
 {
-    return session.screen == Screen::Home && !session.settingsOpen
+    return session.screen == Screen::Home && !session.settingsOpen && !session.leaderboardOpen
         && (session.friendsHovered || session.focus >= FriendNameField);
 }
 
@@ -487,6 +529,9 @@ inline std::vector<sf::FloatRect> focusables(const Session& session, int interfa
         }
         return rows;
     }
+    if (leaderboardOpen(session)) {
+        return {SoloTabRect, MultiTabRect, CloseLeaderboard};
+    }
     switch (session.screen) {
     case Screen::Connect:
         return {NameInput, PasswordInput, AddressInput, PortInput, Login, CreateAccount,
@@ -514,6 +559,7 @@ inline std::vector<sf::FloatRect> focusables(const Session& session, int interfa
         for (std::size_t place = 0; place < network::protocol::MaxPlayers; ++place) {
             parts.push_back(when(canActOn(place), promoteMember(interfaceSize, place)));
         }
+        parts.push_back(openLeaderboard(interfaceSize));
         const sf::FloatRect area = visibleArea(session, interfaceSize);
         if (!friendsOpen(session)) {
             // One unit inside the bar, which itself touches the edges of the view

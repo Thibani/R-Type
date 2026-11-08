@@ -417,6 +417,79 @@ TEST(MainPage, LoggingOutForgetsTheSessionToo)
     EXPECT_EQ(client::singleton<client::InputHistory>(world).firstTick, 0U);
 }
 
+// --- Leaderboard (§8.8) ------------------------------------------------------------
+
+TEST(Leaderboard, TheAnswerForTheTabShownIsKept)
+{
+    ecs::World world;
+    client::startSession(world);
+    auto& session = client::singleton<client::Session>(world);
+    session.board = Board::Multi;
+    const Leaderboard multi{.board = Board::Multi,
+        .best = {{.score = 900, .names = {"Ann", "Ben"}}},
+        .lastRank = 3,
+        .lastScore = 40};
+
+    client::applyPayload(world, multi, 0.0F);
+
+    ASSERT_TRUE(session.leaderboard.has_value());
+    EXPECT_EQ(*session.leaderboard, multi);
+}
+
+TEST(Leaderboard, AnAnswerForTheOtherTabIsIgnored)
+{
+    ecs::World world;
+    client::startSession(world);
+    auto& session = client::singleton<client::Session>(world);
+    session.board = Board::Multi; // Solo was asked first, then the player switched
+
+    client::applyPayload(
+        world, Leaderboard{.board = Board::Solo, .best = {}, .lastRank = 0, .lastScore = 0}, 0.0F);
+
+    EXPECT_FALSE(session.leaderboard.has_value());
+}
+
+TEST(Leaderboard, ItArrivesDuringAGameToo)
+{
+    ecs::World world;
+    inGame(world);
+
+    client::applyPayload(
+        world, Leaderboard{.board = Board::Solo, .best = {}, .lastRank = 0, .lastScore = 0}, 0.0F);
+
+    EXPECT_TRUE(client::singleton<client::Session>(world).leaderboard.has_value());
+}
+
+TEST(Leaderboard, EnteringAGameClosesIt)
+{
+    ecs::World world;
+    client::startSession(world);
+    auto& session = client::singleton<client::Session>(world);
+    session.leaderboardOpen = true; // A member reads it while the leader starts the game
+
+    client::applyPayload(world, JoinResult{.code = JoinCode::Ok, .playerId = 1}, 0.0F);
+
+    EXPECT_EQ(session.screen, client::Screen::Game);
+    EXPECT_FALSE(session.leaderboardOpen);
+}
+
+TEST(Leaderboard, LoggingOutForgetsIt)
+{
+    ecs::World world;
+    client::startSession(world);
+    auto& session = client::singleton<client::Session>(world);
+    session.leaderboardOpen = true;
+    session.board = Board::Multi;
+    session.leaderboard
+        = Leaderboard{.board = Board::Multi, .best = {}, .lastRank = 0, .lastScore = 0};
+
+    client::clearSession(world);
+
+    EXPECT_FALSE(session.leaderboardOpen);
+    EXPECT_EQ(session.board, Board::Solo);
+    EXPECT_FALSE(session.leaderboard.has_value());
+}
+
 // --- Friends (§8.5) -----------------------------------------------------------------
 
 TEST(Friends, TheListKeepsItsOrder)

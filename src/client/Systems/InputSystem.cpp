@@ -73,7 +73,7 @@ void eraseLast(std::string& text)
 
 std::string* focusedField(Session& session)
 {
-    if (session.settingsOpen) {
+    if (session.settingsOpen || layout::leaderboardOpen(session)) {
         return nullptr;
     }
     if (session.screen == Screen::Home) {
@@ -331,6 +331,31 @@ void scrollFriends(Session& session, int interfaceSize, int step)
     }
 }
 
+/// Shows the ranking `board`, and asks the server for it: always fresh, never a copy
+/// kept from before a game.
+void showBoard(Session& session, network::protocol::Board board)
+{
+    session.board = board;
+    session.leaderboard.reset();
+    session.outgoing.emplace_back(network::protocol::LeaderboardRequest{.board = board});
+}
+
+void openLeaderboard(Session& session)
+{
+    session.leaderboardOpen = true;
+    session.chatOpen = false;
+    session.friendMenu.reset();
+    session.focus
+        = session.board == network::protocol::Board::Solo ? layout::SoloTab : layout::MultiTab;
+    showBoard(session, session.board);
+}
+
+void closeLeaderboard(Session& session)
+{
+    session.leaderboardOpen = false;
+    session.focus = layout::LeaderboardButton;
+}
+
 void openChat(Session& session, std::optional<std::string> target)
 {
     session.chatOpen = true;
@@ -447,6 +472,16 @@ void activate(Session& session, Settings& settings, int index, ecs::GameLoop& lo
         activateSettings(session, settings, index);
         return;
     }
+    if (layout::leaderboardOpen(session)) {
+        if (index == layout::SoloTab) {
+            showBoard(session, network::protocol::Board::Solo);
+        } else if (index == layout::MultiTab) {
+            showBoard(session, network::protocol::Board::Multi);
+        } else {
+            closeLeaderboard(session);
+        }
+        return;
+    }
     switch (session.screen) {
     case Screen::Connect:
         if (index == layout::QuitButton) {
@@ -471,6 +506,8 @@ void activate(Session& session, Settings& settings, int index, ecs::GameLoop& lo
             session.request = Request::Leave;
         } else if (index == layout::ChatBox) {
             openChat(session, std::nullopt);
+        } else if (index == layout::LeaderboardButton) {
+            openLeaderboard(session);
         } else if (index < layout::FriendNameField) {
             activateGroupButton(session, index);
         } else if (index == layout::FriendAddButton) {
@@ -541,6 +578,8 @@ void escape(Session& session, ecs::GameLoop& loop)
 {
     if (session.settingsOpen) {
         closeSettings(session);
+    } else if (layout::leaderboardOpen(session)) {
+        closeLeaderboard(session);
     } else if (session.screen == Screen::Connect) {
         session.request = Request::Quit;
         loop.stop();

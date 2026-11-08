@@ -6,6 +6,7 @@
 #include "client/Components/Session.hpp"
 #include "client/Components/Settings.hpp"
 #include "client/Gamepad.hpp"
+#include "client/Replication.hpp"
 #include "client/Settings.hpp"
 #include "client/Singleton.hpp"
 #include "client/Ui/Layout.hpp"
@@ -203,8 +204,9 @@ sf::Color chatColour(ChatLine::Kind kind) noexcept
 
 /// The chat: the newest messages at the bottom, a pale frame, and the typing line
 /// only while typing. Private messages are told apart by their words, not only their colour.
+/// The chat in `rect`, the newest message at the bottom: at most `messages` of them.
 void drawChat(sf::RenderTarget& target, const Assets& assets, const Session& session,
-    sf::FloatRect rect, bool focused)
+    sf::FloatRect rect, bool focused, std::size_t messages = MaxChatLines)
 {
     box(target, rect, session.chatOpen ? theme::ChatFrameOpen : theme::ChatFrame,
         focused || session.chatOpen ? theme::Blue : theme::ChatBorder, focused ? 2.0F : 1.0F);
@@ -248,7 +250,8 @@ void drawChat(sf::RenderTarget& target, const Assets& assets, const Session& ses
     const float top = rect.position.y + Margin;
     std::size_t next
         = session.chat.size() > session.chatScroll ? session.chat.size() - session.chatScroll : 0;
-    while (next > 0 && bottom - layout::ChatLineHeight >= top) {
+    for (std::size_t shown = 0;
+        shown < messages && next > 0 && bottom - layout::ChatLineHeight >= top; ++shown) {
         const ChatLine& line = session.chat.at(--next);
         const auto parts = wrapChatText(chatLabel(line), fits);
         for (auto part = parts.rbegin();
@@ -397,6 +400,8 @@ void drawHome(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
         session.focus == layout::HomeSettingsButton);
     widgets::button(target, assets, layout::logOut(interfaceSize), "Log out", false,
         session.focus == layout::LogOutButton);
+    widgets::button(target, assets, layout::openLeaderboard(interfaceSize), "Leaderboard", false,
+        !session.leaderboardOpen && session.focus == layout::LeaderboardButton);
     centredHelp(target, assets, "Tab: next  ·  Enter: select", compact ? 538.0F : 690.0F);
     drawChat(target, assets, session, layout::homeChat(interfaceSize),
         !session.settingsOpen && !session.chatOpen && session.focus == layout::ChatBox);
@@ -797,6 +802,84 @@ void drawSettings(sf::RenderTarget& target, const Assets& assets, const Session&
     centredHelp(target, assets, "Arrows: move  ·  Enter: change  ·  Esc: back", 552.0F);
 }
 
+/// "Ann, Ben, Cid": the accounts that started a game.
+std::string namesOf(const network::protocol::LeaderboardEntry& entry)
+{
+    std::string names;
+    for (const std::string& name : entry.names) {
+        names += (names.empty() ? "" : ", ") + name;
+    }
+    return names;
+}
+
+/// One game of the ranking. The player's own games say YOU and are outlined: not by
+/// colour alone.
+void leaderboardLine(sf::RenderTarget& target, const Assets& assets, std::size_t row,
+    const network::protocol::LeaderboardEntry& entry, bool isYou)
+{
+    constexpr unsigned Size = layout::LeaderboardTextSize;
+    const sf::FloatRect line = layout::leaderboardRow(row);
+    if (isYou) {
+        box(target, line, theme::Surface, theme::Blue, 1.5F);
+        text(target, assets.bodyBold, "YOU", 12, theme::Blue,
+            line.position + sf::Vector2f{510.0F, 5.0F});
+    }
+    const sf::Vector2f top = line.position + sf::Vector2f{10.0F, 3.0F};
+    text(target, assets.bodyBold, "#" + std::to_string(row + 1), Size, theme::Muted, top);
+    const std::string names = namesOf(entry);
+    text(target, assets.body, names, widgets::fittedSize(assets.body, names, Size, 450.0F),
+        theme::Text, top + sf::Vector2f{44.0F, 0.0F});
+    const std::string score = formatScore(entry.score);
+    text(target, assets.bodyBold, score, Size, theme::Text,
+        {line.position.x + line.size.x - 10.0F - textWidth(assets.bodyBold, score, Size), top.y});
+}
+
+/// A small tab: filled when it is the ranking shown, outlined when focused.
+void leaderboardTab(sf::RenderTarget& target, const Assets& assets, sf::FloatRect rect,
+    std::string_view label, bool shown, bool focused)
+{
+    box(target, rect, shown ? theme::Primary : theme::Surface, focused ? theme::Blue : theme::Hull,
+        focused ? 2.0F : 1.0F);
+    centredText(target, assets.bodyBold, label, layout::LeaderboardTextSize,
+        shown ? theme::OnPrimary : theme::Text, rect);
+}
+
+/// The 10 best games of the ranking shown, then the player's last game there. Nothing more:
+/// an empty ranking shows no line.
+void drawLeaderboard(
+    sf::RenderTarget& target, const Assets& assets, const Session& session, sf::FloatRect area)
+{
+    using network::protocol::Board;
+    box(target, area, theme::Overlay, theme::Overlay, 0.0F);
+    widgets::panel(target, layout::LeaderboardPanel, theme::Surface, theme::Hull, 1.5F, 14.0F);
+    text(target, assets.display, "Leaderboard", 30, theme::Text, {318.0F, 160.0F});
+    leaderboardTab(target, assets, layout::SoloTabRect, "Solo", session.board == Board::Solo,
+        session.focus == layout::SoloTab);
+    leaderboardTab(target, assets, layout::MultiTabRect, "Multi", session.board == Board::Multi,
+        session.focus == layout::MultiTab);
+
+    if (session.leaderboard) {
+        const auto& best = session.leaderboard->best;
+        for (std::size_t row = 0; row < best.size(); ++row) {
+            const bool isYou
+                = std::ranges::find(best[row].names, session.name) != best[row].names.end();
+            leaderboardLine(target, assets, row, best[row], isYou);
+        }
+        if (const std::uint32_t rank = session.leaderboard->lastRank; rank != 0) {
+            const sf::FloatRect last = layout::leaderboardRow(network::protocol::LeaderboardSize);
+            box(target, {{last.position.x, last.position.y - 5.0F}, {last.size.x, 1.0F}},
+                theme::Hull, theme::Hull, 0.0F);
+            text(target, assets.bodyBold,
+                "Your last game: #" + std::to_string(rank) + "  ·  "
+                    + formatScore(session.leaderboard->lastScore) + " points",
+                layout::LeaderboardTextSize, theme::Gold,
+                last.position + sf::Vector2f{10.0F, 3.0F});
+        }
+    }
+    widgets::button(target, assets, layout::CloseLeaderboard, "Back", true,
+        session.focus == layout::CloseLeaderboardButton);
+}
+
 void drawGameOver(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
     const Session& session, int interfaceSize)
 {
@@ -844,7 +927,13 @@ void InterfaceSystem::update(ecs::World& world, const ecs::Time& time)
         drawConnect(_window, _assets, mode, session, layout::isCompact(size));
         break;
     case Screen::Home:
-        drawHome(_window, _assets, mode, session, size);
+        if (layout::leaderboardOpen(session)) {
+            Session behind = session; // Its focus is on the panel, not on the page
+            behind.focus = -1;
+            drawHome(_window, _assets, mode, behind, size);
+        } else {
+            drawHome(_window, _assets, mode, session, size);
+        }
         if (!session.settingsOpen) {
             const bool open = layout::friendsOpen(session);
             const sf::FloatRect bar = layout::friendsBar(area, open);
@@ -854,6 +943,9 @@ void InterfaceSystem::update(ecs::World& world, const ecs::Time& time)
                 drawFriendsClosed(_window, _assets, session, bar);
             }
         }
+        if (layout::leaderboardOpen(session)) {
+            drawLeaderboard(_window, _assets, session, area);
+        }
         break;
     case Screen::WaitingRoom:
         drawWaitingRoom(_window, _assets, mode, session, size);
@@ -861,7 +953,8 @@ void InterfaceSystem::update(ecs::World& world, const ecs::Time& time)
     case Screen::Game:
         drawHud(_window, _assets, world, session, time.elapsedSeconds(), area);
         if (!session.chat.empty() || session.chatOpen) {
-            drawChat(_window, _assets, session, layout::gameChat(area), false);
+            drawChat(
+                _window, _assets, session, layout::gameChat(area), false, layout::GameChatMessages);
         }
         if (session.menuOpen) {
             drawMenu(_window, _assets, session, area);

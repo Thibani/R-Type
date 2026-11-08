@@ -282,6 +282,14 @@ void apply(ecs::World& world, const GroupState& state, float /*now*/)
     singleton<Session>(world).group = state;
 }
 
+void apply(ecs::World& world, const Leaderboard& board, float /*now*/)
+{
+    Session& session = singleton<Session>(world);
+    if (board.board == session.board) { // An answer for the other tab came too late
+        session.leaderboard = board;
+    }
+}
+
 void apply(ecs::World& world, const GroupResult& result, float /*now*/)
 {
     const auto textOf = [](GroupOutcome outcome) -> std::string {
@@ -335,7 +343,8 @@ bool isOutsideTheGame(const Payload& payload) noexcept
         || std::holds_alternative<ChatRefused>(payload)
         || std::holds_alternative<GroupState>(payload)
         || std::holds_alternative<GroupResult>(payload)
-        || std::holds_alternative<GroupInvited>(payload);
+        || std::holds_alternative<GroupInvited>(payload)
+        || std::holds_alternative<Leaderboard>(payload);
 }
 
 template <typename Other>
@@ -405,6 +414,7 @@ void enterGame(ecs::World& world, std::uint8_t playerId)
     session.chatOpen = false;
     session.chatInput.clear();
     session.chatTarget.reset();
+    session.leaderboardOpen = false;
     session.error.clear();
 }
 
@@ -449,6 +459,9 @@ void clearSession(ecs::World& world)
     session.group = {};
     session.groupCodeInput.clear();
     session.invitations.clear();
+    session.leaderboardOpen = false;
+    session.board = network::protocol::Board::Solo;
+    session.leaderboard.reset();
 }
 
 } // namespace client

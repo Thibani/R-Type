@@ -88,6 +88,12 @@ the game. The leader gets a code (New code, Delete), can Kick a member, give the
 starts with Play; the others press Ready. Invite is in the right-click menu of a friend online, and
 an invitation shows above Play, with Accept and Refuse. Group answers show in the chat.
 
+**Leaderboard**: the button under the chat opens it over the main page. Two tabs, Solo and Multi
+(Enter or a click on a tab asks the server again), the 10 best games with the names of their
+players, then the rank and score of your last game there, even below the 10. An empty ranking
+shows no line. Your own games say
+YOU and are outlined, not only coloured. Esc or Back closes it; starting a game closes it too.
+
 **Friends panel**: a thin bar on the right of the main page. It opens while the mouse is over
 it, or with Tab: the keyboard alone can do everything (Enter asks or presses a button, PgUp and
 PgDn scroll, Esc closes). Requests come first, then friends online, offline, and requests sent.
@@ -96,6 +102,7 @@ The status is written, not only coloured. The list stays up to date during a gam
 **Chat**: a pale box on the main page (click it, or Tab to it) and in the game (Enter). Enter
 sends, Esc cancels, and every key goes to the chat meanwhile, none to the ship. The typing line
 disappears after sending; the messages stay, and PgUp, PgDn or the wheel go through the last 100.
+In the game, only the last 3 show, in a low box, so that the shots stay visible.
 `/msg name text` writes to a friend, anywhere: `Chat.cpp` takes the longest friend's name the
 text starts with, whatever its case. A right click on a friend in the panel gives Message, which
 opens the chat with "To [name]:". Private lines say so in words ("[From name]"), not only in colour.

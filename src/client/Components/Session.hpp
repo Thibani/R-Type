@@ -92,6 +92,11 @@ struct Session {
     std::string chatInput;
     std::optional<std::string> chatTarget; // "To [name]:", from the right-click menu
 
+    // Leaderboard, over the main page
+    bool leaderboardOpen{false};
+    network::protocol::Board board{network::protocol::Board::Solo}; // The tab shown
+    std::optional<network::protocol::Leaderboard> leaderboard; // Last answer for `board`
+
     // Game
     std::optional<std::uint8_t> playerId; // Ours, from JOIN_RESULT: only while in the game
     std::array<PlayerSlot, network::protocol::MaxPlayers> players{};
