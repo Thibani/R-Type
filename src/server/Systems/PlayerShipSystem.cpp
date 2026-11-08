@@ -20,28 +20,26 @@ void PlayerShipSystem::update(ecs::World& world, const ecs::Time& time)
 {
     std::array<bool, MaxPlayers> connected{};
     std::array<bool, MaxPlayers> hasShip{};
-    world.query<NetClient, LoggedIn>([&](ecs::Entity /*entity*/, NetClient& client, LoggedIn&) {
-        connected.at(client.playerId) = true;
-    });
+    world.query<InGame>(
+        [&](ecs::Entity /*entity*/, InGame& player) { connected.at(player.playerId) = true; });
 
     // Out of lives, or the game is over: no new ship until the next game
     const bool gameOver = singleton<Match>(world).phase != GamePhase::Running;
-    world.query<NetClient, Eliminated>(
-        [&](ecs::Entity /*entity*/, NetClient& client, Eliminated& /*out*/) {
-            hasShip.at(client.playerId) = true;
+    world.query<InGame, Eliminated>(
+        [&](ecs::Entity /*entity*/, InGame& player, Eliminated& /*out*/) {
+            hasShip.at(player.playerId) = true;
         });
 
     // A destroyed ship comes back after its delay: until then, the player waits
     std::vector<ecs::Entity> respawned;
-    world.query<NetClient, RespawnTimer>(
-        [&](ecs::Entity entity, NetClient& client, RespawnTimer& timer) {
-            timer.remaining -= time.deltaSeconds();
-            if (timer.remaining > 0.0F) {
-                hasShip.at(client.playerId) = true; // Not yet
-            } else {
-                respawned.push_back(entity);
-            }
-        });
+    world.query<InGame, RespawnTimer>([&](ecs::Entity entity, InGame& player, RespawnTimer& timer) {
+        timer.remaining -= time.deltaSeconds();
+        if (timer.remaining > 0.0F) {
+            hasShip.at(player.playerId) = true; // Not yet
+        } else {
+            respawned.push_back(entity);
+        }
+    });
     for (const ecs::Entity player : respawned) {
         world.removeComponent<RespawnTimer>(player);
     }

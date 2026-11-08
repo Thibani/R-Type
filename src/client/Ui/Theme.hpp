@@ -36,6 +36,9 @@ inline constexpr sf::Color Green{0x38, 0xD2, 0x7A};
 inline constexpr sf::Color Red{0xFF, 0x5A, 0x36};
 inline constexpr sf::Color ErrorBackground{0x2A, 0x14, 0x10};
 inline constexpr sf::Color Hull{0x30, 0x41, 0x4F};
+inline constexpr sf::Color ChatFrame{0xF1, 0xF5, 0xF7, 10}; // Pale: the game stays visible
+inline constexpr sf::Color ChatFrameOpen{0x0A, 0x0E, 0x14, 170}; // While typing
+inline constexpr sf::Color ChatBorder{0xF1, 0xF5, 0xF7, 36};
 inline constexpr sf::Color GameBackground = Background;
 inline constexpr sf::Color Overlay{10, 14, 20, 209}; // GameBackground at 82 %
 inline constexpr sf::Color Letterbox{0x00, 0x00, 0x00};

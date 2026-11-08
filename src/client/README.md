@@ -9,7 +9,7 @@ server (`docs/protocol.md`).
 ```
 
 The options fill the connection form; type a password, then Enter logs in, or
-use Create account. Graphics, input and
+use Create account. The main page follows, and Play enters the game. Graphics, input and
 audio use **SFML 3.1** (fetched by CPM). Sprites, fonts and sounds are in
 `assets/`, copied next to the executable at build time.
 
@@ -27,6 +27,7 @@ Technology choices: [`docs/technical-study/client.md`](../../docs/technical-stud
 | `Gamepad.hpp`                      | Gamepads: stick, D-pad and bound buttons → INPUT mask; menu buttons |
 | `ClientSystems.hpp`                | `installSystems()`: every system, in order                 |
 | `Network/ServerConnection.hpp`     | Session with the server: connect, key exchange, encryption, retries, heartbeat, timeout |
+| `Chat.hpp`                         | What a typed line means (`/msg`), and how a message wraps  |
 | `Replication.hpp`                  | Server payloads → entities and `Session` (no window, testable) |
 | `Assets.hpp`                       | Textures, fonts, sounds; sprite frame of each `Look`       |
 | `Singleton.hpp`                    | `singleton<T>(world)`: state shared by several systems     |
@@ -69,7 +70,8 @@ other, they share components. `RenderSystem` only reads `Position` and
 | Screen        | When                                                              |
 |---------------|-------------------------------------------------------------------|
 | Connect       | At start, and after any failure (with its reason)                 |
-| Game          | After AUTH_RESULT (OK): a single player can play at once. HUD: team score and level top left; the team's lives (small ships) and each player's hearts top right; centred at the top, the distance to the next boss, then the boss's health |
+| Home          | After AUTH_RESULT (OK), and after leaving a game: the group, the chat, the friends panel |
+| Game          | After JOIN_RESULT (OK): a single player can play at once. HUD: team score and level top left; the player cards and the team's lives (small ships) top right; centred at the top, the distance to the next boss, then the boss's health. Game over: score, level, Play again (RESTART) or Back to menu |
 | Waiting room  | Only if the server sends GAME_STATE = WAITING_FOR_PLAYERS         |
 | Game over     | GAME_STATE = GAME_OVER: team score, level reached, crew; **Play again** (RESTART ×3) or Back to menu |
 
@@ -77,12 +79,37 @@ Every screen has the moving sky of `StarfieldSystem` behind it. The screens with
 gameplay also have slow gold streaks: never in the game, where they could look like shots.
 
 Esc opens the in-game menu (the game keeps running) or leaves the other
-screens. Players are told apart by colour, pattern and P1-P4 tag. Each colour mode has
+screens: the form quits, the waiting room and game over go back to the main page, and
+the main page itself ignores it, since logging out has its own button. Players are told apart by colour, pattern and P1-P4 tag. Each colour mode has
 its own copy of the sprites, repainted at startup (`Assets.cpp`, `theme::Palettes`):
 every enemy in the Bydo's colours, the Force and its capsule in the player
 missile's.
 
-**Settings** open over the connection form (Settings button) or over the game
+**Group**: the main page is the lobby. One card per member, in the colour they will have in
+the game. The leader gets a code (New code, Delete), can Kick a member, give the role (Lead), and
+starts with Play; the others press Ready. Invite is in the right-click menu of a friend online, and
+an invitation shows above Play, with Accept and Refuse. Group answers show in the chat.
+
+**Leaderboard**: the button under the chat opens it over the main page. Two tabs, Solo and Multi
+(Enter or a click on a tab asks the server again), the 10 best games with the names of their
+players, then the rank and score of your last game there, even below the 10. An empty ranking
+shows no line. Your own games say
+YOU and are outlined, not only coloured. Esc or Back closes it; starting a game closes it too.
+
+**Friends panel**: a thin bar on the right of the main page. It opens while the mouse is over
+it, or with Tab: the keyboard alone can do everything (Enter asks or presses a button, PgUp and
+PgDn scroll, Esc closes). Requests come first, then friends online, offline, and requests sent.
+The status is written, not only coloured. The list stays up to date during a game.
+
+**Chat**: a pale box on the main page (click it, or Tab to it) and in the game (Enter). Enter
+sends, Esc cancels, and every key goes to the chat meanwhile, none to the ship. The typing line
+disappears after sending; the messages stay, and PgUp, PgDn or the wheel go through the last 100.
+In the game, only the last 3 show, in a low box, so that the shots stay visible.
+`/msg name text` writes to a friend, anywhere: `Chat.cpp` takes the longest friend's name the
+text starts with, whatever its case. A right click on a friend in the panel gives Message, which
+opens the chat with "To [name]:". Private lines say so in words ("[From name]"), not only in colour.
+
+**Settings** open over the connection form or the main page (Settings button) or over the game
 (Esc menu → Settings; the game keeps running). The actions are the 4
 moves, Fire and **Move the Force** (Left Shift, or pad button 1: the Force
 goes to its next slot around the ship). The arrows (or a pad's stick
@@ -149,9 +176,12 @@ button.pod = 1
 - Datagrams from another address or with another session token are ignored (§7).
 - Older snapshots are ignored; a destroyed netId is ignored for 5 s (§4.3, §5.1).
 - Unknown entity kinds are drawn as a "?" placeholder (§5.2).
-- The PLAYER_JOINED sent right after AUTH_RESULT for the players already
-  there fill the HUD without a notice; later ones are announced (§8.1).
-- Leaving or quitting sends DISCONNECT 3 times (§8.3).
+- JOIN_GAME and LEAVE_GAME are reliable: sent again until acknowledged (§6.2).
+- The PLAYER_JOINED sent right after JOIN_RESULT for the players already
+  there fill the HUD without a notice; later ones are announced (§8.4).
+- On the main page, what still arrives from a game we left is ignored (§8.4).
+- Friends', chat and group packets count everywhere, and do not end the catching up of a new game (§8.5, §8.6).
+- Logging out or quitting sends DISCONNECT 3 times (§8.3).
 
 ---
 

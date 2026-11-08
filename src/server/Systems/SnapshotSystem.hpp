@@ -31,6 +31,9 @@ public:
     void update(ecs::World& world, const ecs::Time& time) override;
 
 private:
+    /// The snapshot of one game, if due. Sent with the time of the main loop: the sessions' clock.
+    void sendRoom(ecs::World& world, ecs::World& sessions, const ecs::Time& time);
+
     network::NetworkThread& _socket;
 };
 

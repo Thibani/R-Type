@@ -360,7 +360,8 @@ TEST(InterfaceSize, EveryControlStaysVisibleAtEverySize)
     using client::Screen;
     using client::Session;
     for (const int size : Settings::InterfaceSizes) {
-        for (const Screen screen : {Screen::Connect, Screen::WaitingRoom, Screen::Game, Screen::GameOver}) {
+        for (const Screen screen :
+            {Screen::Connect, Screen::Home, Screen::WaitingRoom, Screen::Game, Screen::GameOver}) {
             for (const bool menu : {false, true}) {
                 for (const bool settings : {false, true}) {
                     Session session;
@@ -369,6 +370,9 @@ TEST(InterfaceSize, EveryControlStaysVisibleAtEverySize)
                     session.settingsOpen = settings;
                     const sf::FloatRect area = client::layout::visibleArea(session, size);
                     for (const sf::FloatRect control : client::layout::focusables(session, size)) {
+                        if (control.size.x <= 0.0F) {
+                            continue; // Does not apply for now
+                        }
                         EXPECT_TRUE(contains(area, control))
                             << "size " << size << ", screen " << static_cast<int>(screen);
                     }
@@ -428,10 +432,10 @@ TEST(Focus, SettingsColumnsAreReachedSideways)
     using namespace client::layout;
     const auto rows = settingsRows();
     const int moveUp = FirstKeyRow;
-    const int moveRight = FirstKeyRow + static_cast<int>(Action::Right);
+    const int fire = FirstKeyRow + static_cast<int>(Action::Fire);
     const int pod = FirstKeyRow + static_cast<int>(Action::Pod);
 
-    EXPECT_EQ(pushed(rows, ResetRow, 1, 0), moveRight); // Beside it, not further down
+    EXPECT_EQ(pushed(rows, ResetRow, 1, 0), fire); // Beside it, not further down
     EXPECT_EQ(pushed(rows, pod, -1, 0), BackRow);
     EXPECT_EQ(pushed(rows, moveUp, -1, 0), VolumeRow);
     EXPECT_EQ(pushed(rows, InterfaceSizeRow, 0, 1), ResetRow);
@@ -442,12 +446,10 @@ TEST(Focus, StopsAtTheEdges)
 {
     using namespace client::layout;
     const auto rows = settingsRows();
-    const int pod = FirstKeyRow + static_cast<int>(Action::Pod); // The lowest row
 
     EXPECT_EQ(pushed(rows, VolumeRow, 0, -1), VolumeRow);
     EXPECT_EQ(pushed(rows, VolumeRow, -1, 0), VolumeRow);
-    EXPECT_EQ(pushed(rows, pod, 0, 1), pod);
-    EXPECT_EQ(pushed(rows, pod, 1, 0), pod);
+    EXPECT_EQ(pushed(rows, BackRow, 0, 1), BackRow);
 }
 
 TEST(Focus, ConnectionFormIsAGrid)
@@ -715,7 +717,8 @@ TEST(Layout, EveryFocusablePartIsInsideTheCanvasAndNoneOverlaps)
             }
         }
     };
-    for (const Screen screen : {Screen::Connect, Screen::WaitingRoom, Screen::GameOver}) {
+    for (const Screen screen :
+        {Screen::Connect, Screen::Home, Screen::WaitingRoom, Screen::GameOver}) {
         client::Session session;
         session.screen = screen;
         check(session);
@@ -727,4 +730,218 @@ TEST(Layout, EveryFocusablePartIsInsideTheCanvasAndNoneOverlaps)
     client::Session settings;
     settings.settingsOpen = true;
     check(settings);
+    client::Session leaderboard;
+    leaderboard.screen = Screen::Home;
+    leaderboard.leaderboardOpen = true;
+    check(leaderboard);
+}
+
+TEST(InterfaceSize, TheLeaderboardFitsAtEverySize)
+{
+    using namespace client::layout;
+    for (const int size : Settings::InterfaceSizes) {
+        client::Session session;
+        session.screen = client::Screen::Home;
+        session.leaderboardOpen = true;
+        const sf::FloatRect area = visibleArea(session, size);
+        EXPECT_TRUE(contains(area, LeaderboardPanel)) << "size " << size;
+        for (const sf::FloatRect part : focusables(session, size)) {
+            EXPECT_TRUE(contains(LeaderboardPanel, part)) << "size " << size;
+        }
+        // The 10 games, then the last one, between the tabs and Back
+        for (std::size_t row = 0; row <= network::protocol::LeaderboardSize; ++row) {
+            const sf::FloatRect line = leaderboardRow(row);
+            EXPECT_TRUE(contains(LeaderboardPanel, line)) << row;
+            EXPECT_GE(line.position.y, SoloTabRect.position.y + SoloTabRect.size.y) << row;
+            EXPECT_LE(line.position.y + line.size.y, CloseLeaderboard.position.y) << row;
+        }
+    }
+}
+
+TEST(LeaderboardPanel, OnlyOverTheMainPage)
+{
+    client::Session session;
+    session.leaderboardOpen = true;
+    session.screen = client::Screen::Game; // The game started while it was open
+    EXPECT_FALSE(client::layout::leaderboardOpen(session));
+    session.screen = client::Screen::Home;
+    EXPECT_TRUE(client::layout::leaderboardOpen(session));
+    EXPECT_FALSE(client::layout::friendsOpen(session)); // Not both at once
+    session.settingsOpen = true;
+    EXPECT_FALSE(client::layout::leaderboardOpen(session));
+}
+
+TEST(InterfaceSize, TheFriendsPanelFitsAtEverySizeAndCoversNothing)
+{
+    using network::protocol::FriendState;
+    for (const int size : Settings::InterfaceSizes) {
+        client::Session session;
+        session.screen = client::Screen::Home;
+        session.friendsHovered = true;
+        for (int i = 0; i < 50; ++i) {
+            session.friends.push_back({.name = "Friend" + std::to_string(i),
+                .state = i < 25 ? FriendState::RequestReceived : FriendState::Online});
+        }
+        const sf::FloatRect area = client::layout::visibleArea(session, size);
+        const auto parts = client::layout::focusables(session, size);
+        ASSERT_GT(parts.size(), 5U);
+        for (std::size_t a = 0; a < parts.size(); ++a) {
+            if (parts.at(a).size.x <= 0.0F) {
+                continue; // Does not apply for now, or under the panel
+            }
+            EXPECT_TRUE(contains(area, parts.at(a))) << "size " << size << ", part " << a;
+            for (std::size_t b = a + 1; b < parts.size(); ++b) {
+                EXPECT_FALSE(parts.at(a).findIntersection(parts.at(b)).has_value())
+                    << "size " << size << ": " << a << ", " << b;
+            }
+        }
+    }
+}
+
+TEST(GroupParts, OnlyTheLeaderHasTheLeadersButtons)
+{
+    namespace layout = client::layout;
+    client::Session session;
+    session.screen = client::Screen::Home;
+    session.name = "Max";
+    session.group.code = "ABC234";
+    session.group.members = {{.name = "Lea", .ready = false, .inGame = false},
+        {.name = "Max", .ready = false, .inGame = false}};
+    const auto usable = [&](int part) {
+        return layout::focusables(session, 100).at(static_cast<std::size_t>(part)).size.x > 0.0F;
+    };
+
+    EXPECT_FALSE(usable(layout::NewGroupCodeButton));
+    EXPECT_FALSE(usable(layout::DeleteGroupCodeButton));
+    EXPECT_FALSE(usable(layout::FirstKickButton));
+    EXPECT_FALSE(usable(layout::FirstPromoteButton + 1));
+    EXPECT_TRUE(usable(layout::LeaveGroupButton));
+
+    session.group.leader = 1;
+    EXPECT_TRUE(usable(layout::NewGroupCodeButton));
+    EXPECT_TRUE(usable(layout::DeleteGroupCodeButton));
+    EXPECT_TRUE(usable(layout::FirstKickButton)); // On Lea
+    EXPECT_FALSE(usable(layout::FirstKickButton + 1)); // Not on themselves
+    EXPECT_TRUE(usable(layout::FirstPromoteButton));
+    EXPECT_FALSE(usable(layout::FirstKickButton + 2)); // Nobody there
+}
+
+TEST(GroupParts, LeavingNeedsSomeoneElseInTheGroup)
+{
+    client::Session session;
+    session.screen = client::Screen::Home;
+    session.name = "Max";
+    session.group.members = {{.name = "Max", .ready = false, .inGame = false}};
+
+    EXPECT_LE(
+        client::layout::focusables(session, 100).at(client::layout::LeaveGroupButton).size.x, 0.0F);
+}
+
+TEST(FriendsPanel, ClosedUnlessTheMouseOrTheFocusIsThere)
+{
+    client::Session session;
+    session.screen = client::Screen::Home;
+    EXPECT_FALSE(client::layout::friendsOpen(session));
+
+    session.friendsHovered = true;
+    EXPECT_TRUE(client::layout::friendsOpen(session));
+
+    session.friendsHovered = false;
+    session.focus = client::layout::FriendNameField;
+    EXPECT_TRUE(client::layout::friendsOpen(session));
+
+    session.settingsOpen = true;
+    EXPECT_FALSE(client::layout::friendsOpen(session));
+}
+
+TEST(FriendsPanel, OnlyOnTheMainPage)
+{
+    using client::Screen;
+    for (const Screen screen :
+        {Screen::Connect, Screen::WaitingRoom, Screen::Game, Screen::GameOver}) {
+        client::Session session;
+        session.screen = screen;
+        session.friendsHovered = true;
+        session.focus = client::layout::FriendNameField;
+        EXPECT_FALSE(client::layout::friendsOpen(session));
+    }
+}
+
+TEST(FriendsPanel, ARequestHasTwoButtonsAndTheOthersOne)
+{
+    using client::layout::FriendAction;
+    using network::protocol::FriendState;
+    client::Session session;
+    session.friends = {{.name = "Asks", .state = FriendState::RequestReceived},
+        {.name = "Pal", .state = FriendState::Online},
+        {.name = "Sent", .state = FriendState::RequestSent}};
+    const sf::FloatRect bar = client::layout::friendsBar({{0.0F, 0.0F}, {1280.0F, 720.0F}}, true);
+
+    const auto buttons = client::layout::friendButtons(session, bar);
+
+    ASSERT_EQ(buttons.size(), 4U);
+    EXPECT_EQ(buttons.at(0).action, FriendAction::Accept);
+    EXPECT_EQ(buttons.at(1).action, FriendAction::Refuse);
+    EXPECT_EQ(buttons.at(2).action, FriendAction::Remove);
+    EXPECT_EQ(buttons.at(2).row, 1U);
+    EXPECT_EQ(buttons.at(3).row, 2U);
+}
+
+TEST(FriendsPanel, OnlyTheRowsShownHaveButtons)
+{
+    using network::protocol::FriendState;
+    client::Session session;
+    for (int i = 0; i < 50; ++i) {
+        session.friends.push_back({.name = "F" + std::to_string(i), .state = FriendState::Online});
+    }
+    const sf::FloatRect bar = client::layout::friendsBar({{0.0F, 0.0F}, {1280.0F, 720.0F}}, true);
+    const std::size_t shown = client::layout::friendRowsShown(bar);
+    session.friendScroll = 10;
+
+    const auto buttons = client::layout::friendButtons(session, bar);
+
+    ASSERT_EQ(buttons.size(), shown);
+    EXPECT_EQ(buttons.front().row, 10U);
+    EXPECT_EQ(buttons.back().row, 10U + shown - 1U);
+}
+
+TEST(FriendsPanel, TheMenuOpensOnTheRowOfTheFriend)
+{
+    using network::protocol::FriendState;
+    client::Session session;
+    session.friends = {{.name = "Ann", .state = FriendState::Online},
+        {.name = "Ben", .state = FriendState::Online}};
+    const sf::FloatRect bar = client::layout::friendsBar({{0.0F, 0.0F}, {1280.0F, 720.0F}}, true);
+
+    EXPECT_FALSE(client::layout::friendMenuButton(session, bar).has_value());
+
+    session.friendMenu = "Ben";
+    const auto button = client::layout::friendMenuButton(session, bar);
+    ASSERT_TRUE(button.has_value());
+    const sf::FloatRect row = client::layout::friendRow(bar, 1);
+    EXPECT_GT(button->position.y, row.position.y + 30.0F); // The name of the row stays visible
+    EXPECT_LE(button->position.y, row.position.y + row.size.y);
+    EXPECT_TRUE(bar.contains(button->position + button->size));
+
+    session.friendMenu = "Gone";
+    EXPECT_FALSE(client::layout::friendMenuButton(session, bar).has_value());
+}
+
+TEST(ChatBox, InTheGameItIsJustHighEnoughForThreeLinesAndTyping)
+{
+    using namespace client::layout;
+    const sf::FloatRect chat = gameChat({{0.0F, 0.0F}, {1280.0F, 720.0F}});
+    EXPECT_GE(chat.size.y, (3.0F * ChatLineHeight) + ChatInputHeight);
+    EXPECT_LT(chat.size.y, (4.0F * ChatLineHeight) + ChatInputHeight + 20.0F); // Not a fourth
+    EXPECT_EQ(GameChatMessages, 3U);
+}
+
+TEST(ChatBox, TheChatFitsAtEverySizeInTheGame)
+{
+    for (const int size : Settings::InterfaceSizes) {
+        client::Session session;
+        session.screen = client::Screen::Game;
+        const sf::FloatRect area = client::layout::visibleArea(session, size);
+        EXPECT_TRUE(contains(area, client::layout::gameChat(area))) << size;
+    }
 }

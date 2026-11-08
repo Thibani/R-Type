@@ -67,8 +67,8 @@ void startNewGame(ecs::World& world)
     director.untilNext = game::waves::BaseSpawnInterval;
 
     std::vector<ecs::Entity> players;
-    world.query<NetClient>(
-        [&](ecs::Entity entity, const NetClient& /*client*/) { players.push_back(entity); });
+    world.query<InGame>(
+        [&](ecs::Entity entity, const InGame& /*player*/) { players.push_back(entity); });
     for (const ecs::Entity player : players) {
         world.removeComponent<Eliminated>(player);
         world.removeComponent<RespawnTimer>(player);

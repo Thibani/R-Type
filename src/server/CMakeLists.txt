@@ -29,6 +29,19 @@ add_library(rtype_server
     Components/Gadgets.hpp
     AccountStore.hpp
     AccountStore.cpp
+    FriendStore.hpp
+    FriendStore.cpp
+    MessageStore.hpp
+    MessageStore.cpp
+    ScoreStore.hpp
+    ScoreStore.cpp
+    OnlinePlayers.hpp
+    Groups.hpp
+    Groups.cpp
+    GameRoom.hpp
+    GameRoom.cpp
+    TextFile.hpp
+    TextFile.cpp
     Spawn.hpp
     Spawn.cpp
     Run.hpp
@@ -42,6 +55,16 @@ add_library(rtype_server
     Systems/SessionReceiveSystem.cpp
     Systems/LoginSystem.hpp
     Systems/LoginSystem.cpp
+    Systems/GroupSystem.hpp
+    Systems/GroupSystem.cpp
+    Systems/RoomSystem.hpp
+    Systems/RoomSystem.cpp
+    Systems/FriendSystem.hpp
+    Systems/FriendSystem.cpp
+    Systems/ChatSystem.hpp
+    Systems/ChatSystem.cpp
+    Systems/LeaderboardSystem.hpp
+    Systems/LeaderboardSystem.cpp
     Systems/TimeoutSystem.hpp
     Systems/TimeoutSystem.cpp
     Systems/SessionCleanupSystem.hpp

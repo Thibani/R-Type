@@ -85,13 +85,13 @@ struct FakeServer {
         ASSERT_TRUE(socket.sendTo(datagram, client).has_value());
     }
 
-    /// Answers the first CONNECT_REQUEST with CONNECT_ACCEPT (player 2).
+    /// Answers the first CONNECT_REQUEST with CONNECT_ACCEPT.
     void accept(client::ServerConnection::Clock::time_point now)
     {
         const auto request = receive();
         ASSERT_TRUE(request.has_value());
         [[maybe_unused]] const auto delivered = channel.receive(*request, now);
-        send(channel.wrap(ConnectAccept{.playerId = 2,
+        send(channel.wrap(ConnectAccept{.playerId = NoPlayer,
                               .tickRate = 60,
                               .snapshotRate = 30,
                               .maxPlayers = 4,
@@ -167,11 +167,11 @@ TEST_F(ServerConnectionTest, SendsConnectRequestWithTheName)
     EXPECT_EQ(std::get<ConnectRequest>(request->payload).name, "Thibani");
 }
 
-TEST_F(ServerConnectionTest, AcceptConnectsAndGivesThePlayerId)
+TEST_F(ServerConnectionTest, AcceptConnectsWithoutAPlaceInTheGame)
 {
     connected();
     ASSERT_TRUE(connection.accepted().has_value());
-    EXPECT_EQ(connection.accepted()->playerId, 2);
+    EXPECT_EQ(connection.accepted()->playerId, NoPlayer);
 
     // Every following packet carries the session token
     connection.sendInput(Input{.firstTick = 0, .count = 1, .masks = {}}, now);
@@ -273,7 +273,8 @@ TEST_F(ServerConnectionTest, InvalidServerKeyFailsTheConnection)
     ASSERT_TRUE(server.receive().has_value());
 
     server.send(server.channel.wrap(
-        ConnectAccept{.playerId = 2, .tickRate = 60, .snapshotRate = 30, .maxPlayers = 4}, now));
+        ConnectAccept{.playerId = NoPlayer, .tickRate = 60, .snapshotRate = 30, .maxPlayers = 4},
+        now));
     static_cast<void>(receiveSoon(connection, now));
 
     EXPECT_EQ(connection.status(), Status::Failed);
@@ -475,4 +476,44 @@ TEST_F(ServerConnectionTest, NoInputBeforeTheLoginResult)
     connection.sendInput(Input{.firstTick = 1, .count = 1, .masks = {}}, now);
 
     EXPECT_FALSE(server.receive().has_value());
+}
+
+TEST_F(ServerConnectionTest, ReliableMessageIsResentUntilAcknowledged)
+{
+    connected();
+
+    connection.sendReliable(JoinGame{});
+    connection.update(now);
+    std::this_thread::sleep_for(20ms);
+    const auto first = server.receive();
+    ASSERT_TRUE(first.has_value());
+    EXPECT_TRUE(std::holds_alternative<JoinGame>(first->payload));
+
+    connection.update(now + client::ServerConnection::Clock::duration{1}); // Too soon
+    std::this_thread::sleep_for(20ms);
+    EXPECT_FALSE(server.receive().has_value());
+
+    const auto later = now + network::ReliableChannel::MinResendDelay;
+    connection.update(later);
+    std::this_thread::sleep_for(20ms);
+    const auto second = server.receive();
+    ASSERT_TRUE(second.has_value());
+    EXPECT_TRUE(std::holds_alternative<JoinGame>(second->payload));
+    EXPECT_EQ(second->reliableId, first->reliableId);
+}
+
+TEST_F(ServerConnectionTest, ReliableMessageBeforeLoggingInIsNotSent)
+{
+    connection.connect("127.0.0.1", server.port(), Dave, now);
+    server.accept(now);
+    static_cast<void>(receiveSoon(connection, now));
+    ASSERT_EQ(connection.status(), Status::LoggingIn);
+
+    connection.sendReliable(JoinGame{});
+    connection.update(now);
+    std::this_thread::sleep_for(20ms);
+
+    while (const auto packet = server.receive()) {
+        EXPECT_FALSE(std::holds_alternative<JoinGame>(packet->payload));
+    }
 }

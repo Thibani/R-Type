@@ -34,7 +34,7 @@ bool started(ecs::World& world)
 
 void MatchSystem::update(ecs::World& world, const ecs::Time& /*time*/)
 {
-    if (!any<NetClient>(world)) {
+    if (!any<InGame>(world)) {
         if (started(world)) {
             startNewGame(world); // Everyone left: the next player starts afresh
         }

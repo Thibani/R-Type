@@ -2,6 +2,7 @@
 
 rtype_add_test(client_tests
     SOURCES
+        ChatTests.cpp
         ClientOptionsTests.cpp
         ReplicationTests.cpp
         ServerConnectionTests.cpp

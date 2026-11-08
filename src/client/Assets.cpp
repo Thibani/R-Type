@@ -26,7 +26,7 @@ constexpr sf::IntRect EnemyMissileFrame{{243, 277}, {12, 10}};
 /// enemy takes the Bydo's colours, so all threats look alike, and the gadgets
 /// (the player's Force and its capsule) take the player missile's colour.
 struct SharedSheet {
-    sf::Texture Skin::*texture;
+    sf::Texture Skin::* texture;
     const char* file;
     bool friendly;
 };
@@ -192,7 +192,8 @@ bool loadSkin(Skin& skin, ColourMode mode, sf::Image bydos, sf::Image missiles,
 {
     const theme::Palette& palette = theme::Palettes.at(static_cast<std::size_t>(mode));
     if (mode != ColourMode::Off) {
-        const theme::Palette& original = theme::Palettes.at(static_cast<std::size_t>(ColourMode::Off));
+        const theme::Palette& original
+            = theme::Palettes.at(static_cast<std::size_t>(ColourMode::Off));
         repaint(bydos, BydoFrame, [&](sf::Color pixel) {
             const std::size_t part = theme::bydoPart(pixel);
             return theme::tinted(pixel, original.bydo.at(part), palette.bydo.at(part));

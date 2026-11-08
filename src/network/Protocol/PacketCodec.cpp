@@ -92,9 +92,9 @@ namespace {
 
     bool validate(const ConnectAccept& packet) noexcept
     {
+        // A session has no place in a game yet: that comes with JOIN_RESULT
         return packet.maxPlayers >= 1 && packet.maxPlayers <= MaxPlayers
-            && packet.playerId < packet.maxPlayers && packet.tickRate > 0
-            && packet.snapshotRate > 0;
+            && packet.playerId == NoPlayer && packet.tickRate > 0 && packet.snapshotRate > 0;
     }
 
     bool validate(const ConnectReject& packet) noexcept
@@ -136,6 +136,42 @@ namespace {
         }
         return std::ranges::all_of(std::span(packet.masks).first(packet.count),
             [](std::uint8_t mask) { return (mask & ~unsigned{input::Known}) == 0U; });
+    }
+
+    bool validate(const JoinGame& /*packet*/) noexcept
+    {
+        return true;
+    }
+
+    bool validate(const LeaveGame& /*packet*/) noexcept
+    {
+        return true;
+    }
+
+    bool validate(const FriendRequest& packet) noexcept
+    {
+        return !packet.name.empty() && isValidName(packet.name);
+    }
+
+    bool validate(const FriendAnswer& packet) noexcept
+    {
+        return !packet.name.empty() && isValidName(packet.name)
+            && inRange(packet.reply, FriendReply::Refuse, FriendReply::Accept);
+    }
+
+    bool validate(const FriendRemove& packet) noexcept
+    {
+        return !packet.name.empty() && isValidName(packet.name);
+    }
+
+    bool validate(const ChatSend& packet) noexcept
+    {
+        return isValidChatText(packet.text);
+    }
+
+    bool validate(const PrivateSend& packet) noexcept
+    {
+        return !packet.name.empty() && isValidName(packet.name) && isValidChatText(packet.text);
     }
 
     bool validate(const Snapshot& packet) noexcept
@@ -180,6 +216,120 @@ namespace {
             && packet.bossProgress <= MaxBossProgress;
     }
 
+    bool validate(const JoinResult& packet) noexcept
+    {
+        if (packet.code == JoinCode::Ok) {
+            return isValidPlayer(packet.playerId);
+        }
+        return inRange(packet.code, JoinCode::NotLeader, JoinCode::NotReady)
+            && packet.playerId == NoPlayer;
+    }
+
+    bool validate(const FriendResult& packet) noexcept
+    {
+        return inRange(packet.code, FriendCode::Ok, FriendCode::LimitReached);
+    }
+
+    bool validate(const FriendEntry& packet) noexcept
+    {
+        return !packet.name.empty() && isValidName(packet.name)
+            && inRange(packet.state, FriendState::Offline, FriendState::Removed);
+    }
+
+    bool validate(const ChatMessage& packet) noexcept
+    {
+        return inRange(packet.kind, ChatKind::Game, ChatKind::Sent) && !packet.name.empty()
+            && isValidName(packet.name) && isValidChatText(packet.text);
+    }
+
+    bool validate(const ChatRefused& packet) noexcept
+    {
+        return inRange(packet.reason, ChatRefusal::TooFast, ChatRefusal::MailboxFull);
+    }
+
+    bool validate(const GroupCode& packet) noexcept
+    {
+        return inRange(packet.action, GroupCodeAction::Generate, GroupCodeAction::Delete);
+    }
+
+    bool validate(const GroupJoin& packet) noexcept
+    {
+        return isValidGroupCode(packet.code);
+    }
+
+    bool validate(const GroupLeave& /*packet*/) noexcept
+    {
+        return true;
+    }
+
+    bool isValidPlayerName(std::string_view name) noexcept
+    {
+        return !name.empty() && isValidName(name);
+    }
+
+    bool validate(const GroupKick& packet) noexcept
+    {
+        return isValidPlayerName(packet.name);
+    }
+
+    bool validate(const GroupPromote& packet) noexcept
+    {
+        return isValidPlayerName(packet.name);
+    }
+
+    bool validate(const GroupInvite& packet) noexcept
+    {
+        return isValidPlayerName(packet.name);
+    }
+
+    bool validate(const GroupAnswer& packet) noexcept
+    {
+        return isValidPlayerName(packet.name)
+            && inRange(packet.reply, FriendReply::Refuse, FriendReply::Accept);
+    }
+
+    bool validate(const GroupReady& /*packet*/) noexcept
+    {
+        return true; // Only 0 and 1 can be read
+    }
+
+    bool validate(const GroupState& packet) noexcept
+    {
+        return (packet.code.empty() || isValidGroupCode(packet.code)) && !packet.members.empty()
+            && packet.members.size() <= MaxPlayers && packet.leader < packet.members.size()
+            && std::ranges::all_of(
+                packet.members,
+                [](const GroupMemberState& member) { return isValidPlayerName(member.name); });
+    }
+
+    bool validate(const GroupResult& packet) noexcept
+    {
+        return inRange(packet.outcome, GroupOutcome::Invited, GroupOutcome::RemovedFromGroup);
+    }
+
+    bool validate(const GroupInvited& packet) noexcept
+    {
+        return isValidPlayerName(packet.name);
+    }
+
+    bool validate(const LeaderboardRequest& packet) noexcept
+    {
+        return inRange(packet.board, Board::Solo, Board::Multi);
+    }
+
+    bool validate(const Leaderboard& packet) noexcept
+    {
+        const std::size_t players = packet.board == Board::Solo ? 1 : MaxPlayers;
+        return inRange(packet.board, Board::Solo, Board::Multi)
+            && packet.best.size() <= LeaderboardSize
+            && std::ranges::all_of(packet.best,
+                [&](const LeaderboardEntry& entry) {
+                    return !entry.names.empty() && entry.names.size() <= players
+                        && std::ranges::all_of(entry.names, isValidPlayerName);
+                })
+            && (packet.lastRank != 0 || packet.lastScore == 0);
+    }
+
     // --- Names and passwords (§2.2) ------------------------------------------
 
     /// Writes `text` as a zero-padded field of `Size` bytes. `text` must be valid.
@@ -218,6 +368,25 @@ namespace {
             text[i] = static_cast<char>(std::to_integer<unsigned char>(field[i]));
         }
         return isValidUtf8(text);
+    }
+
+    /// Writes a chat text, the last field of its packet: a count, then its bytes.
+    /// `text` must be valid.
+    void writeChatText(ByteWriter& writer, std::string_view text) noexcept
+    {
+        writer.write(static_cast<std::uint8_t>(text.size()));
+        writer.writeBytes(std::as_bytes(std::span(text)));
+    }
+
+    /// Reads a chat text. The count must match the bytes left: checked before allocating.
+    bool readChatText(ByteReader& reader, std::string& text)
+    {
+        const auto count = static_cast<std::size_t>(reader.read<std::uint8_t>());
+        if (!reader.ok() || reader.remaining() != count) {
+            return false;
+        }
+        text.resize(count);
+        return reader.readBytes(std::as_writable_bytes(std::span(text)));
     }
 
     // --- Payload writers ------------------------------------------------------
@@ -267,6 +436,37 @@ namespace {
         for (std::size_t i = 0; i < packet.count; ++i) {
             writer.write(packet.masks[i]);
         }
+    }
+
+    void writePayload(ByteWriter& /*writer*/, const JoinGame& /*packet*/) noexcept { }
+
+    void writePayload(ByteWriter& /*writer*/, const LeaveGame& /*packet*/) noexcept { }
+
+    void writePayload(ByteWriter& writer, const FriendRequest& packet) noexcept
+    {
+        writeText<NameSize>(writer, packet.name);
+    }
+
+    void writePayload(ByteWriter& writer, const FriendAnswer& packet) noexcept
+    {
+        writeText<NameSize>(writer, packet.name);
+        writer.write(std::to_underlying(packet.reply));
+    }
+
+    void writePayload(ByteWriter& writer, const FriendRemove& packet) noexcept
+    {
+        writeText<NameSize>(writer, packet.name);
+    }
+
+    void writePayload(ByteWriter& writer, const ChatSend& packet) noexcept
+    {
+        writeChatText(writer, packet.text);
+    }
+
+    void writePayload(ByteWriter& writer, const PrivateSend& packet) noexcept
+    {
+        writeText<NameSize>(writer, packet.name);
+        writeChatText(writer, packet.text);
     }
 
     void writeEntityState(ByteWriter& writer, const EntityState& entity) noexcept
@@ -338,6 +538,114 @@ namespace {
         writer.write(packet.bossProgress);
     }
 
+    void writePayload(ByteWriter& writer, const JoinResult& packet) noexcept
+    {
+        writer.write(std::to_underlying(packet.code));
+        writer.write(packet.playerId);
+    }
+
+    void writePayload(ByteWriter& writer, const FriendResult& packet) noexcept
+    {
+        writer.write(std::to_underlying(packet.code));
+    }
+
+    void writePayload(ByteWriter& writer, const FriendEntry& packet) noexcept
+    {
+        writeText<NameSize>(writer, packet.name);
+        writer.write(std::to_underlying(packet.state));
+    }
+
+    void writePayload(ByteWriter& writer, const ChatMessage& packet) noexcept
+    {
+        writer.write(std::to_underlying(packet.kind));
+        writeText<NameSize>(writer, packet.name);
+        writeChatText(writer, packet.text);
+    }
+
+    void writePayload(ByteWriter& writer, const ChatRefused& packet) noexcept
+    {
+        writer.write(std::to_underlying(packet.reason));
+    }
+
+    void writePayload(ByteWriter& writer, const GroupCode& packet) noexcept
+    {
+        writer.write(std::to_underlying(packet.action));
+    }
+
+    void writePayload(ByteWriter& writer, const GroupJoin& packet) noexcept
+    {
+        writeText<GroupCodeSize>(writer, packet.code);
+    }
+
+    void writePayload(ByteWriter& /*writer*/, const GroupLeave& /*packet*/) noexcept { }
+
+    void writePayload(ByteWriter& writer, const GroupKick& packet) noexcept
+    {
+        writeText<NameSize>(writer, packet.name);
+    }
+
+    void writePayload(ByteWriter& writer, const GroupPromote& packet) noexcept
+    {
+        writeText<NameSize>(writer, packet.name);
+    }
+
+    void writePayload(ByteWriter& writer, const GroupInvite& packet) noexcept
+    {
+        writeText<NameSize>(writer, packet.name);
+    }
+
+    void writePayload(ByteWriter& writer, const GroupAnswer& packet) noexcept
+    {
+        writeText<NameSize>(writer, packet.name);
+        writer.write(std::to_underlying(packet.reply));
+    }
+
+    void writePayload(ByteWriter& writer, const GroupReady& packet) noexcept
+    {
+        writer.write(static_cast<std::uint8_t>(packet.ready ? 1 : 0));
+    }
+
+    void writePayload(ByteWriter& writer, const GroupState& packet) noexcept
+    {
+        writeText<GroupCodeSize>(writer, packet.code);
+        writer.write(packet.countdown);
+        writer.write(packet.leader);
+        writer.write(static_cast<std::uint8_t>(packet.members.size()));
+        for (const GroupMemberState& member : packet.members) {
+            writeText<NameSize>(writer, member.name);
+            writer.write(static_cast<std::uint8_t>((member.ready ? groupMember::Ready : 0U)
+                | (member.inGame ? groupMember::InGame : 0U)));
+        }
+    }
+
+    void writePayload(ByteWriter& writer, const GroupResult& packet) noexcept
+    {
+        writer.write(std::to_underlying(packet.outcome));
+    }
+
+    void writePayload(ByteWriter& writer, const GroupInvited& packet) noexcept
+    {
+        writeText<NameSize>(writer, packet.name);
+    }
+
+    void writePayload(ByteWriter& writer, const LeaderboardRequest& packet) noexcept
+    {
+        writer.write(std::to_underlying(packet.board));
+    }
+
+    void writePayload(ByteWriter& writer, const Leaderboard& packet) noexcept
+    {
+        writer.write(std::to_underlying(packet.board));
+        writer.write(static_cast<std::uint8_t>(packet.best.size()));
+        for (const LeaderboardEntry& entry : packet.best) {
+            writer.write(entry.score);
+            for (std::size_t i = 0; i < MaxPlayers; ++i) {
+                writeText<NameSize>(writer, i < entry.names.size() ? entry.names[i] : "");
+            }
+        }
+        writer.write(packet.lastRank);
+        writer.write(packet.lastScore);
+    }
     void writePayload(ByteWriter& /*writer*/, const Restart& /*packet*/) noexcept { }
 
     // --- Payload readers ------------------------------------------------------
@@ -413,6 +721,48 @@ namespace {
             packet.masks[i] = reader.read<std::uint8_t>();
         }
         return {};
+    }
+
+    ReadError readPayload(ByteReader& /*reader*/, JoinGame& /*packet*/)
+    {
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& /*reader*/, LeaveGame& /*packet*/)
+    {
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& reader, FriendRequest& packet)
+    {
+        return readText<NameSize>(reader, packet.name) ? ReadError{} : DecodeError::InvalidName;
+    }
+
+    ReadError readPayload(ByteReader& reader, FriendAnswer& packet)
+    {
+        if (!readText<NameSize>(reader, packet.name)) {
+            return DecodeError::InvalidName;
+        }
+        packet.reply = static_cast<FriendReply>(reader.read<std::uint8_t>());
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& reader, FriendRemove& packet)
+    {
+        return readText<NameSize>(reader, packet.name) ? ReadError{} : DecodeError::InvalidName;
+    }
+
+    ReadError readPayload(ByteReader& reader, ChatSend& packet)
+    {
+        return readChatText(reader, packet.text) ? ReadError{} : DecodeError::BadPayloadSize;
+    }
+
+    ReadError readPayload(ByteReader& reader, PrivateSend& packet)
+    {
+        if (!readText<NameSize>(reader, packet.name)) {
+            return DecodeError::InvalidName;
+        }
+        return readChatText(reader, packet.text) ? ReadError{} : DecodeError::BadPayloadSize;
     }
 
     EntityState readEntityState(ByteReader& reader) noexcept
@@ -500,6 +850,172 @@ namespace {
 
     ReadError readPayload(ByteReader& /*reader*/, Restart& /*packet*/)
     {
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& reader, JoinResult& packet)
+    {
+        packet.code = static_cast<JoinCode>(reader.read<std::uint8_t>());
+        packet.playerId = reader.read<std::uint8_t>();
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& reader, FriendResult& packet)
+    {
+        packet.code = static_cast<FriendCode>(reader.read<std::uint8_t>());
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& reader, FriendEntry& packet)
+    {
+        if (!readText<NameSize>(reader, packet.name)) {
+            return DecodeError::InvalidName;
+        }
+        packet.state = static_cast<FriendState>(reader.read<std::uint8_t>());
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& reader, ChatMessage& packet)
+    {
+        packet.kind = static_cast<ChatKind>(reader.read<std::uint8_t>());
+        if (!readText<NameSize>(reader, packet.name)) {
+            return DecodeError::InvalidName;
+        }
+        return readChatText(reader, packet.text) ? ReadError{} : DecodeError::BadPayloadSize;
+    }
+
+    ReadError readPayload(ByteReader& reader, ChatRefused& packet)
+    {
+        packet.reason = static_cast<ChatRefusal>(reader.read<std::uint8_t>());
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& reader, GroupCode& packet)
+    {
+        packet.action = static_cast<GroupCodeAction>(reader.read<std::uint8_t>());
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& reader, GroupJoin& packet)
+    {
+        return readText<GroupCodeSize>(reader, packet.code) ? ReadError{}
+                                                            : DecodeError::InvalidValue;
+    }
+
+    ReadError readPayload(ByteReader& /*reader*/, GroupLeave& /*packet*/)
+    {
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& reader, GroupKick& packet)
+    {
+        return readText<NameSize>(reader, packet.name) ? ReadError{} : DecodeError::InvalidName;
+    }
+
+    ReadError readPayload(ByteReader& reader, GroupPromote& packet)
+    {
+        return readText<NameSize>(reader, packet.name) ? ReadError{} : DecodeError::InvalidName;
+    }
+
+    ReadError readPayload(ByteReader& reader, GroupInvite& packet)
+    {
+        return readText<NameSize>(reader, packet.name) ? ReadError{} : DecodeError::InvalidName;
+    }
+
+    ReadError readPayload(ByteReader& reader, GroupAnswer& packet)
+    {
+        if (!readText<NameSize>(reader, packet.name)) {
+            return DecodeError::InvalidName;
+        }
+        packet.reply = static_cast<FriendReply>(reader.read<std::uint8_t>());
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& reader, GroupReady& packet)
+    {
+        const auto value = reader.read<std::uint8_t>();
+        if (value > 1) {
+            return DecodeError::InvalidValue;
+        }
+        packet.ready = value == 1;
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& reader, GroupState& packet)
+    {
+        if (!readText<GroupCodeSize>(reader, packet.code)) {
+            return DecodeError::InvalidValue;
+        }
+        packet.countdown = reader.read<std::uint8_t>();
+        packet.leader = reader.read<std::uint8_t>();
+        const auto count = static_cast<std::size_t>(reader.read<std::uint8_t>());
+
+        // Checked BEFORE allocating: the count must match the bytes received.
+        if (!reader.ok() || count > MaxPlayers || reader.remaining() != count * GroupMemberSize) {
+            return DecodeError::BadPayloadSize;
+        }
+        packet.members.resize(count);
+        for (GroupMemberState& member : packet.members) {
+            if (!readText<NameSize>(reader, member.name)) {
+                return DecodeError::InvalidName;
+            }
+            const auto bits = reader.read<std::uint8_t>();
+            if ((bits & ~unsigned{groupMember::Known}) != 0U) {
+                return DecodeError::InvalidValue;
+            }
+            member.ready = (bits & groupMember::Ready) != 0;
+            member.inGame = (bits & groupMember::InGame) != 0;
+        }
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& reader, GroupResult& packet)
+    {
+        packet.outcome = static_cast<GroupOutcome>(reader.read<std::uint8_t>());
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& reader, GroupInvited& packet)
+    {
+        return readText<NameSize>(reader, packet.name) ? ReadError{} : DecodeError::InvalidName;
+    }
+
+    ReadError readPayload(ByteReader& reader, LeaderboardRequest& packet)
+    {
+        packet.board = static_cast<Board>(reader.read<std::uint8_t>());
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& reader, Leaderboard& packet)
+    {
+        packet.board = static_cast<Board>(reader.read<std::uint8_t>());
+        const auto count = static_cast<std::size_t>(reader.read<std::uint8_t>());
+
+        // Checked BEFORE allocating: the count must match the bytes received.
+        if (!reader.ok() || count > LeaderboardSize
+            || reader.remaining() != (count * LeaderboardEntrySize) + 8) {
+            return DecodeError::BadPayloadSize;
+        }
+        packet.best.resize(count);
+        for (LeaderboardEntry& entry : packet.best) {
+            entry.score = reader.read<std::uint32_t>();
+            bool ended = false; // Names are packed first: once one is empty, all the rest are
+            for (std::size_t i = 0; i < MaxPlayers; ++i) {
+                std::string name;
+                if (!readText<NameSize>(reader, name)) {
+                    return DecodeError::InvalidName;
+                }
+                if (name.empty()) {
+                    ended = true;
+                } else if (ended) {
+                    return DecodeError::InvalidName;
+                } else {
+                    entry.names.push_back(std::move(name));
+                }
+            }
+        }
+        packet.lastRank = reader.read<std::uint32_t>();
+        packet.lastScore = reader.read<std::uint32_t>();
         return {};
     }
 
@@ -655,6 +1171,56 @@ std::expected<Packet, DecodeError> decode(std::span<const std::byte> datagram, D
         return decodeAs<AuthResult>(*header, payload, direction);
     case PacketType::Input:
         return decodeAs<Input>(*header, payload, direction);
+    case PacketType::JoinGame:
+        return decodeAs<JoinGame>(*header, payload, direction);
+    case PacketType::LeaveGame:
+        return decodeAs<LeaveGame>(*header, payload, direction);
+    case PacketType::JoinResult:
+        return decodeAs<JoinResult>(*header, payload, direction);
+    case PacketType::FriendRequest:
+        return decodeAs<FriendRequest>(*header, payload, direction);
+    case PacketType::FriendAnswer:
+        return decodeAs<FriendAnswer>(*header, payload, direction);
+    case PacketType::FriendRemove:
+        return decodeAs<FriendRemove>(*header, payload, direction);
+    case PacketType::FriendResult:
+        return decodeAs<FriendResult>(*header, payload, direction);
+    case PacketType::FriendEntry:
+        return decodeAs<FriendEntry>(*header, payload, direction);
+    case PacketType::ChatSend:
+        return decodeAs<ChatSend>(*header, payload, direction);
+    case PacketType::PrivateSend:
+        return decodeAs<PrivateSend>(*header, payload, direction);
+    case PacketType::ChatMessage:
+        return decodeAs<ChatMessage>(*header, payload, direction);
+    case PacketType::ChatRefused:
+        return decodeAs<ChatRefused>(*header, payload, direction);
+    case PacketType::GroupCode:
+        return decodeAs<GroupCode>(*header, payload, direction);
+    case PacketType::GroupJoin:
+        return decodeAs<GroupJoin>(*header, payload, direction);
+    case PacketType::GroupLeave:
+        return decodeAs<GroupLeave>(*header, payload, direction);
+    case PacketType::GroupKick:
+        return decodeAs<GroupKick>(*header, payload, direction);
+    case PacketType::GroupPromote:
+        return decodeAs<GroupPromote>(*header, payload, direction);
+    case PacketType::GroupInvite:
+        return decodeAs<GroupInvite>(*header, payload, direction);
+    case PacketType::GroupAnswer:
+        return decodeAs<GroupAnswer>(*header, payload, direction);
+    case PacketType::GroupReady:
+        return decodeAs<GroupReady>(*header, payload, direction);
+    case PacketType::GroupState:
+        return decodeAs<GroupState>(*header, payload, direction);
+    case PacketType::GroupResult:
+        return decodeAs<GroupResult>(*header, payload, direction);
+    case PacketType::GroupInvited:
+        return decodeAs<GroupInvited>(*header, payload, direction);
+    case PacketType::LeaderboardRequest:
+        return decodeAs<LeaderboardRequest>(*header, payload, direction);
+    case PacketType::Leaderboard:
+        return decodeAs<Leaderboard>(*header, payload, direction);
     case PacketType::Snapshot:
         return decodeAs<Snapshot>(*header, payload, direction);
     case PacketType::EntitySpawn:
@@ -679,6 +1245,23 @@ bool isValidName(std::string_view name) noexcept
 {
     return name.size() <= NameSize && !name.contains('\0')
         && isValidUtf8(name);
+}
+
+bool isValidChatText(std::string_view text) noexcept
+{
+    const auto isControl = [](char c) {
+        const auto byte = static_cast<unsigned char>(c);
+        return byte < 0x20U || byte == 0x7FU;
+    };
+    return !text.empty() && text.size() <= MaxChatSize && std::ranges::none_of(text, isControl)
+        && isValidUtf8(text);
+}
+
+bool isValidGroupCode(std::string_view code) noexcept
+{
+    return code.size() == GroupCodeSize && std::ranges::all_of(code, [](char c) {
+        return GroupCodeAlphabet.find(c) != std::string_view::npos;
+    });
 }
 
 std::string_view toString(DecodeError error) noexcept

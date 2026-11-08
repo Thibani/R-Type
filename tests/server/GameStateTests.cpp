@@ -1,6 +1,7 @@
 // The authoritative game state, system by system, on a plain World: no
 // sockets, the tests create the components the network systems would.
 
+#include "TemporaryFile.hpp"
 #include "TestPlayers.hpp"
 #include "ecs/Time/Time.hpp"
 #include "ecs/World/World.hpp"
@@ -10,21 +11,26 @@
 #include "server/Components/ClientMessage.hpp"
 #include "server/Components/NetEntity.hpp"
 #include "server/Components/Player.hpp"
+#include "server/GameRoom.hpp"
 #include "server/NetIds.hpp"
+#include "server/Network.hpp"
+#include "server/ScoreStore.hpp"
 #include "server/Singleton.hpp"
 #include "server/Systems/InputSystem.hpp"
-#include "server/Network.hpp"
 #include "server/Systems/PlayerShipSystem.hpp"
 #include "server/Systems/ReplicationSystem.hpp"
+#include "server/Systems/RoomSystem.hpp"
 #include "server/Systems/SnapshotSystem.hpp"
 #include "server/Systems/TickSystem.hpp"
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <set>
+#include <string>
 #include <variant>
 #include <vector>
 
@@ -395,4 +401,50 @@ TEST(GameState, LargeSnapshotIsSplit)
     }
     EXPECT_EQ(total, entities.size());
     EXPECT_EQ(parts[2].entities[0].netId, MaxSnapshotEntities * 2);
+}
+
+// --- Back to the main page (§8.4) ---------------------------------------------
+
+TEST(GameState, InputFromTheMainPageIsIgnored)
+{
+    ecs::World world;
+    const ecs::Entity player = addPlayer(world, 0);
+    world.removeComponent<server::InGame>(player);
+    InputSystem system;
+
+    receiveInput(world, player, inputAt(10, {input::Fire}));
+    system.update(world, ecs::Time{});
+
+    EXPECT_FALSE(world.hasComponent<PlayerInput>(player));
+    EXPECT_EQ(world.entityCount(), 1U); // The message was consumed all the same
+}
+
+TEST(GameState, LeavingTheGameLeavesNothingOfItOnThePlayer)
+{
+    ecs::World world;
+    const ecs::Entity player = addPlayer(world, 0);
+    world.removeComponent<server::InGame>(player); // A session, on the main page
+    server::startGame(world, std::array{player}, 0.0F);
+    auto& client = world.getComponent<server::NetClient>(player);
+    client.knownEntities.insert(7);
+    client.knownState = GameState{.phase = GamePhase::Running, .score = 50};
+    world.addComponent(
+        world.createEntity(), server::ClientMessage{.client = player, .payload = LeaveGame{}});
+
+    const testing_players::TemporaryFile file;
+    auto scores = server::ScoreStore::load(file.path());
+    ASSERT_TRUE(scores.has_value());
+
+    server::RoomMessageSystem{}.update(world, ecs::Time{});
+    server::RoomSystem{*scores}.update(world, ecs::Time{});
+
+    EXPECT_FALSE(world.hasComponent<server::InRoom>(player));
+    EXPECT_TRUE(client.knownEntities.empty());
+    EXPECT_FALSE(client.knownState.has_value());
+    EXPECT_TRUE(world.hasComponent<server::LoggedIn>(player));
+    EXPECT_TRUE(server::singleton<server::GameRooms>(world).rooms.empty()); // Its game with it
+    // The game ended with its only player: it entered the solo ranking
+    const auto best = scores->best(Board::Solo, LeaderboardSize);
+    ASSERT_EQ(best.size(), 1U);
+    EXPECT_EQ(best[0].names, std::vector<std::string>{"Player0"});
 }

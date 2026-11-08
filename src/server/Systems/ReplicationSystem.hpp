@@ -50,6 +50,9 @@ class ReplicationSystem final : public ecs::System {
 public:
     static constexpr std::chrono::milliseconds ScoreUpdateInterval{250};
 
+    /// `world` is the game's, `sessions` the one holding the `NetClient`s.
+    ReplicationSystem(ecs::World& world, ecs::World& sessions);
+    /// The players' `NetClient`s are in `world` itself: for the tests of a single World.
     explicit ReplicationSystem(ecs::World& world);
 
     void update(ecs::World& world, const ecs::Time& time) override;
@@ -58,6 +61,7 @@ private:
     void onDespawn(const game::DespawnEvent& despawn);
 
     ecs::World& _world;
+    ecs::World& _sessions;
     std::optional<TimePoint> _lastScoreUpdate; // Last GAME_STATE sent for the score alone
     // Gathered during the simulation steps, sent at the end of the frame
     std::map<std::uint16_t, network::protocol::EntityDestroy> _destroyed;

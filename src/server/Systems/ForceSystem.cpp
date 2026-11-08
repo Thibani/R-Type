@@ -41,9 +41,9 @@ ForceSystem::ForceSystem(ecs::World& world)
 void ForceSystem::update(ecs::World& world, const ecs::Time& /*time*/)
 {
     std::array<bool, MaxPlayers> podHeld{};
-    world.query<NetClient, PlayerInput>(
-        [&](ecs::Entity /*entity*/, NetClient& client, PlayerInput& input) {
-            podHeld.at(client.playerId) = input.received && (input.mask & input::Pod) != 0;
+    world.query<InGame, PlayerInput>(
+        [&](ecs::Entity /*entity*/, InGame& player, PlayerInput& input) {
+            podHeld.at(player.playerId) = input.received && (input.mask & input::Pod) != 0;
         });
 
     std::array<std::optional<ShipState>, MaxPlayers> ships{};

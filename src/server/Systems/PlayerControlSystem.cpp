@@ -43,9 +43,9 @@ void PlayerControlSystem::update(ecs::World& world, const ecs::Time& /*time*/)
 {
     // Each player's keys, by playerId: inputs live on the player, ships apart
     std::array<std::uint8_t, MaxPlayers> masks{};
-    world.query<NetClient, PlayerInput>(
-        [&](ecs::Entity /*entity*/, NetClient& client, PlayerInput& input) {
-            masks.at(client.playerId) = input.received ? input.mask : 0;
+    world.query<InGame, PlayerInput>(
+        [&](ecs::Entity /*entity*/, InGame& player, PlayerInput& input) {
+            masks.at(player.playerId) = input.received ? input.mask : 0;
         });
 
     world.query<PlayerShip, game::Velocity>(
