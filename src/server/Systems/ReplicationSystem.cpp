@@ -7,11 +7,35 @@
 #include "server/Components/NetClient.hpp"
 #include "server/Components/NetEntity.hpp"
 #include "server/Components/Player.hpp"
+#include "server/Run.hpp"
 #include "server/Singleton.hpp"
 
 namespace server {
 
 using namespace network::protocol;
+
+namespace {
+
+enum class StateUpdate : std::uint8_t {
+    None, // The client knows this state
+    ScoreOnly, // Only the score moved: can wait a little
+    Now, // New client, or phase, level, lives or boss distance changed
+};
+
+StateUpdate stateUpdate(const std::optional<GameState>& known, const GameState& state)
+{
+    if (!known) {
+        return StateUpdate::Now;
+    }
+    if (*known == state) {
+        return StateUpdate::None;
+    }
+    GameState sameScore = state;
+    sameScore.score = known->score;
+    return *known == sameScore ? StateUpdate::ScoreOnly : StateUpdate::Now;
+}
+
+} // namespace
 
 ReplicationSystem::ReplicationSystem(ecs::World& world)
     : ReplicationSystem(world, world)
@@ -46,7 +70,7 @@ void ReplicationSystem::onDespawn(const game::DespawnEvent& despawn)
     }
 }
 
-void ReplicationSystem::update(ecs::World& world, const ecs::Time& /*time*/)
+void ReplicationSystem::update(ecs::World& world, const ecs::Time& time)
 {
     std::map<std::uint16_t, EntitySpawn> alive;
     world.query<NetEntity, game::Position, game::Velocity>([&](ecs::Entity /*entity*/,
@@ -65,7 +89,10 @@ void ReplicationSystem::update(ecs::World& world, const ecs::Time& /*time*/)
             });
     });
 
-    const std::uint32_t score = singleton<TeamScore>(world).value;
+    const GameState state = currentState(world);
+    const TimePoint now = toTimePoint(time);
+    const bool scoreDue = !_lastScoreUpdate || now - *_lastScoreUpdate >= ScoreUpdateInterval;
+    bool scoreSent = false;
     world.query<InGame>([&](ecs::Entity /*entity*/, InGame& player) {
         NetClient& client = _sessions.getComponent<NetClient>(player.session);
         for (const PlayerDied& death : _deaths) {
@@ -86,11 +113,16 @@ void ReplicationSystem::update(ecs::World& world, const ecs::Time& /*time*/)
                 client.channel.queueReliable(spawn);
             }
         }
-        if (client.knownScore != score) {
-            client.channel.queueReliable(GameState{.phase = GamePhase::Running, .score = score});
-            client.knownScore = score;
+        const StateUpdate update = stateUpdate(client.knownState, state);
+        if (update == StateUpdate::Now || (update == StateUpdate::ScoreOnly && scoreDue)) {
+            client.channel.queueReliable(state);
+            client.knownState = state;
+            scoreSent = scoreSent || update == StateUpdate::ScoreOnly;
         }
     });
+    if (scoreSent) {
+        _lastScoreUpdate = now;
+    }
     _deaths.clear();
     _destroyed.clear();
 }

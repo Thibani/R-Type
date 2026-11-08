@@ -8,6 +8,7 @@
 #include "server/Systems/ConnectionSystem.hpp"
 #include "server/Systems/InputSystem.hpp"
 #include "server/Systems/PlayerShipSystem.hpp"
+#include "server/Systems/RestartSystem.hpp"
 #include "server/Systems/ReplicationSystem.hpp"
 
 #include <cstddef>
@@ -22,6 +23,7 @@ GameRoom::GameRoom(ecs::World& sessions, std::uint32_t firstTick)
 {
     singleton<SimulationTick>(world).value = firstTick;
     loop.frameStart().add<InputSystem>();
+    loop.frameStart().add<RestartSystem>();
     loop.frameStart().add<PlayerShipSystem>();
     installSimulation(world);
     loop.frameEnd().add<ReplicationSystem>(world, sessions);
@@ -68,7 +70,7 @@ void leaveRoom(ecs::World& sessions, ecs::Entity session, LeaveReason reason)
     sessions.removeComponent<InRoom>(session);
     NetClient& client = sessions.getComponent<NetClient>(session);
     client.knownEntities.clear();
-    client.knownScore.reset();
+    client.knownState.reset();
 
     auto& rooms = singleton<GameRooms>(sessions).rooms;
     const auto found = rooms.find(place.room);

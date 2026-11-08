@@ -15,12 +15,17 @@ clients comply with.
 | `TextFile.hpp`                      | What both files need: atomic replace, copy of a damaged file |
 | `ServerSystems.hpp`                 | `installSystems()`: every system, in order; `installSimulation()` |
 | `Spawn.hpp`                         | The weapons as data (`weapons::`); create ships, Bydos, projectiles |
+| `Run.hpp`                           | `currentState()` (what GAME_STATE says), `startNewGame()` |
 | `Network.hpp`                       | Frame time → time point, send a packet, shutdown notice  |
 | `Components/ReceivedPacket.hpp`     | A valid packet received this frame; `IncompatibleClient` |
 | `Components/NetClient.hpp`          | A session; `LoggedIn` (main page); `InGame` (place in the game); `Disconnecting` |
 | `Components/ClientMessage.hpp`      | A game payload from a connected player                   |
-| `Components/Player.hpp`             | `PlayerInput`, `RespawnTimer` (on the player), `PlayerShip` (on the ship) |
-| `Components/Combat.hpp`             | Combat as data: `Weapon`, `Projectile`, `Trigger`, `Damage`, `ScoreValue`; `Bydo`, `BydoSpawner`, `TeamScore` |
+| `Components/Player.hpp`             | `PlayerInput`, `RespawnTimer`, `Eliminated` (on the player), `PlayerShip` (on the ship) |
+| `Components/Match.hpp`              | `Match`: game running or over, team lives left           |
+| `Components/Combat.hpp`             | Combat as data: `Weapon`, `Projectile`, `Trigger`, `Damage`, `ScoreValue`; `TeamScore` |
+| `Components/Waves.hpp`              | The endless mode's state: `RunProgress` (time, level), `WaveDirector` (next arrival, pending members) |
+| `Components/Behaviour.hpp`          | Enemy behaviours as data: `Enemy`, `WaveFlight`, `Seeker`, `AimsAtShips` |
+| `Components/Gadgets.hpp`            | `Pickup`, `Force`, `BlocksMissiles`, `DropTable` (random drops) |
 | `Components/NetEntity.hpp`          | `NetEntity` (network id), `NetIdCounter`, `SimulationTick`, `LastSnapshot` |
 | `Singleton.hpp`                     | `singleton<T>(world)`: state shared by several systems   |
 | `NetIds.hpp`                        | `allocateNetId()`: ids for networked entities (§5.1)     |
@@ -35,14 +40,27 @@ clients comply with.
 | `Systems/GroupSystem.hpp`           | Group orders, countdown, GROUP_STATE                     |
 | `Systems/RoomSystem.hpp`            | LEAVE_GAME and INPUT to the player's game; each game's frame |
 | `Systems/InputSystem.hpp`           | INPUT → the player's `PlayerInput`, in a game's World    |
-| `Systems/PlayerShipSystem.hpp`      | One ship per connected player, back 3 s after its death  |
+| `Systems/RestartSystem.hpp`         | RESTART after GAME OVER → a new game in the same room    |
+| `Systems/PlayerShipSystem.hpp`      | One ship per player still in the game, back 3 s after its death |
 | `Systems/TickSystem.hpp`            | Counts simulation steps                                  |
+| `Systems/MatchSystem.hpp`           | No life and no ship left → GAME OVER; nobody left → new game |
 | `Systems/PlayerControlSystem.hpp`   | `PlayerInput` → ship `Velocity` (normalised diagonals)   |
-| `Systems/BydoSpawnSystem.hpp`       | A Bydo from the right every 1.5 s, while ships exist     |
-| `Systems/BydoMovementSystem.hpp`    | Bydos fly left in a wave                                 |
-| `Systems/BydoAimSystem.hpp`         | Bydos pull their trigger, aimed at the nearest ship      |
+| `Systems/ProgressSystem.hpp`        | Seconds played (while ships exist) → level, distance points |
+| `Systems/WaveSystem.hpp`            | Endless enemies and formations from the right, faster each level |
+| `Systems/WaveFlightSystem.hpp`      | `WaveFlight` enemies fly left in a wave                  |
+| `Systems/SeekerSystem.hpp`          | `Seeker` enemies fly left, steering towards a ship       |
+| `Systems/CircleFlightSystem.hpp`    | `CircleFlight` enemies loop while drifting left          |
+| `Systems/HopSystem.hpp`             | `Hop` enemies jump along the floor                       |
+| `Systems/HoverSystem.hpp`           | `Hover` enemies stop, hold, then leave (Gunner, boss)    |
+| `Systems/BossSystem.hpp`            | The boss: arrival every 90 s of play, attacks, defeat    |
+| `Systems/AimSystem.hpp`             | `AimsAtShips` enemies pull their trigger, aimed at the nearest ship |
 | `Systems/WeaponSystem.hpp`          | Any pulled `Trigger` + ready `Weapon` → a projectile     |
-| `Systems/DamageSystem.hpp`          | Collisions + `Damage` → hits, kills, team score, respawn timer |
+| `Systems/DamageSystem.hpp`          | Collisions + `Damage` → hits, kills, team score          |
+| `Systems/LivesSystem.hpp`           | Ship killed → one team life less, respawn or `Eliminated` |
+| `Systems/DeathBurstSystem.hpp`      | `BurstOnDeath` killed → projectiles all around (Mine)    |
+| `Systems/ForceSystem.hpp`           | The Force: POD → next slot, follows its ship, fires with it, stops enemy missiles |
+| `Systems/PickupSystem.hpp`          | Ship touches a pickup → repaired, or a Force (points if it has one) |
+| `Systems/DropSystem.hpp`            | Enemy killed → maybe a repair kit or a Force capsule; the boss drops both |
 | `Systems/ReplicationSystem.hpp`     | ENTITY_SPAWN / ENTITY_DESTROY (real reason), PLAYER_DIED, GAME_STATE |
 | `Systems/NetSendSystem.hpp`         | Reliable messages, resends, heartbeats                   |
 | `Systems/SnapshotSystem.hpp`        | SNAPSHOT of every networked entity, 30 Hz                |
@@ -83,15 +101,15 @@ frameStart()  NetReceiveSystem        network thread inbox → ReceivedPacket / 
               ConnectionSystem        CONNECT_REQUEST → NetClient entity, ACCEPT / REJECT
               SessionReceiveSystem    packet → its session's channel → ClientMessage
               LoginSystem             AUTH_REQUEST → account checked, main page open (LoggedIn)
-              RoomMessageSystem       LEAVE_GAME → main page, INPUT → the player's game
+              RoomMessageSystem       LEAVE_GAME → main page; INPUT, RESTART → the player's game
               TimeoutSystem           silent session → Disconnecting
               FriendSystem            friends' messages, who is online, file saved once a second
               GroupSystem             group orders, countdown, game started, GROUP_STATE
               ChatSystem              chat and private messages, file saved once a second
               LeaderboardSystem       LEADERBOARD_REQUEST → LEADERBOARD, file saved once a second
 frameEnd()    SessionCleanupSystem    Disconnecting → PLAYER_LEFT, entity destroyed
-              RoomSystem              one frame of each game (below); a game with nobody left ends,
-                                      and its score enters the leaderboard
+              RoomSystem              one frame of each game (below); at GAME_OVER, or when nobody
+                                      is left, its score enters the leaderboard
               NetSendSystem           reliable messages, resends, heartbeats
               SnapshotSystem          every 2 steps of a game: SNAPSHOT of its NetEntity, to its players
               DiscardPacketsSystem    unhandled messages destroyed
@@ -102,21 +120,30 @@ World and loop:
 
 ```
 frameStart()  InputSystem             ClientMessage (INPUT) → the player's PlayerInput
-              PlayerShipSystem        one ship per player of the game, after its respawn delay
+              RestartSystem           ClientMessage (RESTART) after GAME OVER → new game
+              PlayerShipSystem        one ship per player still in the game, after its respawn delay
 simulation    TickSystem              SimulationTick + 1, first of every step
+              MatchSystem             no life and no ship left → GAME OVER; nobody left → new game
               PlayerControlSystem     PlayerInput → ship Velocity, FIRE → ship Trigger
-              BydoSpawnSystem         a Bydo enters from the right every 1.5 s
-              BydoMovementSystem      Bydo Velocity: left, in a wave
-              BydoAimSystem           Bydo Trigger: pulled, aimed at the nearest ship
+              ProgressSystem          seconds played (while ships exist) → level, distance points
+              WaveSystem              an enemy or a formation from the right, faster each level
+              WaveFlightSystem        WaveFlight Velocity: left, in a wave
+              SeekerSystem            Seeker Velocity: left, steering towards a ship
+              CircleFlightSystem      CircleFlight Velocity: loops while drifting left
+              HopSystem               Hop Velocity: jumps along the floor
+              HoverSystem             Hover Velocity: comes in, stops and bobs, leaves
+              AimSystem               AimsAtShips Trigger: pulled on screen, aimed at the nearest ship
               WeaponSystem            pulled Trigger + Weapon ready → projectile (any shooter)
               game::MovementSystem    Position += Velocity × step (shared with the client)
               game::ConfinementSystem ships kept inside the arena, velocity into an edge → 0
               game::ArenaExitSystem   missiles and Bydos that left → DespawnRequest (OUT_OF_BOUNDS)
               game::CollisionSystem   overlapping hitboxes → CollisionEvent
               DamageSystem            CollisionEvent + Damage → −HP, kill → DespawnRequest (KILLED), score
+              LivesSystem             ship killed → one team life less, RespawnTimer or Eliminated
+              DeathBurstSystem        BurstOnDeath killed → projectiles all around
               game::DespawnSystem     DespawnRequest → DespawnEvent, entity destroyed
 frameEnd()    ReplicationSystem       new NetEntity → ENTITY_SPAWN, gone → ENTITY_DESTROY,
-                                      ship killed → PLAYER_DIED, score changed → GAME_STATE
+                                      ship killed → PLAYER_DIED, state changed → GAME_STATE
 ```
 
 `main` and the tests both call `installSystems()`, so the tests always run
@@ -202,26 +229,94 @@ Everything that moves is a networked entity made by `Spawn.hpp`, so
 | Entity          | Kind             | Hitbox hits         | Health | Leaves when                         |
 |-----------------|------------------|---------------------|--------|-------------------------------------|
 | Player ship     | `PLAYER_SHIP`    | –                   | 3     | killed (back 3 s later, full health) |
-| Player missile  | `PLAYER_MISSILE` | Bydos (1 damage)    | –      | it hits, or leaves the arena        |
-| Bydo            | `BYDO`           | ships (1 damage, crashes) | 1 | killed (+100 team score), or leaves on the left |
-| Bydo missile    | `ENEMY_MISSILE`  | ships (1 damage)    | –      | it hits, or leaves the arena        |
+| Player missile  | `PLAYER_MISSILE` | enemies (1 damage)  | –      | it hits, or leaves the arena        |
+| Enemy           | see below        | ships (crashes)     | 1–15   | killed (+points to the team score), or leaves on the left |
+| Enemy missile   | `ENEMY_MISSILE`  | ships (1 damage)    | –      | it hits, or leaves the arena        |
+| Force           | `FORCE`          | enemy missiles (stops them) | – | its ship is gone                  |
+| Pickup          | `REPAIR_KIT`, `FORCE_CAPSULE` | taken by ships | – | a ship takes it, or it leaves on the left |
 
-The rules (speeds, sizes, rates, points) are constants in `src/game/Ship.hpp`
-and `src/game/Bydo.hpp`, shared with the client.
+The rules (speeds, sizes, rates, points) are constants in `src/game/Ship.hpp`,
+`src/game/Bydo.hpp`, `src/game/Enemies.hpp` and `src/game/Boss.hpp`, shared with the client.
+
+**The enemies.**
+
+| Enemy     | Kind        | Behaviours (`Behaviour.hpp`)   | Weapon                    | HP | Points | Ram    | From level |
+|-----------|-------------|--------------------------------|---------------------------|---:|-------:|--------|-----------:|
+| Bydo      | `BYDO`      | `WaveFlight`, `AimsAtShips`    | `BydoCannon`: 1 missile   |  1 |    100 | 1, dies | 1 |
+| Pata-Pata | `PATA_PATA` | `WaveFlight` (fast, wide)      | –                         |  1 |     50 | 1, dies | 1 |
+| Bug       | `BUG`       | `Seeker`                       | –                         |  1 |    150 | 1, dies | 2 |
+| Cancer    | `CANCER`    | `WaveFlight` (slow), `AimsAtShips` | `CancerFan`: 3 missiles |  3 |    300 | 1, dies | 3 |
+| Cruiser   | `CRUISER`   | none: straight, very slow      | `CruiserBattery`: 5 missiles | 15 | 1000 | 3, survives | 4 |
+| Hopper    | `HOPPER`    | `Hop` (on the floor), `AimsAtShips` | `HopperGun`: 1 missile | 2 |  200 | 1, dies | 2 |
+| Spinner   | `SPINNER`   | `CircleFlight`                 | –                         |  2 |    250 | 1, dies | 3 |
+| Gunner    | `GUNNER`    | `Hover` (6 s), `AimsAtShips`   | `GunnerBlaster`: bursts of 3 | 4 | 400 | 1, dies | 4 |
+| Mine      | `MINE`      | `WaveFlight` (slow), `BurstOnDeath` | 8 missiles when killed |  6 |    500 | 2, dies | 5 |
+
+Each one is a `spawn…()` function in `Spawn.cpp` that combines the same
+components; no system knows the kinds. Enemies only fire once inside the
+arena (`AimSystem`).
+
+**Endless waves.** The run is split into levels of 30 s of play
+(`game/Waves.hpp`; the clock stops while no ship is in the game).
+`WaveSystem` brings an *arrival* every `spawnInterval(level)` seconds (1.6 s
+at level 1, × 0.88 per level, 0.5 s at least). An arrival is one enemy, or a
+**formation** with probability `formationChance(level)` (10 % per level, 50 %
+at most):
+
+| Formation      | Members                                   | From level |
+|----------------|-------------------------------------------|-----------:|
+| Pata-Pata line | 5 Pata-Patas in single file               | 1 |
+| Bydo V         | 5 Bydos in a V                            | 2 |
+| Bug rush       | 4 Bugs from different heights             | 3 |
+| Cancer pair    | 2 Cancers side by side                    | 4 |
+| Escort         | a Cruiser and 2 Cancers                   | 5 |
+| Hopper patrol  | 3 Hoppers in single file                  | 3 |
+| Spinner pair   | 2 Spinners, one above the other           | 4 |
+| Gunner squad   | 3 Gunners stopping in a column            | 6 |
+| Minefield      | 3 Mines, one after the other              | 7 |
+
+A single enemy is drawn among the unlocked ones with weight
+`weight + growth × (level − unlock)`: Bugs, Cancers and Cruisers grow more
+common as the levels go by. Both tables are in `WaveSystem.cpp`; the next
+members of a formation wait in `WaveDirector::pending`. The random source is
+seeded once, so the same seed gives the same waves.
+
+**The boss** (`game/Boss.hpp`, `BossSystem`). Every 90 s of play, a boss
+(`BOSS`, 160 HP) flies in from the right, stops (`Hover`, forever) and moves
+up and down. No new wave arrives while it is there. It cycles through three
+attacks, 4 s each: **Fan** (7 aimed missiles), **Ring** (16 missiles all
+around) and **Summon** (3 Bugs come out of it); below half health its weapons
+reload faster. Killing it gives 5000 points and one life (5 at most); the
+next one comes 90 s later with 30 HP more. GAME_STATE's `bossProgress` tells
+the clients how far it is (0–99 %, 100 while it is there): their distance bar.
+
+**Gadgets** (`game/Gadgets.hpp`). A killed enemy may drop a pickup where it
+was (`DropSystem`): a **repair kit** (8 %) or a **Force capsule** (5 %); the
+boss drops both. Pickups drift left; the ship that touches one takes it
+(`PickupSystem`). The repair kit gives the ship its 3 hearts back. The
+capsule gives the player a **Force**, an invulnerable pod stuck to the ship
+(`ForceSystem`): each press of POD (input bit 5) moves it to the next slot,
+front → above → behind → below; it fires the ship's missiles away from the
+ship while FIRE is held, and absorbs the enemy missiles it touches. It is
+lost with the ship; a second capsule gives 500 points instead.
+
+GAME_STATE is sent at once when the phase, level, lives or boss distance
+change, but at most every 250 ms when only the score moved (distance points
+change it nearly every step).
 
 **Combat is data, not code.** Systems work on components, never on entity
 types, so new content needs no new system:
 
 | Component (`Components/Combat.hpp`) | Read by        | Means                                         |
 |-------------------------------------|----------------|-----------------------------------------------|
-| `Weapon` (+ its `Projectile`)       | `WeaponSystem` | What it fires, how often, from where          |
-| `Trigger`                           | `WeaponSystem` | Fire now, in this direction. Set by a "brain": `PlayerControlSystem` (keys), `BydoAimSystem` (aim) |
+| `Weapon` (+ its `Projectile`)       | `WeaponSystem` | What it fires, how often, from where, how many at once (`shots`, `spread`) |
+| `Trigger`                           | `WeaponSystem` | Fire now, in this direction. Set by a "brain": `PlayerControlSystem` (keys), `AimSystem` (aim) |
 | `Damage`                            | `DamageSystem` | Hurts what its `Hitbox::collidesWith` names; dies on hit or not |
 | `ScoreValue`                        | `DamageSystem` | Team points when it is killed                 |
 | `ConfinedToArena` (game)            | `game::ConfinementSystem` | Cannot leave the arena             |
 
 The weapons themselves are constants in `Spawn.hpp` (`weapons::ShipCannon`,
-`weapons::BydoCannon`). A new weapon, a Force, a turret or a new enemy is a
+`weapons::BydoCannon`, `weapons::CancerFan`, `weapons::CruiserBattery`). A new weapon, a Force, a turret or a new enemy is a
 new constant or `spawn…()` function; a new behaviour is one small "brain"
 system that sets a `Trigger` or a `Velocity`.
 
@@ -242,10 +337,24 @@ real reason and killer, and PLAYER_DIED for a ship.
 | Something is killed            | ENTITY_DESTROY `KILLED`, `killerNetId`            |
 | Something leaves the arena     | ENTITY_DESTROY `OUT_OF_BOUNDS`                    |
 | A ship is killed               | PLAYER_DIED (`playerId`, `killerNetId`), then ENTITY_DESTROY |
-| The team score changes         | GAME_STATE (`RUNNING`, score); a newcomer gets it at once |
+| Score, level or lives change   | GAME_STATE (phase, score, level, lives); a newcomer gets it at once |
+| The last life is lost          | GAME_STATE (`GAME_OVER`)                          |
+| A player sends RESTART         | GAME_STATE (`RUNNING`, score 0, level 1, full lives) |
 
-shortcut: the match never ends and ships come back forever; lobby, game over
-and the return to the lobby are the game phases of #110.
+**From start to game over** (`game/Run.hpp`). The team shares 3 lives; each
+ship destroyed costs one (`LivesSystem`). While lives are left, the ship comes
+back after 3 s; once none is left, its player is `Eliminated`. When no ship is
+in the game and none is about to come back, `MatchSystem` sets GAME OVER: the
+waves stop, and any player can send RESTART for a new game (`RestartSystem` →
+`startNewGame()`: score, level, waves and lives reset, leftover enemies and
+missiles despawned as EXPIRED). When every player has left, the next one
+starts a new game too.
+
+The team score counts kills and distance: while a ship is in the game,
+`10 × level` points per second (`ProgressSystem`).
+
+shortcut: no lobby (WAITING_FOR_PLAYERS): a game starts as soon as a player
+connects, and newcomers join the game in progress.
 
 Tests: `tests/server/GameplayTests.cpp` (the rules, step by step) and
 `Session.FiringAndBydosReachTheClients` (over UDP).

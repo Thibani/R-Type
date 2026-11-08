@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace network::protocol;
@@ -567,4 +568,105 @@ TEST(Friends, ResultsSayWhatHappened)
 
     client::applyPayload(world, FriendResult{.code = FriendCode::Ok}, 0.0F);
     EXPECT_TRUE(session.friendName.empty());
+}
+
+// --- Endless mode (#145) --------------------------------------------------------------
+
+TEST(Replication, EveryEnemyKindHasItsOwnLook)
+{
+    const std::vector<std::pair<EntityKind, client::Look>> enemies{
+        {EntityKind::Bydo, client::Look::Bydo},
+        {EntityKind::PataPata, client::Look::PataPata},
+        {EntityKind::Bug, client::Look::Bug},
+        {EntityKind::Cancer, client::Look::Cancer},
+        {EntityKind::Cruiser, client::Look::Cruiser},
+        {EntityKind::Hopper, client::Look::Hopper},
+        {EntityKind::Spinner, client::Look::Spinner},
+        {EntityKind::Gunner, client::Look::Gunner},
+        {EntityKind::Mine, client::Look::Mine},
+        {EntityKind::Boss, client::Look::Boss},
+    };
+    for (const auto& [kind, look] : enemies) {
+        EXPECT_EQ(client::lookOf(kind), look) << static_cast<int>(kind);
+    }
+}
+
+TEST(Replication, EveryGadgetHasItsOwnLook)
+{
+    EXPECT_EQ(client::lookOf(EntityKind::Force), client::Look::Force);
+    EXPECT_EQ(client::lookOf(EntityKind::ForceCapsule), client::Look::ForceCapsule);
+    EXPECT_EQ(client::lookOf(EntityKind::RepairKit), client::Look::RepairKit);
+}
+
+TEST(Replication, GameStateBringsLevelAndLives)
+{
+    ecs::World world;
+    inGame(world, 0, "A");
+    auto& session = client::singleton<client::Session>(world);
+
+    client::applyPayload(
+        world, GameState{.phase = GamePhase::Running, .score = 300, .level = 4, .lives = 2}, 0.0F);
+    EXPECT_EQ(session.level, 4);
+    EXPECT_EQ(session.lives, 2);
+
+    // Play again: a new game starts back at level 1 with every life
+    client::applyPayload(
+        world, GameState{.phase = GamePhase::GameOver, .score = 300, .level = 4, .lives = 0}, 1.0F);
+    client::applyPayload(
+        world, GameState{.phase = GamePhase::Running, .score = 0, .level = 1, .lives = 3}, 2.0F);
+    EXPECT_EQ(session.screen, client::Screen::Game);
+    EXPECT_EQ(session.level, 1);
+    EXPECT_EQ(session.lives, 3);
+
+    client::clearSession(world);
+    EXPECT_EQ(session.level, 1);
+    EXPECT_EQ(session.lives, 0);
+}
+
+TEST(Replication, TheBossKeepsItsFullHealthForTheHealthBar)
+{
+    ecs::World world;
+    inGame(world, 0, "A");
+    client::applyPayload(world,
+        EntitySpawn{.netId = 9,
+            .kind = EntityKind::Boss,
+            .owner = NoPlayer,
+            .x = 0,
+            .y = 0,
+            .vx = 0,
+            .vy = 0},
+        1.0F);
+    EXPECT_EQ(client::singleton<client::Session>(world).notice, "Warning: a boss is coming!");
+
+    EntityState boss{.netId = 9,
+        .kind = EntityKind::Boss,
+        .owner = NoPlayer,
+        .health = 160,
+        .x = 0,
+        .y = 0,
+        .vx = 0,
+        .vy = 0};
+    client::applyPayload(world, snapshot(1, {boss}), 1.0F);
+    boss.health = 40;
+    client::applyPayload(world, snapshot(2, {boss}), 2.0F);
+
+    const auto entity = entityOf(world, 9);
+    ASSERT_TRUE(entity.has_value());
+    const auto& data = world.getComponent<client::NetEntity>(entity.value_or(ecs::NullEntity));
+    EXPECT_EQ(data.health, 40);
+    EXPECT_EQ(data.peakHealth, 160); // A quarter of its health left
+    EXPECT_EQ(world.getComponent<client::Appearance>(entity.value_or(ecs::NullEntity)).look,
+        client::Look::Boss);
+}
+
+TEST(Replication, GameStateBringsTheDistanceToTheBoss)
+{
+    ecs::World world;
+    inGame(world);
+    client::applyPayload(world,
+        GameState{
+            .phase = GamePhase::Running, .score = 0, .level = 2, .lives = 3, .bossProgress = 64},
+        0.0F);
+
+    EXPECT_EQ(client::singleton<client::Session>(world).bossProgress, 64);
 }

@@ -56,7 +56,11 @@ void place(ecs::World& world, NetRegistry& registry, const NetEntity& data, std:
         registry.entities.emplace(data.netId, entity);
         world.addComponent(entity, Appearance{.look = lookOf(data.kind), .player = data.owner});
     }
-    world.addComponent(entity, data); // Replaces the previous values
+    NetEntity merged = data; // Replaces the previous values, but keeps the peak health
+    const auto* previous = world.tryGetComponent<NetEntity>(entity);
+    merged.peakHealth
+        = std::max(data.health, previous != nullptr ? previous->peakHealth : data.health);
+    world.addComponent(entity, merged);
     world.addComponent(entity, game::Position{.x = dequantize(x), .y = dequantize(y)});
     world.addComponent(entity, game::Velocity{.dx = dequantize(vx), .dy = dequantize(vy)});
 }
@@ -67,7 +71,7 @@ void forgetOldDestroyed(NetRegistry& registry, float now)
         [now](const auto& entry) { return now - entry.second >= DestroyedMemorySeconds; });
 }
 
-void apply(ecs::World& world, const EntitySpawn& spawn, float /*now*/)
+void apply(ecs::World& world, const EntitySpawn& spawn, float now)
 {
     NetRegistry& registry = singleton<NetRegistry>(world);
     registry.destroyedAt.erase(spawn.netId); // The server decides: a spawn always counts
@@ -79,6 +83,9 @@ void apply(ecs::World& world, const EntitySpawn& spawn, float /*now*/)
     }
     if (spawn.kind == EntityKind::PlayerShip && spawn.owner < MaxPlayers) {
         singleton<Session>(world).players.at(spawn.owner).down = false; // Back in the game
+    }
+    if (spawn.kind == EntityKind::Boss) {
+        notify(world, "Warning: a boss is coming!", now);
     }
 }
 
@@ -162,6 +169,9 @@ void apply(ecs::World& world, const GameState& state, float /*now*/)
 {
     Session& session = singleton<Session>(world);
     session.score = state.score;
+    session.level = state.level;
+    session.lives = state.lives;
+    session.bossProgress = state.bossProgress;
     Screen next = session.screen;
     switch (state.phase) {
     case GamePhase::WaitingForPlayers:
@@ -437,6 +447,9 @@ void leaveGame(ecs::World& world)
     session.playerId.reset();
     session.players = {};
     session.score = 0;
+    session.level = 1;
+    session.lives = 0;
+    session.bossProgress = 0;
     session.menuOpen = false;
     session.notice.clear();
 }

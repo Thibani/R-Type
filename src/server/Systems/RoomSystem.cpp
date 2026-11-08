@@ -4,6 +4,7 @@
 #include "network/Protocol/Packets.hpp"
 #include "server/Components/ClientMessage.hpp"
 #include "server/Components/Combat.hpp"
+#include "server/Components/Match.hpp"
 #include "server/Components/NetClient.hpp"
 #include "server/GameRoom.hpp"
 #include "server/Singleton.hpp"
@@ -24,7 +25,8 @@ void RoomMessageSystem::update(ecs::World& world, const ecs::Time& /*time*/)
     std::vector<ecs::Entity> messages;
     world.query<ClientMessage>([&](ecs::Entity entity, ClientMessage& message) {
         if (std::holds_alternative<LeaveGame>(message.payload)
-            || std::holds_alternative<Input>(message.payload)) {
+            || std::holds_alternative<Input>(message.payload)
+            || std::holds_alternative<Restart>(message.payload)) {
             messages.push_back(entity);
         }
     });
@@ -55,6 +57,18 @@ RoomSystem::RoomSystem(ScoreStore& scores) noexcept
 {
 }
 
+void RoomSystem::score(std::uint32_t id, GameRoom& room)
+{
+    if (room.scored) {
+        return;
+    }
+    room.scored = true;
+    const std::uint32_t points = singleton<TeamScore>(room.world).value;
+    if (_scores.add(points, room.names)) {
+        std::cout << "r-type_server: game " << id << " ended with " << points << " points\n";
+    }
+}
+
 void RoomSystem::update(ecs::World& world, const ecs::Time& time)
 {
     auto& rooms = singleton<GameRooms>(world).rooms;
@@ -66,16 +80,18 @@ void RoomSystem::update(ecs::World& world, const ecs::Time& time)
         if (players != 0) {
             return false;
         }
-        // Nobody left: the game is over, and its score enters the leaderboard
-        const std::uint32_t score = singleton<TeamScore>(room.world).value;
-        if (_scores.add(score, room.names)) {
-            std::cout << "r-type_server: game " << entry.first << " ended with " << score
-                      << " points\n";
-        }
+        score(entry.first, room); // Everyone left before the game over: it ends here
         return true;
     });
     for (const auto& [id, room] : rooms) {
         room->loop.runFrame(time.deltaSeconds());
+        // No life and no ship left: the game is over, and its score enters the leaderboard.
+        // "Play again" (RESTART) starts a new one in the same room
+        if (singleton<Match>(room->world).phase == GamePhase::GameOver) {
+            score(id, *room);
+        } else if (room->scored) {
+            room->scored = false;
+        }
     }
 }
 

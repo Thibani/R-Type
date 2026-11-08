@@ -287,20 +287,32 @@ constexpr sf::FloatRect settingsRow(int row) noexcept
     if (row == InterfaceSizeRow) {
         return {{Left, 316.0F}, {Width, 52.0F}};
     }
+    // Reset and Back end the left column on the last two rows of the right one
     if (row == ResetRow) {
-        return {{Left, 380.0F}, {Width, 52.0F}};
+        return {{Left, 442.0F}, {Width, 48.0F}};
     }
     if (row == BackRow) {
-        return {{Left, 444.0F}, {Width, 52.0F}};
+        return {{Left, 496.0F}, {Width, 48.0F}};
     }
+    // One row per action, 6 of them since the Force
     return {{650.0F, 228.0F + (static_cast<float>(row - FirstKeyRow) * 54.0F)}, {385.0F, 44.0F}};
 }
 
-// Game over
+// Game over: "Play again" first, so Enter starts a new game; "Back to menu" returns to the
+// main page
+inline constexpr int PlayAgainButton = 0;
+inline constexpr int BackToMenuButton = 1;
+
+[[nodiscard]]
+constexpr sf::FloatRect playAgain(int interfaceSize) noexcept
+{
+    return {{410.0F, isCompact(interfaceSize) ? 526.0F : 612.0F}, {220.0F, 56.0F}};
+}
+
 [[nodiscard]]
 constexpr sf::FloatRect backToMenu(int interfaceSize) noexcept
 {
-    return {{500.0F, isCompact(interfaceSize) ? 526.0F : 636.0F}, {280.0F, 52.0F}};
+    return {{650.0F, isCompact(interfaceSize) ? 526.0F : 612.0F}, {220.0F, 56.0F}};
 }
 
 /// The part of the canvas shown at this interface size, around what the screen
@@ -590,7 +602,7 @@ inline std::vector<sf::FloatRect> focusables(const Session& session, int interfa
         }
         return {};
     case Screen::GameOver:
-        return {backToMenu(interfaceSize)};
+        return {playAgain(interfaceSize), backToMenu(interfaceSize)};
     }
     return {};
 }

@@ -22,6 +22,18 @@ namespace client {
 struct Skin {
     sf::Texture bydos; // r-typesheet5.gif
     sf::Texture missiles; // r-typesheet1.gif: player and enemy missiles
+    sf::Texture pataPatas; // r-typesheet8.gif
+    sf::Texture bugs; // r-typesheet16.gif
+    sf::Texture cancers; // r-typesheet19.gif
+    sf::Texture cruisers; // r-typesheet24.gif
+    sf::Texture hoppers; // r-typesheet7.gif
+    sf::Texture spinners; // r-typesheet13.gif
+    sf::Texture gunners; // r-typesheet14.gif
+    sf::Texture mines; // r-typesheet39.gif
+    sf::Texture bosses; // r-typesheet30.gif
+    sf::Texture forces; // r-typesheet2.gif: the Force
+    sf::Texture capsules; // r-typesheet3.gif: the Force capsule
+    sf::Texture repairKits; // Drawn at startup (Assets.cpp)
     std::array<sf::Texture, 4> patterns; // P1-P4 swatch patterns (generated)
 };
 
@@ -46,16 +58,21 @@ struct Assets {
 };
 
 /// Where an entity's image is, and how much it is enlarged in the arena.
+/// `mirrored` flips it horizontally (a sprite drawn facing right in its
+/// sheet, for an enemy flying left).
 struct SpriteFrame {
-    const sf::Texture* texture;
+    const sf::Texture* texture{};
     sf::IntRect rect;
-    float scale;
+    float scale{1.0F};
+    bool mirrored{false};
 };
 
-/// The frame of `look`. Ships (`widgets::ship`) and unknown looks have none:
-/// unknown ones are drawn as a "?" placeholder.
+/// The frame of `look` (for the boss, `seconds` since the start picks its animation frame).
+/// Ships (`widgets::ship`) and unknown looks have none: unknown ones are drawn as a "?"
+/// placeholder.
 [[nodiscard]]
-std::optional<SpriteFrame> spriteFrame(const Assets& assets, ColourMode mode, Look look);
+std::optional<SpriteFrame> spriteFrame(
+    const Assets& assets, ColourMode mode, Look look, float seconds = 0.0F);
 
 /// The `assets/` folder: next to the executable, else in the current folder.
 [[nodiscard]]

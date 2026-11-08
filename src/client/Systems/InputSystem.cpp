@@ -521,8 +521,10 @@ void activate(Session& session, Settings& settings, int index, ecs::GameLoop& lo
         }
         break;
     case Screen::WaitingRoom:
-    case Screen::GameOver:
         session.request = Request::LeaveGame;
+        break;
+    case Screen::GameOver:
+        session.request = index == layout::PlayAgainButton ? Request::Restart : Request::LeaveGame;
         break;
     case Screen::Game:
         if (index == layout::ResumeButton) {
@@ -716,6 +718,7 @@ std::uint8_t heldKeys(const Settings& settings)
     add(Action::Left, input::Left);
     add(Action::Right, input::Right);
     add(Action::Fire, input::Fire);
+    add(Action::Pod, input::Pod);
     return mask;
 }
 

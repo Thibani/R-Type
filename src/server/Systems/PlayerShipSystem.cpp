@@ -2,8 +2,10 @@
 
 #include "ecs/World/World.hpp"
 #include "network/Protocol/Protocol.hpp"
+#include "server/Components/Match.hpp"
 #include "server/Components/NetClient.hpp"
 #include "server/Components/Player.hpp"
+#include "server/Singleton.hpp"
 #include "server/Spawn.hpp"
 
 #include <array>
@@ -20,6 +22,13 @@ void PlayerShipSystem::update(ecs::World& world, const ecs::Time& time)
     std::array<bool, MaxPlayers> hasShip{};
     world.query<InGame>(
         [&](ecs::Entity /*entity*/, InGame& player) { connected.at(player.playerId) = true; });
+
+    // Out of lives, or the game is over: no new ship until the next game
+    const bool gameOver = singleton<Match>(world).phase != GamePhase::Running;
+    world.query<InGame, Eliminated>(
+        [&](ecs::Entity /*entity*/, InGame& player, Eliminated& /*out*/) {
+            hasShip.at(player.playerId) = true;
+        });
 
     // A destroyed ship comes back after its delay: until then, the player waits
     std::vector<ecs::Entity> respawned;
@@ -48,7 +57,7 @@ void PlayerShipSystem::update(ecs::World& world, const ecs::Time& time)
     }
 
     for (std::uint8_t playerId = 0; playerId < MaxPlayers; ++playerId) {
-        if (!connected.at(playerId) || hasShip.at(playerId)) {
+        if (gameOver || !connected.at(playerId) || hasShip.at(playerId)) {
             continue;
         }
         (void)spawnPlayerShip(world, playerId);

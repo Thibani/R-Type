@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ecs/Event/EventChannel.hpp"
+#include "ecs/Event/IEventChannel.hpp"
 
 #include <memory>
 

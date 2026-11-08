@@ -38,6 +38,7 @@ public:
     static constexpr std::chrono::milliseconds HeartbeatDelay{250}; // §8.2
     static constexpr std::chrono::seconds Timeout{5}; // §8.2
     static constexpr int DisconnectRepeats = 3; // §4.1: best effort
+    static constexpr int RestartRepeats = 3; // §4.2: unreliable, repeated
 
     enum class Status : std::uint8_t {
         Idle, // Not connected, nothing to do
@@ -98,6 +99,9 @@ public:
     /// Queues a reliable message (JOIN_GAME, LEAVE_GAME, connected only). `update()`
     /// sends it, then again until the server acknowledges it.
     void sendReliable(network::protocol::Payload payload);
+    /// Asks for a new game after GAME OVER: RESTART, 3 times as it is
+    /// unreliable (connected only; the server ignores the repeats).
+    void sendRestart(Clock::time_point now);
 
     /// Sends DISCONNECT (QUIT) 3 times if connected, then forgets the session.
     void disconnect(Clock::time_point now);

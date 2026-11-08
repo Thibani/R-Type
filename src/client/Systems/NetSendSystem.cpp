@@ -61,6 +61,8 @@ void NetSendSystem::update(ecs::World& world, const ecs::Time& /*time*/)
         connect(session, _connection, AuthMode::Login, now);
     } else if (session.request == Request::CreateAccount) {
         connect(session, _connection, AuthMode::Register, now);
+    } else if (session.request == Request::Restart) {
+        _connection.sendRestart(now); // GAME_STATE (RUNNING) brings the game back
     } else if (session.request == Request::Leave) {
         _connection.disconnect(now);
         clearSession(world);

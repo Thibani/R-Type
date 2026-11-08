@@ -75,15 +75,6 @@ void DamageSystem::kill(ecs::Entity target, ecs::Entity by)
     if (const auto* worth = _world.tryGetComponent<ScoreValue>(target)) {
         singleton<TeamScore>(_world).value += worth->points;
     }
-    if (const auto* ship = _world.tryGetComponent<PlayerShip>(target)) {
-        const std::uint8_t playerId = ship->playerId;
-        _world.query<InGame>([&](ecs::Entity player, InGame& inGame) {
-            if (inGame.playerId == playerId) {
-                _world.commands().addComponent(
-                    player, RespawnTimer{.remaining = game::ship::RespawnDelay});
-            }
-        });
-    }
     _world.events().emit(
         game::DespawnRequest{.entity = target, .reason = game::DespawnReason::Killed, .killer = by});
 }

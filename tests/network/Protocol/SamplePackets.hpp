@@ -117,7 +117,12 @@ inline std::vector<Sample> all()
         toClient(makePacket(PlayerJoined{.playerId = 3, .name = "Zoë"}, 9)),
         toClient(makePacket(PlayerLeft{.playerId = 1, .reason = LeaveReason::Timeout}, 10)),
         toClient(makePacket(PlayerDied{.playerId = 0, .killerNetId = NoEntity}, 11)),
-        toClient(makePacket(GameState{.phase = GamePhase::Running, .score = 123456}, 65535)),
+        toClient(makePacket(GameState{.phase = GamePhase::GameOver,
+                                .score = 123456,
+                                .level = 7,
+                                .lives = 2,
+                                .bossProgress = 42},
+            65535)),
         toServer(makePacket(JoinGame{}, 12)),
         toServer(makePacket(LeaveGame{}, 13)),
         toClient(makePacket(JoinResult{.code = JoinCode::Ok, .playerId = 2}, 14)),
@@ -162,6 +167,7 @@ inline std::vector<Sample> all()
             38)),
         toClient(makePacket(
             Leaderboard{.board = Board::Solo, .best = {}, .lastRank = 0, .lastScore = 0}, 39)),
+        toServer(makePacket(Restart{})),
     };
 }
 

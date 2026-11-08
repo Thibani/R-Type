@@ -30,7 +30,7 @@ inline ecs::Entity addPlayer(ecs::World& world, std::uint8_t playerId)
             .lastReceived = {},
             .lastSent = {},
             .knownEntities = {},
-            .knownScore = std::nullopt,
+            .knownState = std::nullopt,
         });
     world.addComponent(player, server::LoggedIn{});
     world.addComponent(player, server::InGame{.playerId = playerId, .session = player});

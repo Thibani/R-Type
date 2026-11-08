@@ -1,10 +1,18 @@
-# R-Type Network Protocol — Version 8
+# R-Type Network Protocol — Version 9
 
 | Status   | Implemented                 |
 |----------|-----------------------------|
-| Version  | 8                           |
+| Version  | 9                           |
 | Transport| UDP only                    |
 | Issue    | #21 (design), #10 (documentation), #97 (encryption), #73 (accounts), #72 (main page), #126 (friends), #92 (chat), #71 (groups), #91 (leaderboard) |
+
+**Version 9** joins the endless mode (#145) and the main page, friends, chat, groups and
+leaderboard (versions 4 to 8 of the other line of work). From the endless mode:
+
+- `GAME_STATE` carries the level, the lives and the distance
+  to the next boss (10 bytes); `RESTART` (client → server) plays again after a
+  game over; input bit 5 is `POD` (moves the Force around the ship); entity
+  kinds 4–15 (enemies, the boss, the Force and the pickups).
 
 This document specifies the binary protocol spoken between `r-type_client`
 and `r-type_server`. It is meant to be complete enough to write a new client
@@ -119,7 +127,7 @@ Every datagram starts with this 20-byte header.
 | Offset | Size | Field          | Description                                                  |
 |-------:|-----:|----------------|--------------------------------------------------------------|
 | 0      | 2    | `magic`        | Always `0x5254` (`"RT"`). Filters out stray traffic.          |
-| 2      | 1    | `version`      | Protocol version. This document describes version `8`.       |
+| 2      | 1    | `version`      | Protocol version. This document describes version `9`.       |
 | 3      | 1    | `type`         | Packet type, see [§4](#4-packet-types).                       |
 | 4      | 1    | `flags`        | Bit field, see below.                                         |
 | 5      | 1    | `reserved`     | **MUST** be `0`.                                              |
@@ -135,7 +143,7 @@ Every datagram starts with this 20-byte header.
 |----:|------------|----------------------------------------------------------------------|
 | 0   | `RELIABLE` | The payload starts with a `u16 reliableId` and must be acknowledged. |
 | 1   | `HAS_ACK`  | `ack` and `ackBits` are meaningful. Clear until a packet is received.|
-| 2–7 | —          | Reserved, **MUST** be `0` in version 8.                              |
+| 2–7 | —          | Reserved, **MUST** be `0` in version 9.                              |
 
 ### 3.2 Versioning
 
@@ -213,13 +221,14 @@ Sizes are payload sizes, header excluded. Reliable packets include their
 | `0x06` | `AUTH_REQUEST`    | C → S     | no       | 65                 |
 | `0x07` | `AUTH_RESULT`     | S → C     | **yes**  | 3                  |
 | `0x10` | `INPUT`           | C → S     | no       | 6 … 13 (`5 + count`) |
+| `0x11` | `RESTART`         | C → S     | no       | 0                  |
 | `0x20` | `SNAPSHOT`        | S → C     | no       | `11 + 13 × count`  |
 | `0x21` | `ENTITY_SPAWN`    | S → C     | **yes**  | 14                 |
 | `0x22` | `ENTITY_DESTROY`  | S → C     | **yes**  | 7                  |
 | `0x23` | `PLAYER_JOINED`   | S → C     | **yes**  | 19                 |
 | `0x24` | `PLAYER_LEFT`     | S → C     | **yes**  | 4                  |
 | `0x25` | `PLAYER_DIED`     | S → C     | **yes**  | 5                  |
-| `0x26` | `GAME_STATE`      | S → C     | **yes**  | 7                  |
+| `0x26` | `GAME_STATE`      | S → C     | **yes**  | 10                 |
 | `0x30` | `JOIN_GAME`       | C → S     | **yes**  | 2                  |
 | `0x31` | `LEAVE_GAME`      | C → S     | **yes**  | 2                  |
 | `0x32` | `JOIN_RESULT`     | S → C     | **yes**  | 4                  |
@@ -246,7 +255,7 @@ Sizes are payload sizes, header excluded. Reliable packets include their
 | `0x47` | `LEADERBOARD_REQUEST` | C → S | **yes**  | 3                  |
 | `0x48` | `LEADERBOARD`     | S → C     | **yes**  | 12 + 68 × count    |
 
-Ranges `0x00`, `0x08–0x0F`, `0x11–0x1F`, `0x27–0x2F` and `0x49–0xFF` are reserved.
+Ranges `0x00`, `0x08–0x0F`, `0x12–0x1F`, `0x27–0x2F` and `0x49–0xFF` are reserved.
 
 These sizes are before encryption: every type except `CONNECT_REQUEST`,
 `CONNECT_ACCEPT` and `CONNECT_REJECT` adds 24 bytes on the network
@@ -389,7 +398,8 @@ Input mask bits:
 |----:|---------|----:|---------|
 | 0   | UP      | 3   | RIGHT   |
 | 1   | DOWN    | 4   | FIRE    |
-| 2   | LEFT    | 5–7 | reserved, **MUST** be `0` |
+| 2   | LEFT    | 5   | POD: moves the Force to its next slot (on a press) |
+|     |         | 6–7 | reserved, **MUST** be `0` |
 
 Each packet repeats the last few inputs (up to 8) so a lost datagram costs
 nothing: the next one carries the missing ticks again. The server applies only
@@ -397,6 +407,13 @@ ticks newer than the last one it processed for that client, and ignores the
 others.
 
 The client sends `INPUT` once per input tick, even when no key is pressed.
+
+#### `RESTART` (`0x11`)
+
+No payload. After `GAME_STATE` (`GAME_OVER`), a player asks for a new game.
+The client sends it 3 times (it is unreliable); the server ignores it while a
+game is running, so the repeats do nothing. The new game is announced by
+`GAME_STATE` (`RUNNING`) with the score at `0`, level `1` and full lives.
 
 ### 4.3 Server → client
 
@@ -488,13 +505,19 @@ newcomer once for every player already connected.
 | 2      | 1    | `playerId`    |
 | 3      | 2    | `killerNetId` |
 
-`GAME_STATE` (`0x26`) — the game changed phase or the score changed.
+`GAME_STATE` (`0x26`) — the game changed: phase, score, level or lives.
 
 | Offset | Size | Field        | Values                                        |
 |-------:|-----:|--------------|-----------------------------------------------|
 | 0      | 2    | `reliableId` |                                               |
 | 2      | 1    | `state`      | `0` WAITING_FOR_PLAYERS, `1` RUNNING, `2` GAME_OVER |
-| 3      | 4    | `score`      | Shared team score.                            |
+| 3      | 4    | `score`      | Shared team score (kills and distance).       |
+| 7      | 1    | `level`      | Endless mode level, `1` at the start of a game. |
+| 8      | 1    | `lives`      | Ships the team can still lose; `0` at game over. |
+| 9      | 1    | `bossProgress` | Distance to the next boss, `0`–`100` %; `100` while a boss is there. Above `100`: invalid. |
+
+A game is over when the team has no life left and no ship is in the game.
+Any player of that game can then send `RESTART`: it starts a new game for all its players.
 
 `JOIN_RESULT` (`0x32`) — the answer to `JOIN_GAME`. It comes before every event of the game.
 
@@ -595,7 +618,19 @@ enough on the wire. The server keeps the `Entity ↔ netId` mapping.
 | `1`   | BYDO             |
 | `2`   | PLAYER_MISSILE   |
 | `3`   | ENEMY_MISSILE    |
-| `4`–`255` | reserved for new content |
+| `4`   | PATA_PATA        |
+| `5`   | BUG              |
+| `6`   | CANCER           |
+| `7`   | CRUISER          |
+| `8`   | HOPPER           |
+| `9`   | SPINNER          |
+| `10`  | GUNNER           |
+| `11`  | MINE             |
+| `12`  | BOSS             |
+| `13`  | FORCE (pod attached to a ship; `owner` is the ship's player) |
+| `14`  | FORCE_CAPSULE (pickup) |
+| `15`  | REPAIR_KIT (pickup) |
+| `16`–`255` | reserved for new content |
 
 A client receiving an unknown kind **MUST NOT** crash. It **SHOULD** display
 a placeholder.
@@ -831,16 +866,18 @@ The server keeps every finished game in two rankings: **SOLO** for a game starte
 player, **MULTI** for a game started by a group of 2 to 4. A game is a line: the same players
 can be there several times.
 
-- A game ends when no player is left in it: its team score then enters its ranking, under the
-  names of the accounts that started it, even those who left before the end. While one player
-  is still in the game, it goes on and keeps scoring.
+- A game ends at `GAME_OVER`: the team has no life left and no ship in the game. Its team
+  score then enters its ranking, under the names of the accounts that started it, even those
+  who left before the end. While one ship is still in the game, it goes on and keeps scoring.
+  If every player leaves before, the game ends there and counts too. `RESTART` starts a new
+  game with the same players, which counts on its own.
 - Games are sorted by score; on a tie, the older game comes first.
 - `LEADERBOARD_REQUEST` is answered by `LEADERBOARD`: the 10 best games of that ranking, then
   the rank and score of the last game the player played there, even far below the 10.
 
 Known limits: a game still running when the server stops is not kept. The server saves the
 file at most once per second, so a crash can lose the last second. The file grows by one line
-per game. Until lives exist (endless mode, #145), a game only ends when its last player leaves.
+per game.
 
 ---
 
@@ -870,7 +907,7 @@ that is about **40 KB/s per client** downstream, events excluded. Upstream, `INP
 
 ```text
 52 54             magic "RT"
-08                version 8
+09                version 9
 01                type CONNECT_REQUEST
 00                flags: none (nothing received yet, so no HAS_ACK)
 00                reserved
@@ -889,7 +926,7 @@ Total: 68 bytes.
 
 ## 11. Possible extensions
 
-Kept out of version 8, but the header leaves room for them:
+Kept out of version 9, but the header leaves room for them:
 
 - a `COMPRESSED` flag bit for LZ4 or zlib payloads;
 - delta snapshots relative to the last acknowledged snapshot;

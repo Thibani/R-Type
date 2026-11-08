@@ -15,6 +15,7 @@ struct NetEntity {
     network::protocol::EntityKind kind{network::protocol::EntityKind::PlayerShip};
     std::uint8_t owner{network::protocol::NoPlayer};
     std::uint8_t health{};
+    std::uint8_t peakHealth{}; // Highest health seen: full health, for health bars
 };
 
 /// Singleton: which local entity stands for which netId (§5.1).

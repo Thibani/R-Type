@@ -427,7 +427,7 @@ TEST(GameState, LeavingTheGameLeavesNothingOfItOnThePlayer)
     server::startGame(world, std::array{player}, 0.0F);
     auto& client = world.getComponent<server::NetClient>(player);
     client.knownEntities.insert(7);
-    client.knownScore = 50;
+    client.knownState = GameState{.phase = GamePhase::Running, .score = 50};
     world.addComponent(
         world.createEntity(), server::ClientMessage{.client = player, .payload = LeaveGame{}});
 
@@ -440,7 +440,7 @@ TEST(GameState, LeavingTheGameLeavesNothingOfItOnThePlayer)
 
     EXPECT_FALSE(world.hasComponent<server::InRoom>(player));
     EXPECT_TRUE(client.knownEntities.empty());
-    EXPECT_FALSE(client.knownScore.has_value());
+    EXPECT_FALSE(client.knownState.has_value());
     EXPECT_TRUE(world.hasComponent<server::LoggedIn>(player));
     EXPECT_TRUE(server::singleton<server::GameRooms>(world).rooms.empty()); // Its game with it
     // The game ended with its only player: it entered the solo ranking

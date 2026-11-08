@@ -18,7 +18,7 @@ namespace server {
 ///                 ConnectionSystem      CONNECT_REQUEST → session, ACCEPT / REJECT
 ///                 SessionReceiveSystem  other packets → session, ClientMessage
 ///                 LoginSystem           AUTH_REQUEST → account checked, main page open
-///                 RoomMessageSystem     LEAVE_GAME → main page, INPUT → the player's game
+///                 RoomMessageSystem     LEAVE_GAME → main page; INPUT, RESTART → the player's game
 ///                 TimeoutSystem         silent sessions → Disconnecting
 ///                 FriendSystem          friends' messages, who is online, saved once a second
 ///                 GroupSystem           group orders, countdown, game started, GROUP_STATE
@@ -42,23 +42,33 @@ void installSystems(ecs::World& world, ecs::GameLoop& loop, network::NetworkThre
 /// In the loop of each game:
 ///
 ///     frameStart  InputSystem           INPUT → the player's PlayerInput
-///                 PlayerShipSystem      one ship per connected player, respawn delay
+///                 RestartSystem         RESTART after GAME OVER → a new game
+///                 PlayerShipSystem      one ship per player still in the game, respawn delay
 ///     simulation  installSimulation()   below
 ///     frameEnd    ReplicationSystem     ENTITY_SPAWN / ENTITY_DESTROY / PLAYER_DIED / GAME_STATE
 ///
 /// The simulation alone (the World's own systems, at the fixed step), in order:
 ///
 ///     TickSystem            SimulationTick + 1, first of every step
+///     MatchSystem           no life and no ship left → GAME OVER; nobody left → new game
 ///     PlayerControlSystem   PlayerInput → ship Velocity, FIRE → ship Trigger
-///     BydoSpawnSystem       a Bydo from the right every 1.5 s, while ships exist
-///     BydoMovementSystem    Bydo Velocity: left, in a wave
-///     BydoAimSystem         Bydo Trigger: pulled, aimed at the nearest ship
+///     ProgressSystem        seconds played (while ships exist) → level of the run
+///     BossSystem            boss arrival (every 90 s of play), its attacks, its defeat
+///     WaveSystem            enemies and formations from the right, faster each level
+///     WaveFlightSystem      WaveFlight Velocity: left, in a wave (Bydo, PataPata, Cancer)
+///     SeekerSystem          Seeker Velocity: left, steering towards a ship (Bug)
+///     CircleFlightSystem    CircleFlight Velocity: loops while drifting left (Spinner)
+///     HopSystem             Hop Velocity: jumps along the floor (Hopper)
+///     HoverSystem           Hover Velocity: stops, holds, leaves (Gunner, boss)
+///     AimSystem             AimsAtShips Trigger: pulled on screen, aimed at the nearest ship
 ///     WeaponSystem          pulled Trigger + Weapon ready → projectile
 ///     game::MovementSystem  Position += Velocity × step
 ///     game::ConfinementSystem ships (ConfinedToArena) kept inside the arena
-///     game::ArenaExitSystem missiles and Bydos that left → despawn (OUT_OF_BOUNDS)
+///     game::ArenaExitSystem missiles and enemies that left → despawn (OUT_OF_BOUNDS)
 ///     game::CollisionSystem overlapping hitboxes → CollisionEvent
-///     DamageSystem          CollisionEvent + Damage → hits, kills, score, respawn timer
+///     DamageSystem          CollisionEvent + Damage → hits, kills, score
+///     LivesSystem           ship killed → one life less, respawn timer or Eliminated
+///     DeathBurstSystem      BurstOnDeath killed → projectiles all around (Mine)
 ///     game::DespawnSystem   DespawnRequest → DespawnEvent, entity destroyed
 ///
 /// Separate so the gameplay tests run exactly the server's simulation.
