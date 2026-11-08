@@ -306,6 +306,24 @@ namespace {
         return isValidPlayerName(packet.name);
     }
 
+    bool validate(const LeaderboardRequest& packet) noexcept
+    {
+        return inRange(packet.board, Board::Solo, Board::Multi);
+    }
+
+    bool validate(const Leaderboard& packet) noexcept
+    {
+        const std::size_t players = packet.board == Board::Solo ? 1 : MaxPlayers;
+        return inRange(packet.board, Board::Solo, Board::Multi)
+            && packet.best.size() <= LeaderboardSize
+            && std::ranges::all_of(packet.best,
+                [&](const LeaderboardEntry& entry) {
+                    return !entry.names.empty() && entry.names.size() <= players
+                        && std::ranges::all_of(entry.names, isValidPlayerName);
+                })
+            && (packet.lastRank != 0 || packet.lastScore == 0);
+    }
+
     // --- Names and passwords (§2.2) ------------------------------------------
 
     /// Writes `text` as a zero-padded field of `Size` bytes. `text` must be valid.
@@ -599,6 +617,25 @@ namespace {
     void writePayload(ByteWriter& writer, const GroupInvited& packet) noexcept
     {
         writeText<NameSize>(writer, packet.name);
+    }
+
+    void writePayload(ByteWriter& writer, const LeaderboardRequest& packet) noexcept
+    {
+        writer.write(std::to_underlying(packet.board));
+    }
+
+    void writePayload(ByteWriter& writer, const Leaderboard& packet) noexcept
+    {
+        writer.write(std::to_underlying(packet.board));
+        writer.write(static_cast<std::uint8_t>(packet.best.size()));
+        for (const LeaderboardEntry& entry : packet.best) {
+            writer.write(entry.score);
+            for (std::size_t i = 0; i < MaxPlayers; ++i) {
+                writeText<NameSize>(writer, i < entry.names.size() ? entry.names[i] : "");
+            }
+        }
+        writer.write(packet.lastRank);
+        writer.write(packet.lastScore);
     }
 
     // --- Payload readers ------------------------------------------------------
@@ -925,6 +962,45 @@ namespace {
         return readText<NameSize>(reader, packet.name) ? ReadError{} : DecodeError::InvalidName;
     }
 
+    ReadError readPayload(ByteReader& reader, LeaderboardRequest& packet)
+    {
+        packet.board = static_cast<Board>(reader.read<std::uint8_t>());
+        return {};
+    }
+
+    ReadError readPayload(ByteReader& reader, Leaderboard& packet)
+    {
+        packet.board = static_cast<Board>(reader.read<std::uint8_t>());
+        const auto count = static_cast<std::size_t>(reader.read<std::uint8_t>());
+
+        // Checked BEFORE allocating: the count must match the bytes received.
+        if (!reader.ok() || count > LeaderboardSize
+            || reader.remaining() != (count * LeaderboardEntrySize) + 8) {
+            return DecodeError::BadPayloadSize;
+        }
+        packet.best.resize(count);
+        for (LeaderboardEntry& entry : packet.best) {
+            entry.score = reader.read<std::uint32_t>();
+            bool ended = false; // Names are packed first: once one is empty, all the rest are
+            for (std::size_t i = 0; i < MaxPlayers; ++i) {
+                std::string name;
+                if (!readText<NameSize>(reader, name)) {
+                    return DecodeError::InvalidName;
+                }
+                if (name.empty()) {
+                    ended = true;
+                } else if (ended) {
+                    return DecodeError::InvalidName;
+                } else {
+                    entry.names.push_back(std::move(name));
+                }
+            }
+        }
+        packet.lastRank = reader.read<std::uint32_t>();
+        packet.lastScore = reader.read<std::uint32_t>();
+        return {};
+    }
+
     // --- Decoding one type (§7 rules 4, 7, 8, 9) ------------------------------
 
     template <typename T>
@@ -1123,6 +1199,10 @@ std::expected<Packet, DecodeError> decode(std::span<const std::byte> datagram, D
         return decodeAs<GroupResult>(*header, payload, direction);
     case PacketType::GroupInvited:
         return decodeAs<GroupInvited>(*header, payload, direction);
+    case PacketType::LeaderboardRequest:
+        return decodeAs<LeaderboardRequest>(*header, payload, direction);
+    case PacketType::Leaderboard:
+        return decodeAs<Leaderboard>(*header, payload, direction);
     case PacketType::Snapshot:
         return decodeAs<Snapshot>(*header, payload, direction);
     case PacketType::EntitySpawn:

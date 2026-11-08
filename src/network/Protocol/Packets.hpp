@@ -486,6 +486,39 @@ struct ChatRefused {
     friend bool operator==(const ChatRefused&, const ChatRefused&) = default;
 };
 
+/// The player asks for one of the two rankings.
+struct LeaderboardRequest {
+    static constexpr PacketType Type = PacketType::LeaderboardRequest;
+    static constexpr Direction Way = Direction::ClientToServer;
+    static constexpr bool Reliable = true;
+
+    Board board{Board::Solo};
+
+    friend bool operator==(const LeaderboardRequest&, const LeaderboardRequest&) = default;
+};
+
+/// One game of a ranking: its score, and the accounts that started it.
+struct LeaderboardEntry {
+    std::uint32_t score{0};
+    std::vector<std::string> names; // 1 to MaxPlayers
+
+    friend bool operator==(const LeaderboardEntry&, const LeaderboardEntry&) = default;
+};
+
+/// Answer to LEADERBOARD_REQUEST: the best games, then the player's last game.
+struct Leaderboard {
+    static constexpr PacketType Type = PacketType::Leaderboard;
+    static constexpr Direction Way = Direction::ServerToClient;
+    static constexpr bool Reliable = true;
+
+    Board board{Board::Solo};
+    std::vector<LeaderboardEntry> best; // 0 to LeaderboardSize, best first
+    std::uint32_t lastRank{0}; // Rank of the player's last game in this ranking; 0: none
+    std::uint32_t lastScore{0};
+
+    friend bool operator==(const Leaderboard&, const Leaderboard&) = default;
+};
+
 // --- Whole packet ------------------------------------------------------------
 
 using Payload = std::variant<ConnectRequest, ConnectAccept, ConnectReject, Disconnect, Heartbeat,
@@ -493,7 +526,7 @@ using Payload = std::variant<ConnectRequest, ConnectAccept, ConnectReject, Disco
     ChatSend, PrivateSend, Snapshot, EntitySpawn, EntityDestroy, PlayerJoined, PlayerLeft,
     PlayerDied, GameState, JoinResult, FriendResult, FriendEntry, ChatMessage, ChatRefused,
     GroupCode, GroupJoin, GroupLeave, GroupKick, GroupPromote, GroupInvite, GroupAnswer, GroupReady,
-    GroupState, GroupResult, GroupInvited>;
+    GroupState, GroupResult, GroupInvited, LeaderboardRequest, Leaderboard>;
 
 /// Acknowledgement carried by a packet (HAS_ACK flag, §6.1).
 struct Ack {

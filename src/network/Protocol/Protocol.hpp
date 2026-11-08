@@ -7,14 +7,14 @@
 #include <limits>
 #include <string_view>
 
-/// Constants and enumerations of the R-Type network protocol, version 7.
+/// Constants and enumerations of the R-Type network protocol, version 8.
 /// The reference is docs/protocol.md: section numbers below point to it.
 namespace network::protocol {
 
 // --- Sizes and identification (§2, §3) ---------------------------------------
 
 inline constexpr std::uint16_t Magic = 0x5254; // "RT"
-inline constexpr std::uint8_t Version = 7;
+inline constexpr std::uint8_t Version = 8;
 
 inline constexpr std::size_t HeaderSize = 20;
 inline constexpr std::size_t MaxDatagramSize = 1200;
@@ -87,6 +87,8 @@ enum class PacketType : std::uint8_t {
     GroupState = 0x44,
     GroupResult = 0x45,
     GroupInvited = 0x46,
+    LeaderboardRequest = 0x47,
+    Leaderboard = 0x48,
 };
 
 /// Which way a packet travels. A receiver drops packets going the wrong way.
@@ -162,6 +164,16 @@ enum class GroupOutcome : std::uint8_t {
     InvitationGone = 10,
     RemovedFromGroup = 11, // The leader removed this player
 };
+
+/// The two rankings: games started alone, and games started by a group of 2 to 4.
+enum class Board : std::uint8_t {
+    Solo = 0,
+    Multi = 1,
+};
+
+inline constexpr std::size_t LeaderboardSize = 10; // Best games shown
+// One line of LEADERBOARD: the score, then MaxPlayers names (unused ones are zero bytes)
+inline constexpr std::size_t LeaderboardEntrySize = 4 + (MaxPlayers * NameSize);
 
 enum class FriendReply : std::uint8_t {
     Refuse = 0,

@@ -153,6 +153,15 @@ inline std::vector<Sample> all()
             34)),
         toClient(makePacket(GroupResult{.outcome = GroupOutcome::RemovedFromGroup}, 35)),
         toClient(makePacket(GroupInvited{.name = "Zoë"}, 36)),
+        toServer(makePacket(LeaderboardRequest{.board = Board::Multi}, 37)),
+        toClient(makePacket(Leaderboard{.board = Board::Multi,
+                                .best = {{.score = 4200, .names = {"Zoë", "Max", "Ann", "Ben"}},
+                                    {.score = 900, .names = {"Max", "Ann"}}},
+                                .lastRank = 34,
+                                .lastScore = 120},
+            38)),
+        toClient(makePacket(
+            Leaderboard{.board = Board::Solo, .best = {}, .lastRank = 0, .lastScore = 0}, 39)),
     };
 }
 

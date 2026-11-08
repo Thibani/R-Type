@@ -74,7 +74,7 @@ TEST(PacketCodec, MatchesTheSpecificationExample)
     };
 
     const auto expected = bytes({
-        0x52, 0x54, 0x07, 0x01, 0x00, 0x00, 0x00, 0x30, // magic, version, type, flags, reserved, size
+        0x52, 0x54, 0x08, 0x01, 0x00, 0x00, 0x00, 0x30, // magic, version, type, flags, reserved, size
         0x00, 0x00, 0x00, 0x00, // sessionToken
         0x00, 0x00, 0x00, 0x00, // sequence, ack
         0x00, 0x00, 0x00, 0x00, // ackBits
@@ -122,7 +122,7 @@ TEST(PacketCodec, EncodesHeaderFields)
     const auto datagram = encodeOrFail(packet);
 
     const auto expected = bytes({
-        0x52, 0x54, 0x07, 0x25, // magic, version, PLAYER_DIED
+        0x52, 0x54, 0x08, 0x25, // magic, version, PLAYER_DIED
         0x03, 0x00, 0x00, 0x05, // RELIABLE | HAS_ACK, reserved, payloadSize 5
         0xCA, 0xFE, 0xBA, 0xBE, // sessionToken
         0x00, 0x2A, 0x00, 0x29, // sequence 42, ack 41
@@ -178,6 +178,8 @@ TEST(PacketCodec, PayloadSizesMatchTheSpecification)
         {.payload = GroupState{.code = "", .countdown = 0, .leader = 0, .members = {{.name = "a", .ready = false, .inGame = false}, {.name = "b", .ready = false, .inGame = false}}}, .size = 11 + (2 * 17)},
         {.payload = GroupResult(), .size = 3},
         {.payload = GroupInvited{.name = "a"}, .size = 18},
+        {.payload = LeaderboardRequest(), .size = 3},
+        {.payload = Leaderboard{.board = Board::Solo, .best = {{.score = 1, .names = {"a"}}}, .lastRank = 0, .lastScore = 0}, .size = 4 + 68 + 8},
     };
 
     for (const auto& [payload, size] : cases) {
@@ -482,6 +484,14 @@ TEST(PacketCodecEncoding, RefusesInvalidPayloads)
         GroupState{.code = "", .countdown = 0, .leader = 0, .members = std::vector<GroupMemberState>(5, GroupMemberState{.name = "a", .ready = false, .inGame = false})},
         GroupResult{.outcome = static_cast<GroupOutcome>(12)},
         GroupInvited{.name = ""},
+        LeaderboardRequest{.board = static_cast<Board>(2)},
+        Leaderboard{.board = static_cast<Board>(2), .best = {}, .lastRank = 0, .lastScore = 0},
+        Leaderboard{.board = Board::Solo, .best = {{.score = 1, .names = {"a", "b"}}}, .lastRank = 0, .lastScore = 0}, // Solo: one name
+        Leaderboard{.board = Board::Multi, .best = {{.score = 1, .names = {}}}, .lastRank = 0, .lastScore = 0},
+        Leaderboard{.board = Board::Multi, .best = {{.score = 1, .names = {"a", "b", "c", "d", "e"}}}, .lastRank = 0, .lastScore = 0},
+        Leaderboard{.board = Board::Multi, .best = {{.score = 1, .names = {"a", ""}}}, .lastRank = 0, .lastScore = 0},
+        Leaderboard{.board = Board::Solo, .best = std::vector<LeaderboardEntry>(11, LeaderboardEntry{.score = 1, .names = {"a"}}), .lastRank = 0, .lastScore = 0},
+        Leaderboard{.board = Board::Solo, .best = {}, .lastRank = 0, .lastScore = 5}, // A score without a rank
         FriendRequest{.name = ""},
         FriendRequest{.name = "seventeen bytes!!"},
         FriendAnswer{.name = "", .reply = FriendReply::Accept},
@@ -602,6 +612,30 @@ TEST(PacketCodecAuth, AuthPacketsOnlyTravelOneWay)
         DecodeError::WrongDirection);
     EXPECT_EQ(decodeError(encodeOrFail(makePacket(AuthResult{})), Direction::ClientToServer),
         DecodeError::WrongDirection);
+}
+
+TEST(PacketCodecValidation, RejectsALeaderboardWhoseCountDoesNotMatch)
+{
+    for (const int change : {-1, 1, 10}) {
+        auto datagram = encodeOrFail(makePacket(
+            Leaderboard{.board = Board::Solo, .best = {{.score = 1, .names = {"a"}}}, .lastRank = 1, .lastScore = 1}, 1));
+        const std::size_t count = HeaderSize + 3; // After the reliableId and the board
+        datagram.at(count) = static_cast<std::byte>(1 + change);
+        EXPECT_EQ(decodeError(datagram, Direction::ServerToClient), DecodeError::BadPayloadSize)
+            << change;
+    }
+}
+
+TEST(PacketCodecValidation, RejectsALeaderboardWithAGapInItsNames)
+{
+    auto datagram = encodeOrFail(makePacket(
+        Leaderboard{.board = Board::Multi, .best = {{.score = 1, .names = {"a", "b"}}}, .lastRank = 0, .lastScore = 0}, 1));
+    const std::size_t secondName = HeaderSize + 4 + 4 + NameSize; // reliableId, board, count, score, first name
+    for (std::size_t i = 0; i < NameSize; ++i) {
+        datagram.at(secondName + i) = std::byte{0}; // "a", "", then nothing: fine...
+    }
+    datagram.at(secondName + NameSize) = static_cast<std::byte>('c'); // ...but "a", "", "c" is not
+    EXPECT_EQ(decodeError(datagram, Direction::ServerToClient), DecodeError::InvalidName);
 }
 
 TEST(PacketCodecValidation, RejectsAChatTextWhoseCountDoesNotMatch)
