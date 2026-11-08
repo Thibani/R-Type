@@ -43,7 +43,7 @@ keyboard.
 | **Players told apart by colour, pattern and a P1–P4 tag**, never by colour alone | Colour-blind players can tell the four ships apart, in any mode |
 | **Health is labelled and counted.** "HP" next to pips that empty one by one, whatever their colour | Health never depends on telling green from red |
 | **Missiles told apart by shape.** Player missiles are long comets, enemy missiles are round balls | Telling a threat from a friendly shot never depends on colour |
-| **Hyperlegible numbers.** Scores, P1–P4 tags and player names use Atkinson Hyperlegible; the pixel font is kept for titles and buttons, because its 2 and 5 look alike | Tags and scores can be read at a glance, including with low vision |
+| **Hyperlegible numbers.** Scores, P1–P4 tags and player names use Atkinson Hyperlegible; Bebas Neue is kept for titles, because it is condensed and has few accents | Tags and scores can be read at a glance, including with low vision |
 | **Interface size.** 75, 100, 125 or 150 %, in the settings, saved for the next start. Menus, the HUD and ship tags change size, separately from the window, and the arena keeps its proportions | Larger text and controls for low vision or a small or distant screen; more room for the game on a large one |
 | **The window scales** to any size, with letterboxing that keeps the proportions | Large screens and zoomed displays work |
 | **Unknown entities are drawn as a "?"** instead of being hidden | Nothing on screen is ever invisible |

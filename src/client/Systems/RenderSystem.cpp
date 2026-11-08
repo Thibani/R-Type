@@ -42,8 +42,20 @@ void drawEntity(sf::RenderTarget& target, const Assets& assets, const Settings& 
     const game::Position& position, const Appearance& appearance, sf::Angle rotation, float seconds)
 {
     const sf::Vector2f centre{position.x, position.y};
-    const auto frame
-        = spriteFrame(assets, settings.colourMode, appearance.look, appearance.player, seconds);
+    if (appearance.look == Look::PlayerShip) {
+        const sf::Vector2f size{theme::ShipWidth, theme::ShipHeight};
+        widgets::ship(
+            target, assets, settings.colourMode, {centre - (size / 2.0F), size}, appearance.player);
+        if (appearance.player < theme::Players.size()) {
+            // The tag is interface: it follows the interface size, not the arena
+            const unsigned tagSize = 20U * static_cast<unsigned>(settings.interfaceSize) / 100U;
+            const float above = (size.y / 2.0F) + static_cast<float>(tagSize) + 2.0F;
+            widgets::tag(target, assets, "P" + std::to_string(appearance.player + 1),
+                centre - sf::Vector2f{0.0F, above}, tagSize);
+        }
+        return;
+    }
+    const auto frame = spriteFrame(assets, settings.colourMode, appearance.look, seconds);
     if (!frame) {
         // §5.2: a kind this client does not know is shown, never a crash
         const sf::Vector2f half{PlaceholderSize / 2.0F, PlaceholderSize / 2.0F};
@@ -58,15 +70,6 @@ void drawEntity(sf::RenderTarget& target, const Assets& assets, const Settings& 
     sprite.setPosition(centre);
     sprite.setRotation(rotation);
     target.draw(sprite);
-
-    if (appearance.look == Look::PlayerShip && appearance.player < theme::Players.size()) {
-        // The tag is interface: it follows the interface size, not the arena
-        const unsigned size = 20U * static_cast<unsigned>(settings.interfaceSize) / 100U;
-        const float above = (static_cast<float>(frame->rect.size.y) * frame->scale / 2.0F)
-            + static_cast<float>(size) + 2.0F;
-        widgets::tag(target, assets, "P" + std::to_string(appearance.player + 1),
-            centre - sf::Vector2f{0.0F, above}, size);
-    }
 }
 
 } // namespace
@@ -80,11 +83,9 @@ RenderSystem::RenderSystem(sf::RenderWindow& window, const Assets& assets) noexc
 void RenderSystem::update(ecs::World& world, const ecs::Time& time)
 {
     _window.clear(theme::Letterbox);
-    if (singleton<Session>(world).screen != Screen::Game) {
-        return; // The other screens are pure interface
-    }
     _window.setView(letterboxed({game::arena::Width, game::arena::Height}, _window.getSize()));
 
+    // Every screen has the moving sky. The interface is drawn over it
     sf::RectangleShape space({game::arena::Width, game::arena::Height});
     space.setFillColor(theme::GameBackground);
     _window.draw(space);
@@ -98,6 +99,20 @@ void RenderSystem::update(ecs::World& world, const ecs::Time& time)
             dot.setFillColor(sf::Color(255, 255, 255, static_cast<std::uint8_t>(60 * star.size)));
             _window.draw(dot);
         });
+
+    if (singleton<Session>(world).screen != Screen::Game) {
+        // Not during the game itself: nothing there may look like a shot
+        sf::RectangleShape line;
+        line.setFillColor(theme::Streak);
+        line.setRotation(sf::degrees(-45.0F));
+        world.query<Streak, game::Position>(
+            [&](ecs::Entity /*entity*/, Streak& streak, game::Position& position) {
+                line.setSize({streak.length, 2.0F});
+                line.setPosition({position.x, position.y});
+                _window.draw(line);
+            });
+        return; // The other screens are pure interface
+    }
 
     const Settings& settings = singleton<Settings>(world);
     world.query<game::Position, Appearance>(

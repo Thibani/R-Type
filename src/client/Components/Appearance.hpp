@@ -75,6 +75,11 @@ constexpr Look lookOf(network::protocol::EntityKind kind) noexcept
 }
 
 /// A background star (with a `game::Position` and a `game::Velocity`).
+/// A faint gold line crossing the background of the screens without gameplay.
+struct Streak {
+    float length{}; // Units
+};
+
 struct Star {
     float size{2.0F}; // World units
 };

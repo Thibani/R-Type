@@ -9,8 +9,8 @@
 #include <cstddef>
 #include <cstdint>
 
-/// The "Hangar" style of the mockups: light pixel-art panels, the exact
-/// colours of the ship sprites (r-typesheet42.gif).
+/// The dark style of the Figma mockup: bevelled panels on a starry background.
+/// Each text colour stays readable on its background: see tests/client/SettingsTests.cpp.
 namespace client::theme {
 
 // The interface is laid out on a 1280 × 720 canvas, the game on the
@@ -18,23 +18,29 @@ namespace client::theme {
 inline constexpr float UiWidth = 1280.0F;
 inline constexpr float UiHeight = 720.0F;
 
-inline constexpr sf::Color Background{0xE6, 0xEA, 0xEA};
-inline constexpr sf::Color Grid{82, 90, 90, 18};
-inline constexpr sf::Color Surface{0xFF, 0xFF, 0xFF};
-inline constexpr sf::Color InputBackground{0xF2, 0xF4, 0xF4};
-inline constexpr sf::Color Text{0x25, 0x29, 0x2B};
-inline constexpr sf::Color Muted{0x52, 0x5A, 0x5A};
-inline constexpr sf::Color Blue{0x00, 0x5A, 0x94};
-inline constexpr sf::Color DarkBlue{0x00, 0x3A, 0x60};
-inline constexpr sf::Color LightBlue{0x00, 0xE7, 0xDE};
-inline constexpr sf::Color Green{0x00, 0xA5, 0x00};
-inline constexpr sf::Color Red{0xCE, 0x00, 0x00};
-inline constexpr sf::Color ErrorBackground{0xFF, 0xE8, 0xE3};
-inline constexpr sf::Color Hull{0x52, 0x5A, 0x5A};
-inline constexpr sf::Color HullLight{0xA5, 0xA5, 0xA5};
-inline constexpr sf::Color GameBackground{0x06, 0x2A, 0x45};
-inline constexpr sf::Color Overlay{6, 42, 69, 209}; // GameBackground at 82 %
+inline constexpr sf::Color Background{0x0A, 0x0E, 0x14};
+inline constexpr sf::Color Surface{0x11, 0x1C, 0x27};
+inline constexpr sf::Color InputBackground{0x0A, 0x0E, 0x14};
+inline constexpr sf::Color Text{0xF1, 0xF5, 0xF7};
+inline constexpr sf::Color Muted{0x93, 0xA7, 0xB6};
+// The accent: focus, caret, status. Still called Blue for the branches using it
+inline constexpr sf::Color Blue{0x2F, 0xE6, 0xD0};
+inline constexpr sf::Color LightBlue = Blue;
+inline constexpr sf::Color Primary{0xFF, 0x5A, 0x36}; // Main button
+inline constexpr sf::Color OnPrimary{0x0A, 0x0E, 0x14}; // Text on the main button
+inline constexpr sf::Color Gold{0xC9, 0xA4, 0x5C}; // Decoration
+inline constexpr sf::Color Streak{0xC9, 0xA4, 0x5C, 70}; // Gold lines crossing the background
+inline constexpr sf::Color Green{0x38, 0xD2, 0x7A};
+inline constexpr sf::Color Red{0xFF, 0x5A, 0x36};
+inline constexpr sf::Color ErrorBackground{0x2A, 0x14, 0x10};
+inline constexpr sf::Color Hull{0x30, 0x41, 0x4F};
+inline constexpr sf::Color GameBackground = Background;
+inline constexpr sf::Color Overlay{10, 14, 20, 209}; // GameBackground at 82 %
 inline constexpr sf::Color Letterbox{0x00, 0x00, 0x00};
+
+/// A ship in the arena, close to its hitbox: units, as drawn everywhere in these proportions.
+inline constexpr float ShipWidth = 72.0F;
+inline constexpr float ShipHeight = 26.0F;
 
 /// P1-P4: the colour of each ship. Never alone: each also has a pattern and
 /// a "P1"-"P4" tag, so colour-blind players can tell them apart.

@@ -110,9 +110,27 @@ team chose accessibility, accounts, social features and game modes instead.
 | `InputHistory`                | Last 8 input masks                      | Each INPUT repeats them: a lost packet loses no key (protocol §4.2) |
 | Packets                       | `std::variant` + `std::visit`           | One `apply()` per packet type, checked at compile time |
 | Starfield                     | Stars wrap from left to right           | Constant number of entities, no allocation   |
+| Gold streaks                  | Lines back from the bottom left once out at the top right | Constant per streak, 7 streaks |
 | Window scaling                | Letterboxed `sf::View`                  | Any window size, proportions kept            |
 
 ---
+
+## 4b. Interface: dark style, drawn with SFML shapes
+
+The screens follow a Figma mockup (dark panels, cut corners, banners) with the same
+1280 × 720 canvas as the interface.
+
+| Choice | Why | Rejected |
+|---|---|---|
+| Panels and banners as `sf::ConvexShape` | Sharp at any window size, recoloured by one constant | Images: blurred when scaled, redone at each change of the mockup |
+| Moving background from the existing stars, plus 7 gold lines | Already simulated with time; a few rectangles per frame | A video or a particle system: heavier, for a discreet effect |
+| No gold lines during the game | Nothing in the background may look like a shot | The same background everywhere |
+| Ship in two images: a fixed hull, then its plating tinted with the player's colour | One drawing for four players and four colour modes, tinted when drawn | One image per colour and mode: 16 files to export again at each change |
+| Ship drawn 72 × 26 units, for a 64 × 32 hitbox | Taller than the drawing's own proportions, so hits look fair | Exact proportions: 72 × 20, so missiles would hit 6 units from the hull |
+| Dark text on the orange button | Contrast 6.2:1; white would give about 3:1 | White text, as in the mockup |
+
+`tests/client/SettingsTests.cpp` checks the contrast of every text colour (WCAG, at least
+4.5:1) and that no clickable parts overlap or leave the canvas.
 
 ## 5. Storage
 

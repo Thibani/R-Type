@@ -15,12 +15,6 @@ namespace client {
 
 namespace {
 
-// Rows of r-typesheet42: light blue, pink, green, red (then blue, unused).
-// Column 2 is the ship flying level. 33 × 17 × 2 ≈ the server's 64 × 32 hitbox.
-constexpr sf::IntRect shipFrame(int row) noexcept
-{
-    return {{66, row * 17}, {33, 17}};
-}
 constexpr sf::IntRect BydoFrame{{5, 6}, {21, 24}};
 constexpr sf::IntRect PlayerMissileFrame{{249, 105}, {16, 8}};
 constexpr sf::IntRect EnemyMissileFrame{{243, 277}, {12, 10}};
@@ -119,15 +113,12 @@ void tintFrame(sf::Image& image, sf::IntRect frame, sf::Color from, sf::Color to
 }
 
 /// The skin of `mode`, from the original sprite sheets.
-bool loadSkin(Skin& skin, ColourMode mode, sf::Image ships, sf::Image bydos, sf::Image missiles,
+bool loadSkin(Skin& skin, ColourMode mode, sf::Image bydos, sf::Image missiles,
     const std::array<sf::Image, SharedSheets.size()>& shared)
 {
     const theme::Palette& palette = theme::Palettes.at(static_cast<std::size_t>(mode));
     if (mode != ColourMode::Off) {
         const theme::Palette& original = theme::Palettes.at(static_cast<std::size_t>(ColourMode::Off));
-        for (std::size_t row = 0; row < palette.players.size(); ++row) {
-            tintFrame(ships, shipFrame(static_cast<int>(row)), original.players.at(row), palette.players.at(row));
-        }
         repaint(bydos, BydoFrame, [&](sf::Color pixel) {
             const std::size_t part = theme::bydoPart(pixel);
             return theme::tinted(pixel, original.bydo.at(part), palette.bydo.at(part));
@@ -146,8 +137,8 @@ bool loadSkin(Skin& skin, ColourMode mode, sf::Image ships, sf::Image bydos, sf:
             return false;
         }
     }
-    return loadTexture(skin.repairKits, repairKitImage()) && loadTexture(skin.ships, ships)
-        && loadTexture(skin.bydos, bydos) && loadTexture(skin.missiles, missiles);
+    return loadTexture(skin.repairKits, repairKitImage()) && loadTexture(skin.bydos, bydos)
+        && loadTexture(skin.missiles, missiles);
 }
 
 } // namespace
@@ -159,12 +150,10 @@ std::expected<void, std::string> Assets::load(Assets& assets, const std::filesys
     };
 
     const std::filesystem::path sprites = folder / "sprites";
-    sf::Image ships;
     sf::Image bydos;
     sf::Image missiles;
-    for (const auto& [image, file] : {std::pair{&ships, "r-typesheet42.gif"},
-             std::pair{&bydos, "r-typesheet5.gif"},
-             std::pair{&missiles, "r-typesheet1.gif"}}) {
+    for (const auto& [image, file] :
+        {std::pair{&bydos, "r-typesheet5.gif"}, std::pair{&missiles, "r-typesheet1.gif"}}) {
         if (!image->loadFromFile(sprites / file)) {
             return fail(sprites / file);
         }
@@ -176,14 +165,22 @@ std::expected<void, std::string> Assets::load(Assets& assets, const std::filesys
         }
     }
     for (std::size_t mode = 0; mode < assets.skins.size(); ++mode) {
-        if (!loadSkin(assets.skins.at(mode), static_cast<ColourMode>(mode), ships, bydos, missiles,
-                shared)) {
+        if (!loadSkin(assets.skins.at(mode), static_cast<ColourMode>(mode), bydos, missiles, shared)) {
             return std::unexpected("cannot create the textures of the colour modes");
         }
     }
 
+    const std::filesystem::path ship = folder / "ship";
+    for (const auto& [texture, file] :
+        {std::pair{&assets.shipHull, "hull.png"}, std::pair{&assets.shipColour, "colour.png"}}) {
+        if (!texture->loadFromFile(ship / file) || !texture->generateMipmap()) {
+            return fail(ship / file);
+        }
+        texture->setSmooth(true); // A large drawing, shown small: not pixel art
+    }
+
     const std::filesystem::path fonts = folder / "fonts";
-    for (const auto& [font, file] : {std::pair{&assets.display, "PixelifySans.ttf"},
+    for (const auto& [font, file] : {std::pair{&assets.display, "BebasNeue-Regular.ttf"},
              std::pair{&assets.body, "AtkinsonHyperlegible-Regular.ttf"},
              std::pair{&assets.bodyBold, "AtkinsonHyperlegible-Bold.ttf"}}) {
         if (!font->openFromFile(fonts / file)) {
@@ -246,14 +243,10 @@ SpriteFrame forceFrame(const Skin& skin, float seconds)
 } // namespace
 
 std::optional<SpriteFrame> spriteFrame(
-    const Assets& assets, ColourMode mode, Look look, std::uint8_t player, float seconds)
+    const Assets& assets, ColourMode mode, Look look, float seconds)
 {
     const Skin& skin = assets.skins.at(static_cast<std::size_t>(mode));
     switch (look) {
-    case Look::PlayerShip: {
-        const int row = player < theme::Players.size() ? player : 0;
-        return SpriteFrame{.texture = &skin.ships, .rect = shipFrame(row), .scale = 2.0F};
-    }
     case Look::Bydo:
         return SpriteFrame{.texture = &skin.bydos, .rect = BydoFrame, .scale = 2.5F};
     case Look::PlayerMissile:
@@ -288,6 +281,7 @@ std::optional<SpriteFrame> spriteFrame(
     }
     case Look::RepairKit: // 16 × 16 × 2.5: hitbox 40 × 40
         return frame(skin.repairKits, {0, 0}, {16, 16}, 2.5F);
+    case Look::PlayerShip: // Drawn by widgets::ship
     case Look::Unknown:
         break;
     }

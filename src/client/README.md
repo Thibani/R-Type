@@ -36,7 +36,7 @@ Technology choices: [`docs/technical-study/client.md`](../../docs/technical-stud
 | `Components/Controls.hpp`          | `PlayerControls` (keys held), `InputHistory` (last 8 ticks)|
 | `Components/SoundEvent.hpp`        | A sound to play this frame                                 |
 | `Components/Settings.hpp`          | `Settings` (volume, colour mode, interface size, key bindings), `Action`                |
-| `Ui/`                              | Hangar theme, screen layout, drawing helpers, letterboxing, sprite animation |
+| `Ui/`                              | Dark theme, screen layout, drawing helpers, letterboxing, sprite animation |
 
 Everything except `main.cpp` is the `rtype_client` library, so the tests can
 use it directly (`tests/client/`, no window needed).
@@ -73,6 +73,9 @@ other, they share components. `RenderSystem` only reads `Position` and
 | Waiting room  | Only if the server sends GAME_STATE = WAITING_FOR_PLAYERS         |
 | Game over     | GAME_STATE = GAME_OVER: team score, level reached, crew; **Play again** (RESTART ×3) or Back to menu |
 
+Every screen has the moving sky of `StarfieldSystem` behind it. The screens without
+gameplay also have slow gold streaks: never in the game, where they could look like shots.
+
 Esc opens the in-game menu (the game keeps running) or leaves the other
 screens. Players are told apart by colour, pattern and P1-P4 tag. Each colour mode has
 its own copy of the sprites, repainted at startup (`Assets.cpp`, `theme::Palettes`).
@@ -89,7 +92,7 @@ are saved.
 
 **Interface size** keeps every position on the 1280 × 720 canvas: the view
 shows more or less of it (`layout::visibleArea()`), and clicks use the same view.
-The HUD stays in the corners and wraps its chips. Above 100 %, the connection
+The HUD stays in the corners and wraps its player cards. Above 100 %, the connection
 form, waiting room and game over use a compact form. 150 % is the maximum because
 it is the largest size at which every screen still fits.
 
@@ -158,6 +161,8 @@ button.pod = 1
 2. Give it a frame in `spriteFrame()` (`Assets.cpp`): texture, rectangle in
    the sheet, scale. A new sheet goes in `assets/sprites/`, in `Skin` and in
    `SharedSheets` (`Assets.cpp`) so that every colour mode loads it.
+   Ships are the exception: `widgets::ship` draws `assets/ship/hull.png`, then
+   `colour.png` tinted with the player's colour of the current mode.
 3. Until then, the kind is drawn as a "?": nothing else to change, the
    network code already creates the entity.
 

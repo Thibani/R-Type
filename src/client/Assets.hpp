@@ -20,7 +20,6 @@ namespace client {
 
 /// The images of one colour mode.
 struct Skin {
-    sf::Texture ships; // r-typesheet42.gif: one row per ship colour
     sf::Texture bydos; // r-typesheet5.gif
     sf::Texture missiles; // r-typesheet1.gif: player and enemy missiles
     sf::Texture pataPatas; // r-typesheet8.gif
@@ -42,7 +41,9 @@ struct Skin {
 /// a reference: it must outlive the game loop.
 struct Assets {
     std::array<Skin, ColourModeCount> skins; // Indexed by `ColourMode`
-    sf::Font display; // Pixelify Sans: titles and buttons, never digits (its 2 and 5 look alike)
+    sf::Texture shipHull; // The ship, the same for everyone
+    sf::Texture shipColour; // Its parts drawn on top in the player's colour
+    sf::Font display; // Bebas Neue: titles only, it has few accents (names use `bodyBold`)
     sf::Font body; // Atkinson Hyperlegible: readable text, numbers, names and tags
     sf::Font bodyBold;
     std::array<sf::SoundBuffer, 4> sounds; // Indexed by `Sound`
@@ -66,12 +67,12 @@ struct SpriteFrame {
     bool mirrored{false};
 };
 
-/// The frame of `look` (for a ship, `player` selects the colour row; for the
-/// boss, `seconds` since the start picks its animation frame).
-/// Unknown looks have no frame: they are drawn as a "?" placeholder.
+/// The frame of `look` (for the boss, `seconds` since the start picks its
+/// animation frame). Ships (`widgets::ship`) and unknown looks have none:
+/// unknown ones are drawn as a "?" placeholder.
 [[nodiscard]]
 std::optional<SpriteFrame> spriteFrame(
-    const Assets& assets, ColourMode mode, Look look, std::uint8_t player, float seconds = 0.0F);
+    const Assets& assets, ColourMode mode, Look look, float seconds = 0.0F);
 
 /// The `assets/` folder: next to the executable, else in the current folder.
 [[nodiscard]]
