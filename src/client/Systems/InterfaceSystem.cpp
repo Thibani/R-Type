@@ -787,7 +787,7 @@ void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
 {
     constexpr float margin = 20.0F;
     constexpr float gap = 12.0F;
-    const float rowHeight = layout::PlayerCard.y + gap;
+    constexpr float rowHeight = layout::PlayerCard.y + gap; // The tallest boxes
     const float left = area.position.x + margin;
     const float rightEdge = area.position.x + area.size.x - margin;
     const float firstRow = area.position.y + margin;
@@ -830,10 +830,11 @@ void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
     const sf::FloatRect panel = bossPanel(area, firstRow, statsEnd, firstRowStart, row + rowHeight);
     drawBossBar(target, assets, world, session, panel);
 
-    // Under the score, away from the cards: they can change without hiding it
+    // On the left, under every box: the cards can change without hiding it
     if (!session.notice.empty() && now < session.noticeUntil) {
         const float width = textWidth(assets.bodyBold, session.notice, 16) + 28.0F;
-        const sf::FloatRect toast{{left, firstRow + 76.0F}, {width, 40.0F}};
+        const float below = std::max(row, panel.position.y) + rowHeight + 8.0F;
+        const sf::FloatRect toast{{left, below}, {width, 40.0F}};
         widgets::panel(target, toast, theme::Surface, theme::Blue, 1.5F, 8.0F);
         text(target, assets.bodyBold, session.notice, 16, theme::Text,
             toast.position + sf::Vector2f{14.0F, 12.0F});
@@ -951,7 +952,7 @@ void drawSettings(sf::RenderTarget& target, const Assets& assets, const Session&
         layout::InterfaceSizeSelector, std::to_string(settings.interfaceSize) + " %",
         session.focus == layout::InterfaceSizeRow);
 
-    box(target, {{640.0F, 184.0F}, {1.0F, 360.0F}}, theme::Hull, theme::Hull, 0.0F);
+    box(target, {{640.0F, 184.0F}, {1.0F, 328.0F}}, theme::Hull, theme::Hull, 0.0F);
     text(target, assets.display, "Key bindings", 32, theme::Text, {662.0F, 186.0F});
     constexpr std::array<std::string_view, ActionCount> actions{
         "Move up",
@@ -973,11 +974,9 @@ void drawSettings(sf::RenderTarget& target, const Assets& assets, const Session&
         session.focus == layout::BackRow);
 
     if (!settings.saveError.empty()) {
-        // In place of the help line: under both columns
-        errorBox(target, assets, {{245.0F, 550.0F}, {790.0F, 32.0F}}, settings.saveError);
-    } else {
-        centredHelp(target, assets, "Arrows: move  ·  Enter: change  ·  Esc: back", 556.0F);
+        errorBox(target, assets, {{245.0F, 520.0F}, {790.0F, 32.0F}}, settings.saveError);
     }
+    centredHelp(target, assets, "Arrows: move  ·  Enter: change  ·  Esc: back", 562.0F);
 }
 
 /// "Ann, Ben, Cid": the accounts that started a game.

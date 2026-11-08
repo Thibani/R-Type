@@ -290,15 +290,14 @@ constexpr sf::FloatRect settingsRow(int row) noexcept
     if (row == InterfaceSizeRow) {
         return {{Left, 316.0F}, {Width, 52.0F}};
     }
-    // Reset and Back end the left column on the last two rows of the right one
     if (row == ResetRow) {
-        return {{Left, 442.0F}, {Width, 48.0F}};
+        return {{Left, 380.0F}, {Width, 52.0F}};
     }
     if (row == BackRow) {
-        return {{Left, 496.0F}, {Width, 48.0F}};
+        return {{Left, 444.0F}, {Width, 52.0F}};
     }
-    // One row per action, 6 of them since the Force
-    return {{650.0F, 228.0F + (static_cast<float>(row - FirstKeyRow) * 54.0F)}, {385.0F, 44.0F}};
+    // Six actions under the "Key bindings" title, ending above the error message
+    return {{650.0F, 228.0F + (static_cast<float>(row - FirstKeyRow) * 48.0F)}, {385.0F, 44.0F}};
 }
 
 // Game over: "Play again" first, so Enter starts a new game; "Back to menu" returns to the
@@ -307,17 +306,22 @@ inline constexpr int PlayAgainButton = 0;
 inline constexpr int BackToMenuButton = 1;
 
 [[nodiscard]]
+constexpr float gameOverButtonsTop(int interfaceSize) noexcept
+{
+    return isCompact(interfaceSize) ? 526.0F : 636.0F;
+}
+
+[[nodiscard]]
 constexpr sf::FloatRect playAgain(int interfaceSize) noexcept
 {
-    return {{410.0F, isCompact(interfaceSize) ? 526.0F : 612.0F}, {220.0F, 56.0F}};
+    return {{352.0F, gameOverButtonsTop(interfaceSize)}, {280.0F, 52.0F}};
 }
 
 /// Beside Play again; alone and centred after the game of a group.
 [[nodiscard]]
 constexpr sf::FloatRect backToMenu(int interfaceSize, bool beside = true) noexcept
 {
-    return {
-        {beside ? 650.0F : 530.0F, isCompact(interfaceSize) ? 526.0F : 612.0F}, {220.0F, 56.0F}};
+    return {{beside ? 648.0F : 500.0F, gameOverButtonsTop(interfaceSize)}, {280.0F, 52.0F}};
 }
 
 /// The part of the canvas shown at this interface size, around what the screen
