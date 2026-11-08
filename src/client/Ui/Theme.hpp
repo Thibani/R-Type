@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <array>
+#include <span>
+#include <utility>
 #include <cstddef>
 #include <cstdint>
 
@@ -102,6 +104,45 @@ inline constexpr std::array<Palette, ColourModeCount> Palettes{
     },
 };
 
+/// True for a pixel `tinted()` repaints: visible, and not a hull grey.
+[[nodiscard]]
+inline bool isTintable(sf::Color pixel) noexcept
+{
+    constexpr int greyChroma = 30; // Up to here it is a hull grey, not a colour
+    const auto [low, high] = std::minmax({pixel.r, pixel.g, pixel.b});
+    return pixel.a != 0 && high - low > greyChroma;
+}
+
+/// Perceived brightness, from 0 to 1: unlike HSL lightness, it tells pure blue
+/// from cyan.
+[[nodiscard]]
+constexpr float luma(sf::Color colour) noexcept
+{
+    return ((0.299F * static_cast<float>(colour.r)) + (0.587F * static_cast<float>(colour.g))
+               + (0.114F * static_cast<float>(colour.b)))
+        / 255.0F;
+}
+
+/// A grey as bright as the average tintable pixel, given each colour of a
+/// sheet and how many pixels have it: the `from` of `tinted()` for a sheet with
+/// no single main colour, so its middle shades get the new colour. Mid grey if
+/// none is tintable.
+[[nodiscard]]
+inline sf::Color averageShade(std::span<const std::pair<sf::Color, std::size_t>> colours) noexcept
+{
+    double total = 0.0;
+    std::size_t count = 0;
+    for (const auto& [colour, pixels] : colours) {
+        if (isTintable(colour)) {
+            total += static_cast<double>(luma(colour)) * static_cast<double>(pixels);
+            count += pixels;
+        }
+    }
+    const double shade = count == 0 ? 0.5 : total / static_cast<double>(count);
+    const auto grey = static_cast<std::uint8_t>(shade * 255.0);
+    return {grey, grey, grey};
+}
+
 /// `pixel` repainted so that the sprite's main colour `from` becomes `to`: a
 /// pixel brighter than `from` fades to white, a darker one to black, so the
 /// sprite keeps its shading and details. Greys (the hull) and transparent
@@ -109,17 +150,9 @@ inline constexpr std::array<Palette, ColourModeCount> Palettes{
 [[nodiscard]]
 inline sf::Color tinted(sf::Color pixel, sf::Color from, sf::Color to) noexcept
 {
-    constexpr int greyChroma = 30; // Up to here it is a hull grey, not a colour
-    const auto [low, high] = std::minmax({pixel.r, pixel.g, pixel.b});
-    if (pixel.a == 0 || high - low <= greyChroma) {
+    if (!isTintable(pixel)) {
         return pixel;
     }
-    // Perceived brightness: unlike HSL lightness, it tells pure blue from cyan
-    const auto luma = [](sf::Color colour) {
-        return ((0.299F * static_cast<float>(colour.r)) + (0.587F * static_cast<float>(colour.g))
-                   + (0.114F * static_cast<float>(colour.b)))
-            / 255.0F;
-    };
     const float shade = luma(pixel);
     const float reference = luma(from);
     const auto channel = [&](std::uint8_t value) {

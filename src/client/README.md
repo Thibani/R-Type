@@ -81,7 +81,9 @@ gameplay also have slow gold streaks: never in the game, where they could look l
 Esc opens the in-game menu (alone, the game pauses: PAUSE; in a group it keeps running) or leaves the other
 screens: the form quits, the waiting room and game over go back to the main page, and
 the main page itself ignores it, since logging out has its own button. Players are told apart by colour, pattern and P1-P4 tag. Each colour mode has
-its own copy of the sprites, repainted at startup (`Assets.cpp`, `theme::Palettes`).
+its own copy of the sprites, repainted at startup (`Assets.cpp`, `theme::Palettes`):
+every enemy in the Bydo's colours, the Force and its capsule in the player
+missile's.
 
 **Group**: the main page is the lobby. One card per member, in the colour they will have in
 the game. The leader gets a code (New code, Delete), can Kick a member, give the role (Lead), and

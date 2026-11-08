@@ -33,7 +33,17 @@ public:
 
 /// Every game running, on a singleton of the main World. A room goes with its last player:
 /// that is when its score enters the leaderboard (`RoomSystem`).
+///
+/// Move-only, said explicitly: MSVC instantiates the copy of a component, which a map of
+/// unique_ptr cannot do.
 struct GameRooms {
+    GameRooms() = default;
+    ~GameRooms() = default;
+    GameRooms(const GameRooms&) = delete;
+    GameRooms& operator=(const GameRooms&) = delete;
+    GameRooms(GameRooms&&) noexcept = default;
+    GameRooms& operator=(GameRooms&&) noexcept = default;
+
     std::map<std::uint32_t, std::unique_ptr<GameRoom>> rooms;
     std::uint32_t nextId{0};
 };
