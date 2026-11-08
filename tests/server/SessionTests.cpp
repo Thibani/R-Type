@@ -15,6 +15,7 @@
 #include "network/Transport/UdpSocket.hpp"
 #include "server/AccountStore.hpp"
 #include "server/Components/ClientMessage.hpp"
+#include "server/Components/Combat.hpp"
 #include "server/Components/NetClient.hpp"
 #include "server/Components/Player.hpp"
 #include "server/FriendStore.hpp"
@@ -22,6 +23,7 @@
 #include "server/Groups.hpp"
 #include "server/MessageStore.hpp"
 #include "server/Network.hpp"
+#include "server/ScoreStore.hpp"
 #include "server/ServerSystems.hpp"
 #include "server/Singleton.hpp"
 #include "server/Systems/ChatSystem.hpp"
@@ -115,6 +117,16 @@ server::MessageStore loadMessagesOrFail(const std::filesystem::path& file)
     return std::move(*messages);
 }
 
+server::ScoreStore loadScoresOrFail(const std::filesystem::path& file)
+{
+    auto scores = server::ScoreStore::load(file);
+    if (!scores) {
+        ADD_FAILURE() << "cannot load the scores: " << scores.error();
+        std::abort();
+    }
+    return std::move(*scores);
+}
+
 /// Copies the ClientMessages seen this frame, before they are discarded.
 class MessageRecorder final : public ecs::System {
 public:
@@ -143,8 +155,9 @@ public:
         : _accounts(loadOrFail(accountsFile != nullptr ? *accountsFile : _ownFile.path(), cost))
         , _friends(loadFriendsOrFail(_friendsFile.path()))
         , _messages(loadMessagesOrFail(_messagesFile.path()))
+        , _scores(loadScoresOrFail(_scoresFile.path()))
     {
-        server::installSystems(_world, _loop, *_network, _accounts, _friends, _messages);
+        server::installSystems(_world, _loop, *_network, _accounts, _friends, _messages, _scores);
         // Most tests are not about the countdown: `CountdownSeconds` sets it back for those
         server::singleton<server::Groups>(_world).countdownSeconds = 0.0F;
         _loop.frameStart().add<MessageRecorder>(messages); // After every server system
@@ -239,6 +252,18 @@ public:
         return _friendsFile.path();
     }
 
+    [[nodiscard]]
+    server::ScoreStore& scores() noexcept
+    {
+        return _scores;
+    }
+
+    [[nodiscard]]
+    const std::filesystem::path& scoresFile() const noexcept
+    {
+        return _scoresFile.path();
+    }
+
     template <typename System>
     [[nodiscard]]
     System& system()
@@ -257,9 +282,11 @@ private:
     testing_players::TemporaryFile _ownFile;
     testing_players::TemporaryFile _friendsFile;
     testing_players::TemporaryFile _messagesFile;
+    testing_players::TemporaryFile _scoresFile;
     server::AccountStore _accounts;
     server::FriendStore _friends;
     server::MessageStore _messages;
+    server::ScoreStore _scores;
     // Declared first, so destroyed last: the thread outlives the systems using it
     std::unique_ptr<network::NetworkThread> _network = openNetworkOrFail();
     ecs::World _world;
@@ -2763,4 +2790,127 @@ TEST(Parallel, EachGameStartsWithItsOwnScoreAndNoEnemies)
     ASSERT_TRUE(fresh.has_value());
     EXPECT_EQ(fresh->entities.size(), 1U); // Only their ship
     EXPECT_GE(fresh->serverTick, old->serverTick); // Keeps growing for the client (§8.4)
+}
+
+// --- Leaderboard (§8.8) ----------------------------------------------------------
+
+namespace {
+
+/// Sets the team score of every game running, as if the players had earned it.
+void setScore(TestServer& server, std::uint32_t score)
+{
+    for (const auto& [id, room] : server.rooms()) {
+        server::singleton<server::TeamScore>(room->world).value = score;
+    }
+}
+
+/// The ranking `board`, as the server answers `client`.
+std::optional<Leaderboard> askLeaderboard(TestServer& server, TestClient& client, Board board)
+{
+    client.sendReliable(LeaderboardRequest{.board = board});
+    return waitFor<Leaderboard>(server, client);
+}
+
+} // namespace
+
+TEST(Leaderboard, ASoloGameEntersTheSoloRankingWhenItEnds)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)connectOrFail(server, client, "Dave");
+    setScore(server, 1234);
+
+    client.sendReliable(LeaveGame{});
+    deliver(server);
+    deliver(server);
+
+    const auto solo = askLeaderboard(server, client, Board::Solo);
+    ASSERT_TRUE(solo.has_value());
+    ASSERT_EQ(solo->best.size(), 1U);
+    EXPECT_EQ(solo->best[0].score, 1234U);
+    EXPECT_EQ(solo->best[0].names, std::vector<std::string>{"Dave"});
+    EXPECT_EQ(solo->lastRank, 1U);
+    EXPECT_EQ(solo->lastScore, 1234U);
+    const auto multi = askLeaderboard(server, client, Board::Multi);
+    ASSERT_TRUE(multi.has_value());
+    EXPECT_TRUE(multi->best.empty());
+    EXPECT_EQ(multi->lastRank, 0U); // Never played in a group
+}
+
+TEST(Leaderboard, AGroupGameCountsUntilItsLastPlayerLeaves)
+{
+    TestServer server;
+    TestClient first(server.address());
+    TestClient second(server.address());
+    (void)connectTogether(server, first, "One", second, "Two");
+    setScore(server, 300);
+
+    first.sendReliable(LeaveGame{});
+    deliver(server);
+    deliver(server);
+    const auto meanwhile = askLeaderboard(server, first, Board::Multi);
+    ASSERT_TRUE(meanwhile.has_value());
+    EXPECT_TRUE(meanwhile->best.empty()); // Two still plays: the game goes on
+    setScore(server, 800); // ...and keeps scoring
+
+    second.send(Disconnect{.reason = DisconnectReason::Quit});
+    deliver(server);
+    server.frame();
+
+    const auto multi = askLeaderboard(server, first, Board::Multi);
+    ASSERT_TRUE(multi.has_value());
+    ASSERT_EQ(multi->best.size(), 1U);
+    EXPECT_EQ(multi->best[0].score, 800U);
+    EXPECT_EQ(multi->best[0].names, (std::vector<std::string>{"One", "Two"}));
+    EXPECT_EQ(multi->lastRank, 1U); // One left early, but the game is theirs too
+}
+
+TEST(Leaderboard, TheLastGameIsToldEvenBelowTheTen)
+{
+    TestServer server;
+    for (std::uint32_t i = 0; i < 12; ++i) {
+        ASSERT_TRUE(server.scores().add(1000 + i, {"Other"}));
+    }
+    TestClient client(server.address());
+    (void)connectOrFail(server, client, "Dave");
+    setScore(server, 10);
+    client.sendReliable(LeaveGame{});
+    deliver(server);
+    deliver(server);
+
+    const auto solo = askLeaderboard(server, client, Board::Solo);
+
+    ASSERT_TRUE(solo.has_value());
+    EXPECT_EQ(solo->best.size(), LeaderboardSize);
+    EXPECT_EQ(solo->best.front().score, 1011U);
+    EXPECT_EQ(solo->lastRank, 13U);
+    EXPECT_EQ(solo->lastScore, 10U);
+}
+
+TEST(Leaderboard, BeforeLoggingInItIsIgnored)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)openSessionOrFail(server, client, "Dave");
+
+    EXPECT_FALSE(askLeaderboard(server, client, Board::Solo).has_value());
+}
+
+TEST(Leaderboard, TheFileIsWrittenWithinASecond)
+{
+    TestServer server;
+    TestClient client(server.address());
+    (void)connectOrFail(server, client, "Dave");
+    setScore(server, 77);
+    client.sendReliable(LeaveGame{});
+    deliver(server);
+    deliver(server);
+
+    for (int i = 0; i < 12; ++i) {
+        server.frame(0.1F);
+    }
+
+    std::ifstream input(server.scoresFile(), std::ios::binary);
+    const std::string content{std::istreambuf_iterator<char>(input), {}};
+    EXPECT_NE(content.find("S\t77\tDave\n"), std::string::npos) << content;
 }

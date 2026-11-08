@@ -6,6 +6,7 @@
 #include "server/AccountStore.hpp"
 #include "server/FriendStore.hpp"
 #include "server/MessageStore.hpp"
+#include "server/ScoreStore.hpp"
 
 namespace server {
 
@@ -22,8 +23,9 @@ namespace server {
 ///                 FriendSystem          friends' messages, who is online, saved once a second
 ///                 GroupSystem           group orders, countdown, game started, GROUP_STATE
 ///                 ChatSystem            chat and private messages, saved once a second
+///                 LeaderboardSystem     LEADERBOARD_REQUEST → LEADERBOARD, saved once a second
 ///     frameEnd    SessionCleanupSystem  Disconnecting → PLAYER_LEFT, entity destroyed
-///                 RoomSystem            one frame of each game, empty games removed
+///                 RoomSystem            one frame of each game, ended games scored and removed
 ///                 NetSendSystem         reliable messages, resends, heartbeats
 ///                 SnapshotSystem        SNAPSHOT of each game, 30 Hz
 ///                 DiscardPacketsSystem  unhandled messages destroyed
@@ -31,11 +33,11 @@ namespace server {
 /// Every system runs on the game thread; `socket` hands datagrams to and from
 /// the network thread.
 ///
-/// `accounts`, `friends` and `messages` must outlive `loop`.
+/// `accounts`, `friends`, `messages` and `scores` must outlive `loop`.
 ///
 /// `main` and the tests both use it, so they always run the same server.
 void installSystems(ecs::World& world, ecs::GameLoop& loop, network::NetworkThread& socket,
-    AccountStore& accounts, FriendStore& friends, MessageStore& messages);
+    AccountStore& accounts, FriendStore& friends, MessageStore& messages, ScoreStore& scores);
 
 /// In the loop of each game:
 ///

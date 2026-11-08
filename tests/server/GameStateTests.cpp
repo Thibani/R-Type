@@ -1,6 +1,7 @@
 // The authoritative game state, system by system, on a plain World: no
 // sockets, the tests create the components the network systems would.
 
+#include "TemporaryFile.hpp"
 #include "TestPlayers.hpp"
 #include "ecs/Time/Time.hpp"
 #include "ecs/World/World.hpp"
@@ -13,6 +14,7 @@
 #include "server/GameRoom.hpp"
 #include "server/NetIds.hpp"
 #include "server/Network.hpp"
+#include "server/ScoreStore.hpp"
 #include "server/Singleton.hpp"
 #include "server/Systems/InputSystem.hpp"
 #include "server/Systems/PlayerShipSystem.hpp"
@@ -28,6 +30,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <set>
+#include <string>
 #include <variant>
 #include <vector>
 
@@ -428,12 +431,20 @@ TEST(GameState, LeavingTheGameLeavesNothingOfItOnThePlayer)
     world.addComponent(
         world.createEntity(), server::ClientMessage{.client = player, .payload = LeaveGame{}});
 
+    const testing_players::TemporaryFile file;
+    auto scores = server::ScoreStore::load(file.path());
+    ASSERT_TRUE(scores.has_value());
+
     server::RoomMessageSystem{}.update(world, ecs::Time{});
-    server::RoomSystem{}.update(world, ecs::Time{});
+    server::RoomSystem{*scores}.update(world, ecs::Time{});
 
     EXPECT_FALSE(world.hasComponent<server::InRoom>(player));
     EXPECT_TRUE(client.knownEntities.empty());
     EXPECT_FALSE(client.knownScore.has_value());
     EXPECT_TRUE(world.hasComponent<server::LoggedIn>(player));
     EXPECT_TRUE(server::singleton<server::GameRooms>(world).rooms.empty()); // Its game with it
+    // The game ended with its only player: it entered the solo ranking
+    const auto best = scores->best(Board::Solo, LeaderboardSize);
+    ASSERT_EQ(best.size(), 1U);
+    EXPECT_EQ(best[0].names, std::vector<std::string>{"Player0"});
 }

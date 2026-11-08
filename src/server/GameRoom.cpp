@@ -42,6 +42,7 @@ void startGame(ecs::World& sessions, std::span<const ecs::Entity> players, float
         sessions.addComponent(session, InRoom{.room = id, .player = player, .playerId = playerId});
 
         NetClient& client = sessions.getComponent<NetClient>(session);
+        room->names.push_back(client.name);
         client.channel.queueReliable(JoinResult{.code = JoinCode::Ok, .playerId = playerId});
         for (std::size_t other = 0; other < players.size(); ++other) {
             if (other != place) {

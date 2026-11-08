@@ -57,6 +57,11 @@ std::expected<ServerOptions, std::string> parseArguments(
                 return std::unexpected(std::string(argument) + " needs a file");
             }
             options.messagesFile = arguments[++i];
+        } else if (argument == "--scores") {
+            if (i + 1 == arguments.size()) {
+                return std::unexpected(std::string(argument) + " needs a file");
+            }
+            options.scoresFile = arguments[++i];
         } else {
             return std::unexpected("unknown argument '" + std::string(argument) + "'");
         }
@@ -67,10 +72,13 @@ std::expected<ServerOptions, std::string> parseArguments(
 std::string_view usage() noexcept
 {
     return "USAGE: r-type_server [-p port] [--accounts file] [--friends file] [--messages file]\n"
+           "                    [--scores file]\n"
            "  -p, --port PORT  UDP port to listen on (default 4242)\n"
            "  --accounts FILE  file of the players' accounts (default accounts.txt)\n"
            "  --friends FILE   file of the players' friends (default friends.txt)\n"
            "  --messages FILE  file of the private messages waiting (default messages.txt)\n"
+           "  --scores FILE    file of the finished games, for the leaderboard (default "
+           "scores.txt)\n"
            "  -h, --help       print this help\n";
 }
 

@@ -9,6 +9,8 @@
 #include <map>
 #include <memory>
 #include <span>
+#include <string>
+#include <vector>
 
 namespace server {
 
@@ -24,9 +26,11 @@ public:
 
     ecs::World world;
     ecs::GameLoop loop{world};
+    std::vector<std::string> names; // The accounts that started it, for the leaderboard
 };
 
-/// Every game running, on a singleton of the main World. A room goes with its last player.
+/// Every game running, on a singleton of the main World. A room goes with its last player:
+/// that is when its score enters the leaderboard (`RoomSystem`).
 struct GameRooms {
     std::map<std::uint32_t, std::unique_ptr<GameRoom>> rooms;
     std::uint32_t nextId{0};

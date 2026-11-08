@@ -6,6 +6,7 @@ rtype_add_test(server_tests
         AccountStoreTests.cpp
         FriendStoreTests.cpp
         MessageStoreTests.cpp
+        ScoreStoreTests.cpp
         GroupsTests.cpp
         NetReceiveSystemTests.cpp
         SessionTests.cpp

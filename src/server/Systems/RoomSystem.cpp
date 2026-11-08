@@ -3,11 +3,13 @@
 #include "ecs/World/World.hpp"
 #include "network/Protocol/Packets.hpp"
 #include "server/Components/ClientMessage.hpp"
+#include "server/Components/Combat.hpp"
 #include "server/Components/NetClient.hpp"
 #include "server/GameRoom.hpp"
 #include "server/Singleton.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <utility>
 #include <variant>
@@ -48,14 +50,29 @@ void RoomMessageSystem::update(ecs::World& world, const ecs::Time& /*time*/)
     }
 }
 
+RoomSystem::RoomSystem(ScoreStore& scores) noexcept
+    : _scores(scores)
+{
+}
+
 void RoomSystem::update(ecs::World& world, const ecs::Time& time)
 {
     auto& rooms = singleton<GameRooms>(world).rooms;
-    std::erase_if(rooms, [](const auto& entry) {
+    std::erase_if(rooms, [&](const auto& entry) {
         std::size_t players = 0;
-        entry.second->world.template query<InGame>(
+        GameRoom& room = *entry.second;
+        room.world.template query<InGame>(
             [&](ecs::Entity /*entity*/, InGame& /*player*/) { ++players; });
-        return players == 0;
+        if (players != 0) {
+            return false;
+        }
+        // Nobody left: the game is over, and its score enters the leaderboard
+        const std::uint32_t score = singleton<TeamScore>(room.world).value;
+        if (_scores.add(score, room.names)) {
+            std::cout << "r-type_server: game " << entry.first << " ended with " << score
+                      << " points\n";
+        }
+        return true;
     });
     for (const auto& [id, room] : rooms) {
         room->loop.runFrame(time.deltaSeconds());

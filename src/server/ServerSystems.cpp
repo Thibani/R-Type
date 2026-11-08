@@ -18,6 +18,7 @@
 #include "server/Systems/DiscardPacketsSystem.hpp"
 #include "server/Systems/FriendSystem.hpp"
 #include "server/Systems/GroupSystem.hpp"
+#include "server/Systems/LeaderboardSystem.hpp"
 #include "server/Systems/LoginSystem.hpp"
 #include "server/Systems/NetReceiveSystem.hpp"
 #include "server/Systems/NetSendSystem.hpp"
@@ -52,7 +53,7 @@ void installSimulation(ecs::World& world)
 }
 
 void installSystems(ecs::World& world, ecs::GameLoop& loop, network::NetworkThread& socket,
-    AccountStore& accounts, FriendStore& friends, MessageStore& messages)
+    AccountStore& accounts, FriendStore& friends, MessageStore& messages, ScoreStore& scores)
 {
     (void)singleton<Groups>(world); // Created now, like TeamScore: read during the frame
     (void)singleton<GameRooms>(world);
@@ -66,9 +67,10 @@ void installSystems(ecs::World& world, ecs::GameLoop& loop, network::NetworkThre
     loop.frameStart().add<FriendSystem>(accounts, friends);
     loop.frameStart().add<GroupSystem>(friends);
     loop.frameStart().add<ChatSystem>(friends, messages);
+    loop.frameStart().add<LeaderboardSystem>(scores);
 
     loop.frameEnd().add<SessionCleanupSystem>(socket);
-    loop.frameEnd().add<RoomSystem>();
+    loop.frameEnd().add<RoomSystem>(scores);
     loop.frameEnd().add<NetSendSystem>(socket);
     loop.frameEnd().add<SnapshotSystem>(socket);
     loop.frameEnd().add<DiscardPacketsSystem>();

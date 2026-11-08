@@ -6,10 +6,11 @@ clients comply with.
 | File                                | Content                                                  |
 |-------------------------------------|----------------------------------------------------------|
 | `main.cpp`                          | Entry point: options, network thread, World, GameLoop, Ctrl+C |
-| `ServerOptions.hpp`                 | Command line parsing (`-p`, `--accounts`, `--friends`, `--messages`, `-h`) |
+| `ServerOptions.hpp`                 | Command line parsing (`-p`, `--accounts`, `--friends`, `--messages`, `--scores`, `-h`) |
 | `AccountStore.hpp`                  | The accounts, in memory and in their file (no ECS, no network) |
 | `FriendStore.hpp`                   | Friends and requests, in memory and in their file (no ECS, no network) |
 | `MessageStore.hpp`                  | Private messages waiting for an offline player, in memory and in their file |
+| `ScoreStore.hpp`                    | Finished games and the two rankings (solo, multi), in memory and in their file |
 | `OnlinePlayers.hpp`                 | The channels of the players online this frame, by name   |
 | `TextFile.hpp`                      | What both files need: atomic replace, copy of a damaged file |
 | `ServerSystems.hpp`                 | `installSystems()`: every system, in order; `installSimulation()` |
@@ -87,8 +88,10 @@ frameStart()  NetReceiveSystem        network thread inbox → ReceivedPacket / 
               FriendSystem            friends' messages, who is online, file saved once a second
               GroupSystem             group orders, countdown, game started, GROUP_STATE
               ChatSystem              chat and private messages, file saved once a second
+              LeaderboardSystem       LEADERBOARD_REQUEST → LEADERBOARD, file saved once a second
 frameEnd()    SessionCleanupSystem    Disconnecting → PLAYER_LEFT, entity destroyed
-              RoomSystem              one frame of each game (below), empty games removed
+              RoomSystem              one frame of each game (below); a game with nobody left ends,
+                                      and its score enters the leaderboard
               NetSendSystem           reliable messages, resends, heartbeats
               SnapshotSystem          every 2 steps of a game: SNAPSHOT of its NetEntity, to its players
               DiscardPacketsSystem    unhandled messages destroyed
