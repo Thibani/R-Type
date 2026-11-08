@@ -7,7 +7,12 @@ constants, and the systems both sides can share.
 |---------------------------------|------------------------------------------------------|
 | `Arena.hpp`                     | Size of the playing field, player spawn points       |
 | `Ship.hpp`                      | Ship speed, size, health (3 hearts), missiles, respawn delay |
-| `Bydo.hpp`                      | Bydo speed, wave, size, health, points, spawn and fire rates |
+| `Bydo.hpp`                      | Bydo speed, wave, size, health, points, fire rate    |
+| `Enemies.hpp`                   | Pata-Pata, Bug, Cancer, Cruiser, Hopper, Spinner, Gunner, Mine rules |
+| `Waves.hpp`                     | Endless mode: levels, arrival rate, formation chance |
+| `Run.hpp`                       | A game: team lives, distance points                  |
+| `Boss.hpp`                      | The boss: when it comes, health, attacks, reward     |
+| `Gadgets.hpp`                   | Drops (repair kit, Force capsule) and the Force's 4 slots |
 | `Components/Health.hpp`         | `Health`: hit points left                            |
 | `Components/Motion.hpp`         | `Position`, `Velocity`                               |
 | `Components/Confinement.hpp`    | `ConfinedToArena`: keeps an entity inside the field  |

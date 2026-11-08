@@ -3,9 +3,12 @@
 #include "ecs/Event/Subscription.hpp"
 #include "ecs/System/System.hpp"
 #include "network/Protocol/Packets.hpp"
+#include "server/Network.hpp"
 
+#include <chrono>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <vector>
 
 namespace ecs {
@@ -34,12 +37,19 @@ namespace server {
 /// An entity removed without despawn (the ship of a player who left) is
 /// destroyed as KILLED by no one.
 ///
-/// It also sends GAME_STATE (RUNNING, team score) to each client that has
-/// not seen the current score: once to every newcomer, then on every change.
+/// It also sends GAME_STATE (`currentState`) to each client that has not seen
+/// the current one: at once to every newcomer and on every change of phase,
+/// level, lives or boss distance; at most every `ScoreUpdateInterval` when only
+/// the score moved (distance points change it nearly every step).
 ///
-/// shortcut: always RUNNING; the lobby and game over phases come with #110.
+/// It uses the time point of the frame, so the tests control it.
+///
+/// shortcut: no lobby (WAITING_FOR_PLAYERS): a game starts as soon as a
+/// player connects.
 class ReplicationSystem final : public ecs::System {
 public:
+    static constexpr std::chrono::milliseconds ScoreUpdateInterval{250};
+
     explicit ReplicationSystem(ecs::World& world);
 
     void update(ecs::World& world, const ecs::Time& time) override;
@@ -48,6 +58,7 @@ private:
     void onDespawn(const game::DespawnEvent& despawn);
 
     ecs::World& _world;
+    std::optional<TimePoint> _lastScoreUpdate; // Last GAME_STATE sent for the score alone
     // Gathered during the simulation steps, sent at the end of the frame
     std::map<std::uint16_t, network::protocol::EntityDestroy> _destroyed;
     std::vector<network::protocol::PlayerDied> _deaths;

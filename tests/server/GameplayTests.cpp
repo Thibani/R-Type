@@ -1,24 +1,26 @@
 // The first-game rules (#54 – #59) on a plain World running the server's own
 // simulation (installSimulation), step by step: no sockets.
 
-#include "TestPlayers.hpp"
+#include "TestGame.hpp"
 #include "ecs/Time/Time.hpp"
 #include "ecs/World/World.hpp"
 #include "game/Arena.hpp"
 #include "game/Bydo.hpp"
 #include "game/Components/Health.hpp"
 #include "game/Components/Motion.hpp"
+#include "game/Enemies.hpp"
+#include "game/Run.hpp"
 #include "game/Ship.hpp"
+#include "game/Waves.hpp"
 #include "network/Protocol/Packets.hpp"
+#include "server/Components/Behaviour.hpp"
 #include "server/Components/Combat.hpp"
 #include "server/Components/NetClient.hpp"
 #include "server/Components/NetEntity.hpp"
 #include "server/Components/Player.hpp"
 #include "server/Network.hpp"
-#include "server/ServerSystems.hpp"
 #include "server/Singleton.hpp"
 #include "server/Spawn.hpp"
-#include "server/Systems/PlayerShipSystem.hpp"
 #include "server/Systems/ReplicationSystem.hpp"
 
 #include <gtest/gtest.h>
@@ -26,99 +28,22 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <numbers>
+#include <set>
+#include <tuple>
 #include <variant>
 #include <vector>
 
 using namespace network::protocol;
-using server::Bydo;
+using server::Enemy;
 using server::NetEntity;
-using server::PlayerInput;
-using server::PlayerShip;
 using server::TeamScore;
-using testing_players::addPlayer;
+using testing_game::enemyMissile;
+using testing_game::Game;
+using testing_game::playerMissile;
+using testing_game::Step;
 
 namespace {
-
-constexpr float Step = 1.0F / 60.0F;
-
-/// A World running the server's simulation, with its own clock.
-class Game {
-public:
-    Game() { server::installSimulation(world); }
-
-    void steps(int count)
-    {
-        for (int i = 0; i < count; ++i) {
-            time = time.advanced(Step);
-            world.update(time);
-        }
-    }
-
-    void seconds(float duration) { steps(static_cast<int>(std::ceil(duration / Step))); }
-
-    /// A connected player with a ship in its lane, as PlayerShipSystem makes it.
-    ecs::Entity join(std::uint8_t playerId)
-    {
-        const ecs::Entity player = addPlayer(world, playerId);
-        world.addComponent(player, PlayerInput{});
-        ships.update(world, ecs::Time{});
-        return player;
-    }
-
-    void press(ecs::Entity player, std::uint8_t mask)
-    {
-        auto& input = world.getComponent<PlayerInput>(player);
-        input.mask = mask;
-        input.received = true;
-    }
-
-    template <typename T>
-    std::vector<ecs::Entity> all()
-    {
-        std::vector<ecs::Entity> found;
-        world.query<T>([&](ecs::Entity entity, T& /*component*/) { found.push_back(entity); });
-        return found;
-    }
-
-    std::vector<ecs::Entity> ofKind(EntityKind kind)
-    {
-        std::vector<ecs::Entity> found;
-        world.query<NetEntity>([&](ecs::Entity entity, NetEntity& net) {
-            if (net.kind == kind) {
-                found.push_back(entity);
-            }
-        });
-        return found;
-    }
-
-    ecs::Entity shipOf(std::uint8_t playerId)
-    {
-        ecs::Entity found = ecs::NullEntity;
-        world.query<PlayerShip>([&](ecs::Entity entity, PlayerShip& ship) {
-            if (ship.playerId == playerId) {
-                found = entity;
-            }
-        });
-        return found;
-    }
-
-    ecs::World world;
-    ecs::Time time;
-    server::PlayerShipSystem ships;
-};
-
-/// Projectiles as the server's weapons fire them.
-ecs::Entity playerMissile(ecs::World& world, game::Position from)
-{
-    return server::spawnProjectile(
-        world, server::weapons::ShipCannon.projectile, 0, from, {.dx = 1.0F, .dy = 0.0F});
-}
-
-ecs::Entity enemyMissile(ecs::World& world, game::Position from)
-{
-    return server::spawnProjectile(
-        world, server::weapons::BydoCannon.projectile, NoPlayer, from, {.dx = -1.0F, .dy = 0.0F});
-}
 
 /// The reliable messages queued for `player` since the last call.
 std::vector<Payload> queued(ecs::World& world, ecs::Entity player)
@@ -189,33 +114,49 @@ TEST(Gameplay, MissileLeavingTheArenaIsDespawned)
     EXPECT_TRUE(game.ofKind(EntityKind::PlayerMissile).empty());
 }
 
-// --- Bydos (#55, #56, #57) -------------------------------------------------------
+// --- Enemies (#55, #56, #57) -----------------------------------------------------
 
-TEST(Gameplay, NoBydoWithoutPlayers)
+namespace {
+
+/// An enemy owned by no player, on the right half of the arena.
+::testing::AssertionResult isEnteringEnemy(ecs::World& world, ecs::Entity entity)
+{
+    const auto& position = world.getComponent<game::Position>(entity);
+    const auto& net = world.getComponent<NetEntity>(entity);
+    const bool notAnEnemy = net.kind == EntityKind::PlayerShip
+        || net.kind == EntityKind::PlayerMissile || net.kind == EntityKind::EnemyMissile;
+    if (notAnEnemy || net.owner != NoPlayer) {
+        return ::testing::AssertionFailure() << "kind " << static_cast<int>(net.kind);
+    }
+    if (position.x < game::arena::Width / 2.0F || position.y < 0.0F
+        || position.y > game::arena::Height) {
+        return ::testing::AssertionFailure() << "at " << position.x << ", " << position.y;
+    }
+    return ::testing::AssertionSuccess();
+}
+
+} // namespace
+
+TEST(Gameplay, NoEnemyWithoutPlayers)
 {
     Game game;
 
     game.seconds(5.0F);
 
-    EXPECT_TRUE(game.all<Bydo>().empty());
+    EXPECT_TRUE(game.all<Enemy>().empty());
 }
 
-TEST(Gameplay, BydosEnterFromTheRightAtTheSpawnRate)
+TEST(Gameplay, EnemiesEnterFromTheRight)
 {
     Game game;
     (void)game.join(0);
 
-    game.seconds((game::bydo::SpawnInterval * 3.0F) + Step);
+    game.seconds((game::waves::BaseSpawnInterval * 3.0F) + Step); // 3 arrivals at level 1
 
-    const auto bydos = game.all<Bydo>();
-    EXPECT_EQ(bydos.size(), 3U);
-    for (const ecs::Entity bydo : bydos) {
-        const auto& position = game.world.getComponent<game::Position>(bydo);
-        EXPECT_GT(position.x, game::arena::Width / 2.0F); // Still on the right side
-        EXPECT_GT(position.y, 0.0F);
-        EXPECT_LT(position.y, game::arena::Height);
-        EXPECT_EQ(game.world.getComponent<NetEntity>(bydo).kind, EntityKind::Bydo);
-        EXPECT_EQ(game.world.getComponent<NetEntity>(bydo).owner, NoPlayer);
+    const auto enemies = game.all<Enemy>();
+    EXPECT_GE(enemies.size(), 3U); // More if one was a formation
+    for (const ecs::Entity enemy : enemies) {
+        EXPECT_TRUE(isEnteringEnemy(game.world, enemy));
     }
 }
 
@@ -240,15 +181,17 @@ TEST(Gameplay, BydoFliesLeftInAWave)
     EXPECT_NEAR(540.0F - minY, game::bydo::WaveAmplitude, 5.0F);
 }
 
-TEST(Gameplay, BydoFiresAtTheNearestShip)
+TEST(Gameplay, BydoFiresAtTheNearestShipOnceOnScreen)
 {
     Game game;
     (void)game.join(0);
     const auto ship = game.world.getComponent<game::Position>(game.shipOf(0));
-    const ecs::Entity bydo = server::spawnBydo(game.world, ship.y, 0.0F); // Fires at once
+    const ecs::Entity bydo = server::spawnBydo(game.world, ship.y, 0.0F); // Ready at once
 
     game.steps(1);
+    EXPECT_TRUE(game.ofKind(EntityKind::EnemyMissile).empty()); // Still off screen
 
+    game.seconds(0.5F); // Entered the arena: it fires
     const auto missiles = game.ofKind(EntityKind::EnemyMissile);
     ASSERT_EQ(missiles.size(), 1U);
     const auto& velocity = game.world.getComponent<game::Velocity>(missiles[0]);
@@ -406,7 +349,11 @@ TEST(Gameplay, KillIsSentWithItsReasonKillerAndScore)
     EXPECT_EQ(bydoDestroy->killerNetId, missileNetId);
     const auto states = only<GameState>(payloads);
     ASSERT_EQ(states.size(), 1U);
-    EXPECT_EQ(states[0], (GameState{.phase = GamePhase::Running, .score = game::bydo::Points}));
+    EXPECT_EQ(states[0],
+        (GameState{.phase = GamePhase::Running,
+            .score = game::bydo::Points,
+            .level = 1,
+            .lives = game::run::StartingLives}));
 }
 
 TEST(Gameplay, ShipDeathIsSentAsPlayerDied)

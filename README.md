@@ -188,7 +188,7 @@ Helper scripts live in `scripts/` (run them from Git Bash on Windows).
 ```
 
 - **The server decides everything.** Clients send which keys are held; the
-  server moves ships, spawns Bydos, detects collisions, applies damage and
+  server moves ships, spawns enemies, detects collisions, applies damage and
   keeps the score, then tells every client what happened.
 - **Everything is ECS.** Game state lives in components on an `ecs::World`,
   behaviour in systems that query them; systems talk through events, never

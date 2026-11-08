@@ -19,8 +19,9 @@ enum class Action : std::uint8_t {
     Left,
     Right,
     Fire,
+    Pod, // Moves the Force to its next slot around the ship
 };
-inline constexpr std::size_t ActionCount = 5;
+inline constexpr std::size_t ActionCount = 6;
 
 /// The colours of the game, for each type of colour blindness (`theme::Palettes`).
 enum class ColourMode : std::uint8_t {
@@ -44,11 +45,12 @@ struct Settings {
         sf::Keyboard::Key::Left,
         sf::Keyboard::Key::Right,
         sf::Keyboard::Key::Space,
+        sf::Keyboard::Key::LShift,
     };
 
-    // Gamepad buttons, by Action: the stick and D-pad already move, A fires
+    // Gamepad buttons, by Action: the stick and D-pad already move, A fires, B moves the Force
     static constexpr std::array<std::optional<unsigned>, ActionCount> DefaultButtons{
-        std::nullopt, std::nullopt, std::nullopt, std::nullopt, 0U};
+        std::nullopt, std::nullopt, std::nullopt, std::nullopt, 0U, 1U};
 
     int volume{80}; // Sound effects, 0 (muted) to 100 %
     std::array<sf::Keyboard::Key, ActionCount> keys{DefaultKeys}; // Indexed by Action

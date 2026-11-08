@@ -113,14 +113,30 @@ constexpr sf::FloatRect settingsRow(int row) noexcept
     if (row == BackRow) {
         return {{Left, 444.0F}, {Width, 52.0F}};
     }
-    return {{650.0F, 228.0F + (static_cast<float>(row - FirstKeyRow) * 54.0F)}, {385.0F, 44.0F}};
+    // Six actions under the "Key bindings" title, ending above the error message
+    return {{650.0F, 228.0F + (static_cast<float>(row - FirstKeyRow) * 48.0F)}, {385.0F, 44.0F}};
 }
 
-// Game over
+// Game over: "Play again" first, so Enter starts a new game
+inline constexpr int PlayAgainButton = 0;
+inline constexpr int BackToMenuButton = 1;
+
+[[nodiscard]]
+constexpr float gameOverButtonsTop(int interfaceSize) noexcept
+{
+    return isCompact(interfaceSize) ? 526.0F : 636.0F;
+}
+
+[[nodiscard]]
+constexpr sf::FloatRect playAgain(int interfaceSize) noexcept
+{
+    return {{352.0F, gameOverButtonsTop(interfaceSize)}, {280.0F, 52.0F}};
+}
+
 [[nodiscard]]
 constexpr sf::FloatRect backToMenu(int interfaceSize) noexcept
 {
-    return {{500.0F, isCompact(interfaceSize) ? 526.0F : 636.0F}, {280.0F, 52.0F}};
+    return {{648.0F, gameOverButtonsTop(interfaceSize)}, {280.0F, 52.0F}};
 }
 
 /// The part of the canvas shown at this interface size, around what the screen
@@ -200,7 +216,7 @@ inline std::vector<sf::FloatRect> focusables(const Session& session, int interfa
         }
         return {};
     case Screen::GameOver:
-        return {backToMenu(interfaceSize)};
+        return {playAgain(interfaceSize), backToMenu(interfaceSize)};
     }
     return {};
 }

@@ -412,11 +412,11 @@ TEST(Focus, SettingsColumnsAreReachedSideways)
     using namespace client::layout;
     const auto rows = settingsRows();
     const int moveUp = FirstKeyRow;
-    const int fire = FirstKeyRow + static_cast<int>(Action::Fire);
     const int moveRight = FirstKeyRow + static_cast<int>(Action::Right);
+    const int pod = FirstKeyRow + static_cast<int>(Action::Pod);
 
     EXPECT_EQ(pushed(rows, ResetRow, 1, 0), moveRight); // Beside it, not further down
-    EXPECT_EQ(pushed(rows, fire, -1, 0), BackRow);
+    EXPECT_EQ(pushed(rows, pod, -1, 0), BackRow);
     EXPECT_EQ(pushed(rows, moveUp, -1, 0), VolumeRow);
     EXPECT_EQ(pushed(rows, InterfaceSizeRow, 0, 1), ResetRow);
     EXPECT_EQ(pushed(rows, ResetRow, 0, 1), BackRow);
@@ -426,10 +426,12 @@ TEST(Focus, StopsAtTheEdges)
 {
     using namespace client::layout;
     const auto rows = settingsRows();
+    const int pod = FirstKeyRow + static_cast<int>(Action::Pod); // The lowest row
 
     EXPECT_EQ(pushed(rows, VolumeRow, 0, -1), VolumeRow);
     EXPECT_EQ(pushed(rows, VolumeRow, -1, 0), VolumeRow);
-    EXPECT_EQ(pushed(rows, BackRow, 0, 1), BackRow);
+    EXPECT_EQ(pushed(rows, pod, 0, 1), pod);
+    EXPECT_EQ(pushed(rows, pod, 1, 0), pod);
 }
 
 TEST(Focus, ConnectionFormIsAGrid)

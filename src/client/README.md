@@ -36,7 +36,7 @@ Technology choices: [`docs/technical-study/client.md`](../../docs/technical-stud
 | `Components/Controls.hpp`          | `PlayerControls` (keys held), `InputHistory` (last 8 ticks)|
 | `Components/SoundEvent.hpp`        | A sound to play this frame                                 |
 | `Components/Settings.hpp`          | `Settings` (volume, colour mode, interface size, key bindings), `Action`                |
-| `Ui/`                              | Dark theme, screen layout, drawing helpers, letterboxing |
+| `Ui/`                              | Dark theme, screen layout, drawing helpers, letterboxing, sprite animation |
 
 Everything except `main.cpp` is the `rtype_client` library, so the tests can
 use it directly (`tests/client/`, no window needed).
@@ -69,9 +69,9 @@ other, they share components. `RenderSystem` only reads `Position` and
 | Screen        | When                                                              |
 |---------------|-------------------------------------------------------------------|
 | Connect       | At start, and after any failure (with its reason)                 |
-| Game          | After AUTH_RESULT (OK): a single player can play at once          |
+| Game          | After AUTH_RESULT (OK): a single player can play at once. HUD: team score and level top left; the team's lives (small ships) and each player's hearts top right; centred at the top, the distance to the next boss, then the boss's health |
 | Waiting room  | Only if the server sends GAME_STATE = WAITING_FOR_PLAYERS         |
-| Game over     | GAME_STATE = GAME_OVER: team score and crew                       |
+| Game over     | GAME_STATE = GAME_OVER: team score, level reached, crew; **Play again** (RESTART ×3) or Back to menu |
 
 Every screen has the moving sky of `StarfieldSystem` behind it. The screens without
 gameplay also have slow gold streaks: never in the game, where they could look like shots.
@@ -81,7 +81,9 @@ screens. Players are told apart by colour, pattern and P1-P4 tag. Each colour mo
 its own copy of the sprites, repainted at startup (`Assets.cpp`, `theme::Palettes`).
 
 **Settings** open over the connection form (Settings button) or over the game
-(Esc menu → Settings; the game keeps running). The arrows (or a pad's stick
+(Esc menu → Settings; the game keeps running). The actions are the 4
+moves, Fire and **Move the Force** (Left Shift, or pad button 1: the Force
+goes to its next slot around the ship). The arrows (or a pad's stick
 and D-pad) move to the nearest row that way, across both columns. Enter (or A)
 steps the volume, colour mode or interface size to its next value, wrapping
 around, or waits for a new key or button: press it, or Esc to cancel. A key
@@ -110,11 +112,13 @@ key.down = Down
 key.left = Left
 key.right = Right
 key.fire = Space
+key.pod = LShift
 button.up = none
 button.down = none
 button.left = none
 button.right = none
 button.fire = 0
+button.pod = 1
 ```
 
 | System  | Location                                                        |
@@ -155,11 +159,20 @@ button.fire = 0
 
 1. Add a value to `Look` and a case to `lookOf()` in `Components/Appearance.hpp`.
 2. Give it a frame in `spriteFrame()` (`Assets.cpp`): texture, rectangle in
-   the sheet, scale. A new sheet goes in `assets/sprites/` and in `Assets`.
+   the sheet, scale. A new sheet goes in `assets/sprites/`, in `Skin` and in
+   `SharedSheets` (`Assets.cpp`) so that every colour mode loads it.
    Ships are the exception: `widgets::ship` draws `assets/ship/hull.png`, then
    `colour.png` tinted with the player's colour of the current mode.
 3. Until then, the kind is drawn as a "?": nothing else to change, the
    network code already creates the entity.
+
+To animate it, pick the frame from the time `spriteFrame()` receives, as the
+boss does (`bossFrame()`: 32 frames of its sheet played back and forth with
+`pingPongFrame()` of `Ui/Animation.hpp`, 10 per second) or the Force
+(`forceFrame()`: 12 frames turning round with `loopFrame()`). Player
+missiles are turned the way they fly, since the Force fires up, down and
+backwards (`RenderSystem`). The repair kit has no sheet: `repairKitImage()`
+draws it at startup.
 
 ### Add a sound
 

@@ -6,6 +6,7 @@ This folder contains the event layer of the ECS: how systems communicate
 | File               | Content                                                        |
 |--------------------|----------------------------------------------------------------|
 | `Event.hpp`        | The `Event` concept: any copyable struct                       |
+| `IEventChannel.hpp` | `IEventChannel`: abstract interface of a channel, whatever the event type |
 | `EventChannel.hpp` | `EventChannel<E>`: the handlers subscribed to one event type   |
 | `Subscription.hpp` | `Subscription`: keeps a handler subscribed while alive (RAII)  |
 | `EventBus.hpp`     | `EventBus`: queues events and delivers them to the subscribers |

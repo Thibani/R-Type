@@ -74,16 +74,74 @@ TEST(PacketCodec, MatchesTheSpecificationExample)
     };
 
     const auto expected = bytes({
-        0x52, 0x54, 0x03, 0x01, 0x00, 0x00, 0x00, 0x30, // magic, version, type, flags, reserved, size
-        0x00, 0x00, 0x00, 0x00, // sessionToken
-        0x00, 0x00, 0x00, 0x00, // sequence, ack
-        0x00, 0x00, 0x00, 0x00, // ackBits
-        0x54, 0x68, 0x69, 0x62, 0x61, 0x6E, 0x69, 0x00, // "Thibani"
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // padding
-        0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, // publicKey
-        0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB,
-        0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB,
-        0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB,
+        0x52,
+        0x54,
+        0x04,
+        0x01,
+        0x00,
+        0x00,
+        0x00,
+        0x30, // magic, version, type, flags, reserved, size
+        0x00,
+        0x00,
+        0x00,
+        0x00, // sessionToken
+        0x00,
+        0x00,
+        0x00,
+        0x00, // sequence, ack
+        0x00,
+        0x00,
+        0x00,
+        0x00, // ackBits
+        0x54,
+        0x68,
+        0x69,
+        0x62,
+        0x61,
+        0x6E,
+        0x69,
+        0x00, // "Thibani"
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00, // padding
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB, // publicKey
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
+        0xAB,
     });
 
     EXPECT_EQ(encodeOrFail(packet), expected);
@@ -122,7 +180,7 @@ TEST(PacketCodec, EncodesHeaderFields)
     const auto datagram = encodeOrFail(packet);
 
     const auto expected = bytes({
-        0x52, 0x54, 0x03, 0x25, // magic, version, PLAYER_DIED
+        0x52, 0x54, 0x04, 0x25, // magic, version, PLAYER_DIED
         0x03, 0x00, 0x00, 0x05, // RELIABLE | HAS_ACK, reserved, payloadSize 5
         0xCA, 0xFE, 0xBA, 0xBE, // sessionToken
         0x00, 0x2A, 0x00, 0x29, // sequence 42, ack 41
@@ -148,13 +206,19 @@ TEST(PacketCodec, PayloadSizesMatchTheSpecification)
         {.payload = Disconnect(), .size = 1},
         {.payload = Heartbeat(), .size = 0},
         {.payload = input, .size = 13},
-        {.payload = Snapshot{.serverTick = 0, .lastInputTick = 0, .partIndex = 0, .partCount = 1, .entities = std::vector<EntityState>(3)}, .size = 11 + (3 * 13)},
+        {.payload = Snapshot{.serverTick = 0,
+             .lastInputTick = 0,
+             .partIndex = 0,
+             .partCount = 1,
+             .entities = std::vector<EntityState>(3)},
+            .size = 11 + (3 * 13)},
         {.payload = EntitySpawn(), .size = 14},
         {.payload = EntityDestroy(), .size = 7},
         {.payload = PlayerJoined(), .size = 19},
         {.payload = PlayerLeft(), .size = 4},
         {.payload = PlayerDied(), .size = 5},
-        {.payload = GameState(), .size = 7},
+        {.payload = GameState(), .size = 10},
+        {.payload = Restart(), .size = 0},
     };
 
     for (const auto& [payload, size] : cases) {
@@ -282,14 +346,14 @@ TEST(PacketCodecValidation, RejectsPayloadSizeMismatch)
 TEST(PacketCodecValidation, RejectsOtherVersionButHeaderStaysReadable)
 {
     auto datagram = encodeOrFail(makePacket(ConnectRequest{.name = "old"}));
-    datagram[2] = std::byte{1};
+    datagram[2] = std::byte{Version - 1};
 
     EXPECT_EQ(decodeError(datagram, Direction::ClientToServer), DecodeError::UnsupportedVersion);
 
     // The server can still tell it was a CONNECT_REQUEST and answer VERSION_MISMATCH.
     const auto header = decodeHeader(datagram);
     ASSERT_TRUE(header.has_value());
-    EXPECT_EQ(header->version, 1);
+    EXPECT_EQ(header->version, Version - 1);
     EXPECT_EQ(header->type, std::to_underlying(PacketType::ConnectRequest));
 }
 
@@ -345,6 +409,14 @@ TEST(PacketCodecValidation, RejectsTruncatedPayload)
     EXPECT_EQ(decodeError(datagram, Direction::ServerToClient), DecodeError::BadPayloadSize);
 }
 
+TEST(PacketCodecValidation, RejectsBossProgressAbovePercent)
+{
+    auto datagram = encodeOrFail(makePacket(GameState{.phase = GamePhase::Running, .score = 1}, 0));
+    datagram.back() = std::byte{MaxBossProgress + 1}; // bossProgress is the last byte
+
+    EXPECT_EQ(decodeError(datagram, Direction::ServerToClient), DecodeError::InvalidValue);
+}
+
 TEST(PacketCodecValidation, RejectsInputCountOutOfRange)
 {
     Input input{.firstTick = 0, .count = 1, .masks = {}};
@@ -374,6 +446,18 @@ TEST(PacketCodecValidation, RejectsReservedInputBits)
     datagram[HeaderSize + 5] = std::byte{0x80};
 
     EXPECT_EQ(decodeError(datagram, Direction::ClientToServer), DecodeError::InvalidValue);
+}
+
+TEST(PacketCodecValidation, AcceptsThePodBit)
+{
+    Input input{.firstTick = 0, .count = 1, .masks = {}};
+    input.masks.at(0) = input::Fire | input::Pod;
+    const auto datagram = encodeOrFail(makePacket(input));
+
+    const auto decoded = decode(datagram, Direction::ClientToServer);
+
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(std::get<Input>(decoded->payload).masks.at(0), input::Fire | input::Pod);
 }
 
 TEST(PacketCodecValidation, RejectsSnapshotCountNotMatchingPayload)
