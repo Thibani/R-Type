@@ -1,5 +1,8 @@
 #pragma once
 
+#include "ecs/Resource/IResourceHolder.hpp"
+#include "ecs/Resource/ResourceHolder.hpp"
+
 #include <concepts>
 #include <cstddef>
 #include <memory>
@@ -40,7 +43,7 @@ public:
             *existing = std::move(resource); // Replaced in place: same address
             return *existing;
         }
-        auto holder = std::make_unique<Holder<T>>(std::move(resource));
+        auto holder = std::make_unique<detail::ResourceHolder<T>>(std::move(resource));
         T& reference = holder->value;
         _resources.emplace(std::type_index(typeid(T)), std::move(holder));
         return reference;
@@ -86,8 +89,8 @@ public:
         if (found == _resources.end()) {
             return nullptr;
         }
-        // Safe: the holder registered under T's type is always a Holder<T>.
-        return &static_cast<Holder<T>&>(*found->second).value;
+        // Safe: the holder registered under T's type is always a detail::ResourceHolder<T>.
+        return &static_cast<detail::ResourceHolder<T>&>(*found->second).value;
     }
 
     template <Resource T>
@@ -98,7 +101,7 @@ public:
         if (found == _resources.end()) {
             return nullptr;
         }
-        return &static_cast<const Holder<T>&>(*found->second).value;
+        return &static_cast<const detail::ResourceHolder<T>&>(*found->second).value;
     }
 
     template <Resource T>
@@ -123,34 +126,9 @@ public:
     void clear() noexcept;
 
 private:
-    /// Type-erased owner of one resource.
-    class IHolder {
-    public:
-        virtual ~IHolder() = default;
-
-        IHolder(const IHolder&) = delete;
-        IHolder& operator=(const IHolder&) = delete;
-        IHolder(IHolder&&) = delete;
-        IHolder& operator=(IHolder&&) = delete;
-
-    protected:
-        IHolder() = default;
-    };
-
-    template <Resource T>
-    class Holder final : public IHolder {
-    public:
-        explicit Holder(T resource)
-            : value(std::move(resource))
-        {
-        }
-
-        T value;
-    };
-
     // unique_ptr: each resource lives on the heap, so its address never
     // changes when other resources are added (the map may rehash).
-    std::unordered_map<std::type_index, std::unique_ptr<IHolder>> _resources;
+    std::unordered_map<std::type_index, std::unique_ptr<detail::IResourceHolder>> _resources;
 };
 
 } // namespace ecs

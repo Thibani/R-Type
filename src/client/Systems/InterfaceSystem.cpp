@@ -21,8 +21,10 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
+#include <utility>
 
 namespace client {
 
@@ -252,13 +254,16 @@ std::string controlsReminder(const Settings& settings)
         ? "Arrows: move"
         : "Move: " + name(Action::Up) + " " + name(Action::Left) + " " + name(Action::Down) + " "
             + name(Action::Right);
-    std::string keyboard = move + "  ·  " + name(Action::Fire) + ": fire  ·  Esc: menu";
+    std::string keyboard = move + "  ·  " + name(Action::Fire) + ": fire  ·  " + name(Action::Pod)
+        + ": move the Force  ·  Esc: menu";
     const auto fire = settings.buttons.at(static_cast<std::size_t>(Action::Fire));
+    const auto pod = settings.buttons.at(static_cast<std::size_t>(Action::Pod));
     if (!gamepad::anyConnected()) {
         return keyboard;
     }
     return keyboard + "  ·  Pad: stick"
-        + (fire ? ", " + std::to_string(*fire) + ": fire" : std::string()) + ", Start: menu";
+        + (fire ? ", " + std::to_string(*fire) + ": fire" : std::string())
+        + (pod ? ", " + std::to_string(*pod) + ": Force" : std::string()) + ", Start: menu";
 }
 
 /// One player in the HUD: swatch, name, then health or state.
@@ -289,30 +294,147 @@ void drawPlayerChip(sf::RenderTarget& target, const Assets& assets, ColourMode m
     }
 }
 
-void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
-    const Session& session, float now, sf::FloatRect area)
+/// Top left, from `corner`: team score and level. Returns where they end on
+/// the right.
+float drawRunStats(
+    sf::RenderTarget& target, const Assets& assets, const Session& session, sf::Vector2f corner)
 {
-    constexpr float margin = 20.0F;
-    constexpr float rowHeight = 84.0F;
-    const float left = area.position.x + margin;
-    const float rightEdge = area.position.x + area.size.x - margin;
-    const float firstRow = area.position.y + margin;
-
-    // Team score, top left
     const std::string score = formatScore(session.score);
     const float scoreWidth = std::max(textWidth(assets.bodyBold, "TEAM SCORE", 13),
                                  textWidth(assets.bodyBold, score, 32))
         + 36.0F;
-    box(target, {{left, firstRow}, {scoreWidth, 64.0F}}, theme::Surface, theme::Hull, 4.0F);
-    text(target, assets.bodyBold, "TEAM SCORE", 13, theme::Muted, {left + 18.0F, firstRow + 9.0F});
-    text(target, assets.bodyBold, score, 32, theme::Blue, {left + 18.0F, firstRow + 28.0F});
+    box(target, {corner, {scoreWidth, 64.0F}}, theme::Surface, theme::Hull, 4.0F);
+    text(target, assets.bodyBold, "TEAM SCORE", 13, theme::Muted,
+        corner + sf::Vector2f{18.0F, 9.0F});
+    text(target, assets.bodyBold, score, 32, theme::Blue, corner + sf::Vector2f{18.0F, 28.0F});
 
-    // One chip per player, right-aligned: swatch, name, health or state. On a
-    // new row when they would reach the score, or the left of the screen
+    const std::string level = std::to_string(session.level);
+    const sf::Vector2f levelAt = corner + sf::Vector2f{scoreWidth + 12.0F, 0.0F};
+    const float levelWidth
+        = std::max(textWidth(assets.bodyBold, "LEVEL", 13), textWidth(assets.display, level, 32))
+        + 36.0F;
+    box(target, {levelAt, {levelWidth, 64.0F}}, theme::Surface, theme::Hull, 4.0F);
+    text(target, assets.bodyBold, "LEVEL", 13, theme::Muted, levelAt + sf::Vector2f{18.0F, 9.0F});
+    text(target, assets.display, level, 32, theme::Text, levelAt + sf::Vector2f{18.0F, 28.0F});
+    return levelAt.x + levelWidth;
+}
+
+/// Width of the box of the team's lives.
+float livesWidth(const Assets& assets, const Session& session)
+{
+    constexpr float icon = 34.0F; // One small ship per life
+    return std::max(textWidth(assets.bodyBold, "LIVES", 13),
+               static_cast<float>(std::max<int>(session.lives, 1)) * icon)
+        + 36.0F;
+}
+
+/// The team's lives as small ships, in `rect`.
+void drawLives(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
+    const Session& session, sf::FloatRect rect)
+{
+    constexpr float icon = 34.0F;
+    box(target, rect, theme::Surface, theme::Hull, 4.0F);
+    text(target, assets.bodyBold, "LIVES", 13, theme::Muted,
+        rect.position + sf::Vector2f{18.0F, 9.0F});
+    const std::uint8_t colour = session.playerId.value_or(0);
+    for (std::uint8_t life = 0; life < session.lives; ++life) {
+        widgets::ship(target, assets, mode,
+            {rect.position + sf::Vector2f{18.0F + (static_cast<float>(life) * icon), 32.0F},
+                {30.0F, 16.0F}},
+            colour);
+    }
+}
+
+/// The boss on screen, if any: its health and full health (from the snapshots).
+std::optional<std::pair<std::uint8_t, std::uint8_t>> bossHealth(ecs::World& world)
+{
+    std::optional<std::pair<std::uint8_t, std::uint8_t>> found;
+    world.query<NetEntity>([&](ecs::Entity /*entity*/, const NetEntity& data) {
+        if (data.kind == network::protocol::EntityKind::Boss) {
+            found = std::pair{data.health, data.peakHealth};
+        }
+    });
+    return found;
+}
+
+/// The panel of the boss bar: centred at the top of `area`, between the
+/// boxes ending at `left` and starting at `right` on the first row. If they
+/// leave too little room, it goes at `below`, still centred.
+sf::FloatRect bossPanel(sf::FloatRect area, float top, float left, float right, float below)
+{
+    constexpr float widest = 456.0F;
+    constexpr float narrowest = 260.0F;
+    constexpr float gap = 12.0F;
+    const float centre = area.position.x + (area.size.x / 2.0F);
+    const float room = 2.0F * (std::min(centre - left, right - centre) - gap);
+    if (room >= narrowest) {
+        const float width = std::min(widest, room);
+        return {{centre - (width / 2.0F), top}, {width, 64.0F}};
+    }
+    return {{centre - (widest / 2.0F), below}, {widest, 64.0F}};
+}
+
+/// The distance to the next boss, or the boss's health while it is there.
+void drawBossBar(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
+    const Session& session, sf::FloatRect panel)
+{
+    const sf::FloatRect bar{
+        panel.position + sf::Vector2f{18.0F, 34.0F}, {panel.size.x - 36.0F, 16.0F}};
+    const auto boss = bossHealth(world);
+    float filled = static_cast<float>(session.bossProgress) / 100.0F;
+    std::string label = "NEXT BOSS  " + std::to_string(session.bossProgress) + " %";
+    sf::Color colour = theme::Blue;
+    if (boss) {
+        const auto [health, full] = *boss;
+        filled = full > 0 ? static_cast<float>(health) / static_cast<float>(full) : 1.0F;
+        label = "BOSS";
+        colour = theme::Red;
+    } else if (session.bossProgress >= 100) {
+        label = "BOSS INCOMING";
+        colour = theme::Red;
+    }
+    box(target, panel, theme::Surface, theme::Hull, 4.0F);
+    text(target, assets.bodyBold, label, 13, theme::Muted,
+        panel.position + sf::Vector2f{18.0F, 9.0F});
+    box(target, bar, sf::Color::White, theme::Hull, 2.0F);
+    if (filled > 0.0F) {
+        box(target, {bar.position, {bar.size.x * std::min(filled, 1.0F), bar.size.y}}, colour,
+            theme::Hull, 2.0F);
+    }
+}
+
+void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
+    const Session& session, float now, sf::FloatRect area)
+{
+    constexpr float margin = 20.0F;
+    constexpr float gap = 12.0F;
+    constexpr float rowHeight = 76.0F;
+    const float left = area.position.x + margin;
+    const float rightEdge = area.position.x + area.size.x - margin;
+    const float firstRow = area.position.y + margin;
+
+    // Team score and level, top left
+    const float statsEnd = drawRunStats(target, assets, session, {left, firstRow});
+
+    // Top right, from the right: one chip per player, then the team's lives.
+    // On a new row when they would reach the score, or the left of the screen
     const auto health = shipHealth(world);
     const Settings& settings = singleton<Settings>(world);
     float right = rightEdge;
     float row = firstRow;
+    float firstRowStart = rightEdge; // Where the boxes of the first row start
+    const auto place = [&](float width) {
+        if (right - width < (row == firstRow ? statsEnd + gap : left)) {
+            right = rightEdge;
+            row += rowHeight;
+        }
+        const sf::FloatRect rect{{right - width, row}, {width, 64.0F}};
+        right -= width + gap;
+        if (row == firstRow) {
+            firstRowStart = rect.position.x;
+        }
+        return rect;
+    };
     for (std::size_t back = session.players.size(); back > 0; --back) {
         const std::size_t i = back - 1;
         const PlayerSlot& slot = session.players.at(i);
@@ -322,18 +444,19 @@ void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
         const std::string name = session.playerId == i ? slot.name + " (you)" : slot.name;
         const float width
             = 8.0F + 56.0F + 12.0F + std::max(104.0F, textWidth(assets.bodyBold, name, 15)) + 14.0F;
-        if (right - width < (row == firstRow ? left + scoreWidth + margin : left)) {
-            right = rightEdge;
-            row += rowHeight;
-        }
-        const sf::FloatRect chip{{right - width, row}, {width, 64.0F}};
-        right -= width + margin;
-        drawPlayerChip(target, assets, settings.colourMode, chip, i, slot, name, health.at(i));
+        drawPlayerChip(
+            target, assets, settings.colourMode, place(width), i, slot, name, health.at(i));
     }
+    drawLives(target, assets, settings.colourMode, session, place(livesWidth(assets, session)));
+
+    // Centred at the top: the distance to the next boss, then its health
+    const sf::FloatRect panel = bossPanel(area, firstRow, statsEnd, firstRowStart, row + rowHeight);
+    drawBossBar(target, assets, world, session, panel);
 
     if (!session.notice.empty() && now < session.noticeUntil) {
         const float width = textWidth(assets.bodyBold, session.notice, 16) + 28.0F;
-        const sf::FloatRect toast{{rightEdge - width, row + 102.0F}, {width, 40.0F}};
+        const float below = std::max(row, panel.position.y) + rowHeight + 8.0F;
+        const sf::FloatRect toast{{rightEdge - width, below}, {width, 40.0F}};
         box(target, toast, theme::Blue, theme::LightBlue, 3.0F);
         text(target, assets.bodyBold, session.notice, 16, sf::Color::White,
             toast.position + sf::Vector2f{14.0F, 12.0F});
@@ -380,7 +503,7 @@ void drawSettings(sf::RenderTarget& target, const Assets& assets, const Session&
 {
     box(target, area, theme::Overlay, theme::Overlay, 0.0F);
     box(target, layout::SettingsPanel, theme::Surface, theme::Hull, 4.0F, true);
-    text(target, assets.display, "Settings", 32, theme::Text, {245.0F, 138.0F});
+    text(target, assets.display, "Settings", 32, theme::Text, {245.0F, 134.0F});
 
     settingsRow(target, assets, layout::VolumeRow, "Sound effects",
         settings.volume == 0 ? "< Muted >" : "< " + std::to_string(settings.volume) + " % >",
@@ -395,7 +518,12 @@ void drawSettings(sf::RenderTarget& target, const Assets& assets, const Session&
         session.focus == layout::InterfaceSizeRow, false);
 
     constexpr std::array<std::string_view, ActionCount> actions{
-        "Move up", "Move down", "Move left", "Move right", "Fire",
+        "Move up",
+        "Move down",
+        "Move left",
+        "Move right",
+        "Fire",
+        "Move the Force",
     };
     for (std::size_t action = 0; action < ActionCount; ++action) {
         const int row = layout::FirstKeyRow + static_cast<int>(action);
@@ -413,10 +541,10 @@ void drawSettings(sf::RenderTarget& target, const Assets& assets, const Session&
         session.focus == layout::BackRow);
 
     if (!settings.saveError.empty()) {
-        errorBox(target, assets, {{245.0F, 450.0F}, {790.0F, 40.0F}}, settings.saveError);
+        errorBox(target, assets, {{245.0F, 498.0F}, {790.0F, 40.0F}}, settings.saveError);
     }
-    text(target, assets.body, "Arrows: move  ·  Enter: change  ·  Esc: back",
-        15, theme::Muted, {245.0F, 510.0F});
+    text(target, assets.body, "Arrows: move  ·  Enter: change  ·  Esc: back", 15, theme::Muted,
+        {245.0F, 552.0F});
 }
 
 void drawGameOver(sf::RenderTarget& target, const Assets& assets, ColourMode mode,
@@ -436,6 +564,8 @@ void drawGameOver(sf::RenderTarget& target, const Assets& assets, ColourMode mod
         {scoreBox.position + sf::Vector2f{0.0F, 18.0F}, {boxWidth, 16.0F}});
     centredText(target, assets.bodyBold, score, 72, theme::Blue,
         {scoreBox.position + sf::Vector2f{0.0F, 42.0F}, {boxWidth, 72.0F}});
+    centredText(target, assets.bodyBold, "Level " + std::to_string(session.level) + " reached", 17,
+        theme::Text, {{0.0F, 384.0F}, {theme::UiWidth, 22.0F}});
 
     // The crew: the players still in the game
     std::vector<std::size_t> crew;
@@ -454,7 +584,10 @@ void drawGameOver(sf::RenderTarget& target, const Assets& assets, ColourMode mod
             {270.0F + (static_cast<float>(n) * (width + Gap)), 412.0F}, {width, 160.0F}};
         crewCard(target, assets, mode, card, i, session.players.at(i), false);
     }
-    widgets::button(target, assets, layout::BackToMenu, "Back to menu", true, session.focus == 0);
+    widgets::button(target, assets, layout::PlayAgain, "Play again", true,
+        session.focus == layout::PlayAgainButton);
+    widgets::button(target, assets, layout::BackToMenu, "Back to menu", false,
+        session.focus == layout::BackToMenuButton);
 }
 
 } // namespace

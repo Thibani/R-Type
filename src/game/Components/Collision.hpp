@@ -15,6 +15,8 @@ inline constexpr LayerMask PlayerShip = 1U << 0U;
 inline constexpr LayerMask PlayerMissile = 1U << 1U;
 inline constexpr LayerMask Enemy = 1U << 2U;
 inline constexpr LayerMask EnemyMissile = 1U << 3U;
+inline constexpr LayerMask Force = 1U << 4U; // The pod attached to a ship
+inline constexpr LayerMask Pickup = 1U << 5U; // Dropped by enemies, taken by ships
 
 } // namespace layer
 

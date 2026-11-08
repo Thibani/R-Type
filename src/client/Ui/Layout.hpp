@@ -70,7 +70,7 @@ inline constexpr int InterfaceSizeRow = 2;
 inline constexpr int FirstKeyRow = 3; // + Action index
 inline constexpr int ResetRow = FirstKeyRow + static_cast<int>(ActionCount);
 inline constexpr int BackRow = ResetRow + 1;
-inline constexpr sf::FloatRect SettingsPanel{{223.0F, 124.0F}, {834.0F, 420.0F}};
+inline constexpr sf::FloatRect SettingsPanel{{223.0F, 120.0F}, {834.0F, 470.0F}};
 
 [[nodiscard]]
 constexpr sf::FloatRect settingsRow(int row) noexcept
@@ -84,11 +84,16 @@ constexpr sf::FloatRect settingsRow(int row) noexcept
     if (row < ResetRow) {
         return at(650.0F, row - FirstKeyRow);
     }
-    return at(245.0F, row - ResetRow + FirstKeyRow);
+    // The two buttons end the left column on the last row of the right one
+    const int keyRows = static_cast<int>(ActionCount);
+    return at(245.0F, row - ResetRow + keyRows - 2);
 }
 
-// Game over
-inline constexpr sf::FloatRect BackToMenu{{530.0F, 612.0F}, {220.0F, 56.0F}};
+// Game over: "Play again" first, so Enter starts a new game
+inline constexpr sf::FloatRect PlayAgain{{410.0F, 612.0F}, {220.0F, 56.0F}};
+inline constexpr sf::FloatRect BackToMenu{{650.0F, 612.0F}, {220.0F, 56.0F}};
+inline constexpr int PlayAgainButton = 0;
+inline constexpr int BackToMenuButton = 1;
 
 /// The part of the canvas shown at this interface size, around what the screen
 /// needs. Larger than the canvas below 100 %, smaller above.
@@ -171,7 +176,7 @@ inline std::vector<sf::FloatRect> focusables(const Session& session, int interfa
         }
         return {};
     case Screen::GameOver:
-        return {BackToMenu};
+        return {PlayAgain, BackToMenu};
     }
     return {};
 }

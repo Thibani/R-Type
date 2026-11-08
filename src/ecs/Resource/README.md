@@ -6,6 +6,14 @@ This folder contains two ways to share data that does not belong to an entity:
 |--------------------|-------------------------------------------------------------------|
 | `Resources.hpp`    | `Resources`: one value per type, shared by systems (score, config, inputs...) |
 | `AssetManager.hpp` | `AssetManager`: files loaded once and shared (textures, sounds, fonts, maps...) |
+| `IResourceHolder.hpp`, `ResourceHolder.hpp` | Internal: abstract owner of one resource, and its implementation for a type `T` |
+| `IAssetCache.hpp`, `AssetCache.hpp` | Internal: abstract cache of one asset type, and its implementation (loader + loaded assets) |
+
+The `I…` classes are **abstract interfaces** (pure virtual methods, no data):
+`Resources` and `AssetManager` keep values of many different types in one
+container by storing them behind these interfaces (type erasure). The
+templates `ResourceHolder<T>` and `AssetCache<T>` implement them; they live in
+`ecs::detail`, as users never handle them directly.
 
 ---
 

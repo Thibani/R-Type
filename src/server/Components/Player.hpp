@@ -20,6 +20,10 @@ struct RespawnTimer {
     float remaining{};
 };
 
+/// On a player whose ship was destroyed when the team had no life left: no
+/// new ship until the next game (see `game/Run.hpp`).
+struct Eliminated { };
+
 /// Marks a player's ship, a separate entity from the player: a ship can be
 /// destroyed (killed) while its player stays connected.
 struct PlayerShip {

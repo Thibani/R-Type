@@ -30,7 +30,7 @@ namespace server {
 /// An entity at 0 HP is killed: a `DespawnRequest` (KILLED, with its killer),
 /// so `ReplicationSystem` sends ENTITY_DESTROY with the real reason, and
 /// PLAYER_DIED for a ship. A killed entity with a `ScoreValue` adds its points
-/// to the `TeamScore`; a killed ship's player gets a `RespawnTimer`.
+/// to the `TeamScore`; what a killed ship costs is `LivesSystem`'s business.
 ///
 /// An attacker hits once: one that already hit something this step, or an
 /// entity already killed, ignores the other overlaps of the same step.

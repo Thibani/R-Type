@@ -23,10 +23,16 @@ add_library(rtype_server
     Components/Player.hpp
     Components/NetEntity.hpp
     Components/Combat.hpp
+    Components/Behaviour.hpp
+    Components/Waves.hpp
+    Components/Match.hpp
+    Components/Gadgets.hpp
     AccountStore.hpp
     AccountStore.cpp
     Spawn.hpp
     Spawn.cpp
+    Run.hpp
+    Run.cpp
 
     Systems/NetReceiveSystem.hpp
     Systems/NetReceiveSystem.cpp
@@ -44,22 +50,48 @@ add_library(rtype_server
     Systems/NetSendSystem.cpp
     Systems/InputSystem.hpp
     Systems/InputSystem.cpp
+    Systems/RestartSystem.hpp
+    Systems/RestartSystem.cpp
     Systems/PlayerShipSystem.hpp
     Systems/PlayerShipSystem.cpp
     Systems/TickSystem.hpp
     Systems/TickSystem.cpp
+    Systems/MatchSystem.hpp
+    Systems/MatchSystem.cpp
     Systems/PlayerControlSystem.hpp
     Systems/PlayerControlSystem.cpp
-    Systems/BydoSpawnSystem.hpp
-    Systems/BydoSpawnSystem.cpp
-    Systems/BydoMovementSystem.hpp
-    Systems/BydoMovementSystem.cpp
-    Systems/BydoAimSystem.hpp
-    Systems/BydoAimSystem.cpp
+    Systems/ProgressSystem.hpp
+    Systems/ProgressSystem.cpp
+    Systems/WaveSystem.hpp
+    Systems/WaveSystem.cpp
+    Systems/WaveFlightSystem.hpp
+    Systems/WaveFlightSystem.cpp
+    Systems/SeekerSystem.hpp
+    Systems/SeekerSystem.cpp
+    Systems/AimSystem.hpp
+    Systems/AimSystem.cpp
+    Systems/CircleFlightSystem.hpp
+    Systems/CircleFlightSystem.cpp
+    Systems/HopSystem.hpp
+    Systems/HopSystem.cpp
+    Systems/HoverSystem.hpp
+    Systems/HoverSystem.cpp
+    Systems/BossSystem.hpp
+    Systems/BossSystem.cpp
+    Systems/DeathBurstSystem.hpp
+    Systems/DeathBurstSystem.cpp
+    Systems/ForceSystem.hpp
+    Systems/ForceSystem.cpp
+    Systems/PickupSystem.hpp
+    Systems/PickupSystem.cpp
+    Systems/DropSystem.hpp
+    Systems/DropSystem.cpp
     Systems/WeaponSystem.hpp
     Systems/WeaponSystem.cpp
     Systems/DamageSystem.hpp
     Systems/DamageSystem.cpp
+    Systems/LivesSystem.hpp
+    Systems/LivesSystem.cpp
     Systems/ReplicationSystem.hpp
     Systems/ReplicationSystem.cpp
     Systems/SnapshotSystem.hpp

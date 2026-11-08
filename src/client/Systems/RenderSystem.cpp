@@ -8,13 +8,16 @@
 #include "client/Ui/Theme.hpp"
 #include "client/Ui/View.hpp"
 #include "client/Ui/Widgets.hpp"
+#include "ecs/Time/Time.hpp"
 #include "ecs/World/World.hpp"
 #include "game/Arena.hpp"
 #include "game/Components/Motion.hpp"
 
 #include <SFML/Graphics/RectangleShape.hpp>
 #include <SFML/Graphics/Sprite.hpp>
+#include <SFML/System/Angle.hpp>
 
+#include <cmath>
 #include <cstdint>
 #include <string>
 
@@ -24,11 +27,23 @@ namespace {
 
 constexpr float PlaceholderSize = 56.0F;
 
+/// The direction a sprite drawn flying right is turned to: a player missile
+/// points where it flies (the Force fires up, down and backwards).
+sf::Angle heading(const Appearance& appearance, const game::Velocity* velocity)
+{
+    if (appearance.look != Look::PlayerMissile || velocity == nullptr
+        || (velocity->dx == 0.0F && velocity->dy == 0.0F)) {
+        return sf::Angle::Zero;
+    }
+    return sf::radians(std::atan2(velocity->dy, velocity->dx));
+}
+
 void drawEntity(sf::RenderTarget& target, const Assets& assets, const Settings& settings,
-    const game::Position& position, const Appearance& appearance)
+    const game::Position& position, const Appearance& appearance, sf::Angle rotation, float seconds)
 {
     const sf::Vector2f centre{position.x, position.y};
-    const auto frame = spriteFrame(assets, settings.colourMode, appearance.look, appearance.player);
+    const auto frame
+        = spriteFrame(assets, settings.colourMode, appearance.look, appearance.player, seconds);
     if (!frame) {
         // §5.2: a kind this client does not know is shown, never a crash
         const sf::Vector2f half{PlaceholderSize / 2.0F, PlaceholderSize / 2.0F};
@@ -39,8 +54,9 @@ void drawEntity(sf::RenderTarget& target, const Assets& assets, const Settings& 
     }
     sf::Sprite sprite(*frame->texture, frame->rect);
     sprite.setOrigin(sf::Vector2f(frame->rect.size) / 2.0F);
-    sprite.setScale({frame->scale, frame->scale});
+    sprite.setScale({frame->mirrored ? -frame->scale : frame->scale, frame->scale});
     sprite.setPosition(centre);
+    sprite.setRotation(rotation);
     target.draw(sprite);
 
     if (appearance.look == Look::PlayerShip && appearance.player < theme::Players.size()) {
@@ -61,7 +77,7 @@ RenderSystem::RenderSystem(sf::RenderWindow& window, const Assets& assets) noexc
 {
 }
 
-void RenderSystem::update(ecs::World& world, const ecs::Time& /*time*/)
+void RenderSystem::update(ecs::World& world, const ecs::Time& time)
 {
     _window.clear(theme::Letterbox);
     if (singleton<Session>(world).screen != Screen::Game) {
@@ -85,8 +101,10 @@ void RenderSystem::update(ecs::World& world, const ecs::Time& /*time*/)
 
     const Settings& settings = singleton<Settings>(world);
     world.query<game::Position, Appearance>(
-        [&](ecs::Entity /*entity*/, game::Position& position, Appearance& appearance) {
-            drawEntity(_window, _assets, settings, position, appearance);
+        [&](ecs::Entity entity, game::Position& position, Appearance& appearance) {
+            const auto* velocity = world.tryGetComponent<game::Velocity>(entity);
+            drawEntity(_window, _assets, settings, position, appearance,
+                heading(appearance, velocity), time.elapsedSeconds());
         });
 }
 

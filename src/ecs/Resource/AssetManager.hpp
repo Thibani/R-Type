@@ -1,5 +1,8 @@
 #pragma once
 
+#include "ecs/Resource/AssetCache.hpp"
+#include "ecs/Resource/IAssetCache.hpp"
+
 #include <cstddef>
 #include <functional>
 #include <memory>
@@ -38,7 +41,7 @@ class AssetManager {
 public:
     /// Builds an asset from a file path. Returns nullptr when loading fails.
     template <typename T>
-    using Loader = std::function<std::unique_ptr<T>(const std::string& path)>;
+    using Loader = AssetLoader<T>;
 
     AssetManager() = default;
     ~AssetManager() = default;
@@ -59,7 +62,7 @@ public:
     [[nodiscard]]
     bool hasLoader() const noexcept
     {
-        const Cache<T>* typedCache = findCache<T>();
+        const detail::AssetCache<T>* typedCache = findCache<T>();
         return typedCache != nullptr && static_cast<bool>(typedCache->loader);
     }
 
@@ -70,7 +73,7 @@ public:
     template <typename T>
     std::shared_ptr<T> load(const std::string& path)
     {
-        Cache<T>& typedCache = cache<T>();
+        detail::AssetCache<T>& typedCache = cache<T>();
         if (const auto found = typedCache.assets.find(path); found != typedCache.assets.end()) {
             return found->second;
         }
@@ -91,7 +94,7 @@ public:
     [[nodiscard]]
     std::shared_ptr<T> get(const std::string& path) const
     {
-        const Cache<T>* typedCache = findCache<T>();
+        const detail::AssetCache<T>* typedCache = findCache<T>();
         if (typedCache == nullptr) {
             return nullptr;
         }
@@ -111,7 +114,7 @@ public:
     template <typename T>
     bool unload(const std::string& path)
     {
-        Cache<T>* typedCache = findCache<T>();
+        detail::AssetCache<T>* typedCache = findCache<T>();
         return typedCache != nullptr && typedCache->assets.erase(path) > 0;
     }
 
@@ -123,76 +126,40 @@ public:
     void clear() noexcept;
 
 private:
-    /// Type-erased view of a `Cache<T>`.
-    class ICache {
-    public:
-        virtual ~ICache() = default;
-
-        ICache(const ICache&) = delete;
-        ICache& operator=(const ICache&) = delete;
-        ICache(ICache&&) = delete;
-        ICache& operator=(ICache&&) = delete;
-
-        [[nodiscard]]
-        virtual std::size_t size() const noexcept
-            = 0;
-
-        virtual void clear() noexcept = 0;
-
-    protected:
-        ICache() = default;
-    };
-
-    /// The loader and the loaded assets of one type.
-    template <typename T>
-    class Cache final : public ICache {
-    public:
-        [[nodiscard]]
-        std::size_t size() const noexcept override
-        {
-            return assets.size();
-        }
-
-        void clear() noexcept override
-        {
-            assets.clear();
-        }
-
-        Loader<T> loader;
-        std::unordered_map<std::string, std::shared_ptr<T>> assets;
-    };
-
     template <typename T>
     [[nodiscard]]
-    Cache<T>& cache()
+    detail::AssetCache<T>& cache()
     {
-        if (Cache<T>* existing = findCache<T>()) {
+        if (detail::AssetCache<T>* existing = findCache<T>()) {
             return *existing;
         }
-        auto created = std::make_unique<Cache<T>>();
-        Cache<T>& reference = *created;
+        auto created = std::make_unique<detail::AssetCache<T>>();
+        detail::AssetCache<T>& reference = *created;
         _caches.emplace(std::type_index(typeid(T)), std::move(created));
         return reference;
     }
 
     template <typename T>
     [[nodiscard]]
-    Cache<T>* findCache() noexcept
+    detail::AssetCache<T>* findCache() noexcept
     {
         const auto found = _caches.find(std::type_index(typeid(T)));
-        // Safe: the cache registered under T's type is always a Cache<T>.
-        return found != _caches.end() ? static_cast<Cache<T>*>(found->second.get()) : nullptr;
+        // Safe: the cache registered under T's type is always a detail::AssetCache<T>.
+        return found != _caches.end() ? static_cast<detail::AssetCache<T>*>(found->second.get())
+                                      : nullptr;
     }
 
     template <typename T>
     [[nodiscard]]
-    const Cache<T>* findCache() const noexcept
+    const detail::AssetCache<T>* findCache() const noexcept
     {
         const auto found = _caches.find(std::type_index(typeid(T)));
-        return found != _caches.end() ? static_cast<const Cache<T>*>(found->second.get()) : nullptr;
+        return found != _caches.end()
+            ? static_cast<const detail::AssetCache<T>*>(found->second.get())
+            : nullptr;
     }
 
-    std::unordered_map<std::type_index, std::unique_ptr<ICache>> _caches;
+    std::unordered_map<std::type_index, std::unique_ptr<detail::IAssetCache>> _caches;
 };
 
 } // namespace ecs
