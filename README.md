@@ -3,13 +3,13 @@
 A networked R-Type game written in modern C++ (C++23), built on top of a
 reusable Entity-Component-System (ECS) game engine.
 
-> **Status:** Part 2 in progress. Up to 4 players join an authoritative server
-> with the graphical client, fly their ships, shoot the Bydos that come in
-> waves and shoot back, and share a team score. A client that crashes or
-> leaves does not stop the game. Players can set the volume and their keys, and
-> play with an account kept by the server. They have friends, a chat, and groups joined by code or
-> invitation, and the server runs several games at once. Next: more accessibility options, then
-> game phases, levels, bosses and the endless, campaign and versus modes.
+> **Status:** Part 2. Players create an account, then meet on a main page with
+> their friends, a chat and private messages. They play alone or in a group of up
+> to 4, joined by code or invitation, and the server runs one game per group at
+> once. The game is an endless mode: waves of 9 kinds of enemies, a boss every
+> 90 s, the Force and pickups, and 3 lives shared by the team until the game over.
+> Solo and multi leaderboards keep the best games. After the connection, every
+> packet is encrypted.
 
 ---
 
@@ -216,11 +216,12 @@ Developer documentation:
 | How to work in the codebase         | [`docs/developer-guide.md`](docs/developer-guide.md)           |
 | Accessibility                       | [`docs/accessibility.md`](docs/accessibility.md)               |
 | Network protocol (wire format)      | [`docs/protocol.md`](docs/protocol.md)                         |
-| Why these technologies              | [`docs/technical-study/network.md`](docs/technical-study/network.md) |
+| Why these technologies              | [`docs/technical-study/network.md`](docs/technical-study/network.md) (networking, server, storage, security), [`docs/technical-study/client.md`](docs/technical-study/client.md) (client) |
 | ECS engine                          | [`src/ecs/`](src/ecs) (a README per concept)                   |
 | Gameplay rules                      | [`src/game/README.md`](src/game/README.md), [`src/server/README.md`](src/server/README.md) |
 | Server internals, threads, security | [`src/server/README.md`](src/server/README.md)                 |
 | Client internals                    | [`src/client/README.md`](src/client/README.md)                 |
+| Network library internals           | [`Protocol`](src/network/Protocol/README.md), [`Transport`](src/network/Transport/README.md), [`Reliability`](src/network/Reliability/README.md), [`Crypto`](src/network/Crypto/README.md) |
 
 ---
 
@@ -288,6 +289,13 @@ Example: `feat(ecs): add component storage`
 
 Run `scripts/format.sh` before committing, and never push directly to `main`:
 open a pull request using the provided template.
+
+---
+
+## Authors
+
+Epitech B-CPP-500 project, by Thibani, Eurpie, Pcufer and kevirevikevi (GitHub
+handles). Questions and bugs: open an issue on this repository.
 
 ---
 
