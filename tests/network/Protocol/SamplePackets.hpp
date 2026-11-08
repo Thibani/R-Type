@@ -168,6 +168,7 @@ inline std::vector<Sample> all()
         toClient(makePacket(
             Leaderboard{.board = Board::Solo, .best = {}, .lastRank = 0, .lastScore = 0}, 39)),
         toServer(makePacket(Restart{})),
+        toServer(makePacket(Pause{.paused = true}, 40)),
     };
 }
 

@@ -1,12 +1,12 @@
-# R-Type Network Protocol — Version 9
+# R-Type Network Protocol — Version 10
 
 | Status   | Implemented                 |
 |----------|-----------------------------|
-| Version  | 9                           |
+| Version  | 10                          |
 | Transport| UDP only                    |
 | Issue    | #21 (design), #10 (documentation), #97 (encryption), #73 (accounts), #72 (main page), #126 (friends), #92 (chat), #71 (groups), #91 (leaderboard) |
 
-**Version 9** joins the endless mode (#145) and the main page, friends, chat, groups and
+**Version 10** adds `PAUSE` ([§8.9](#89-pause)). **Version 9** joined the endless mode (#145) and the main page, friends, chat, groups and
 leaderboard (versions 4 to 8 of the other line of work). From the endless mode:
 
 - `GAME_STATE` carries the level, the lives and the distance
@@ -127,7 +127,7 @@ Every datagram starts with this 20-byte header.
 | Offset | Size | Field          | Description                                                  |
 |-------:|-----:|----------------|--------------------------------------------------------------|
 | 0      | 2    | `magic`        | Always `0x5254` (`"RT"`). Filters out stray traffic.          |
-| 2      | 1    | `version`      | Protocol version. This document describes version `9`.       |
+| 2      | 1    | `version`      | Protocol version. This document describes version `10`.       |
 | 3      | 1    | `type`         | Packet type, see [§4](#4-packet-types).                       |
 | 4      | 1    | `flags`        | Bit field, see below.                                         |
 | 5      | 1    | `reserved`     | **MUST** be `0`.                                              |
@@ -143,7 +143,7 @@ Every datagram starts with this 20-byte header.
 |----:|------------|----------------------------------------------------------------------|
 | 0   | `RELIABLE` | The payload starts with a `u16 reliableId` and must be acknowledged. |
 | 1   | `HAS_ACK`  | `ack` and `ackBits` are meaningful. Clear until a packet is received.|
-| 2–7 | —          | Reserved, **MUST** be `0` in version 9.                              |
+| 2–7 | —          | Reserved, **MUST** be `0` in version 10.                              |
 
 ### 3.2 Versioning
 
@@ -254,8 +254,9 @@ Sizes are payload sizes, header excluded. Reliable packets include their
 | `0x46` | `GROUP_INVITED`   | S → C     | **yes**  | 18                 |
 | `0x47` | `LEADERBOARD_REQUEST` | C → S | **yes**  | 3                  |
 | `0x48` | `LEADERBOARD`     | S → C     | **yes**  | 12 + 68 × count    |
+| `0x49` | `PAUSE`           | C → S     | **yes**  | 3                  |
 
-Ranges `0x00`, `0x08–0x0F`, `0x12–0x1F`, `0x27–0x2F` and `0x49–0xFF` are reserved.
+Ranges `0x00`, `0x08–0x0F`, `0x12–0x1F`, `0x27–0x2F` and `0x4A–0xFF` are reserved.
 
 These sizes are before encryption: every type except `CONNECT_REQUEST`,
 `CONNECT_ACCEPT` and `CONNECT_REJECT` adds 24 bytes on the network
@@ -378,6 +379,11 @@ in a game ([§8.7](#87-groups)). `GROUP_LEAVE` has no other field.
 | `GROUP_ANSWER`  | 2      | 16   | `name`   | Who invited                                |
 |                 | 18     | 1    | `reply`  | `0` REFUSE, `1` ACCEPT                     |
 | `GROUP_READY`   | 2      | 1    | `ready`  | `0` or `1`                                 |
+
+#### `PAUSE` (`0x49`)
+
+After `reliableId`, 1 byte: `paused`, `0` or `1`. The player of a game alone opens (`1`) or
+closes (`0`) the menu ([§8.9](#89-pause)).
 
 #### `LEADERBOARD_REQUEST` (`0x47`)
 
@@ -879,6 +885,14 @@ Known limits: a game still running when the server stops is not kept. The server
 file at most once per second, so a crash can lose the last second. The file grows by one line
 per game.
 
+
+### 8.9 Pause
+
+A game played alone stops while its player is in the menu: the client sends `PAUSE (1)` when
+the menu opens and `PAUSE (0)` when it closes. Meanwhile the server runs no step of that game:
+no enemy moves, no shot flies, no damage is done, and no snapshot is sent. `INPUT` received
+meanwhile is dropped. A game started by a group never stops: `PAUSE` from one of its players
+is ignored, since the others keep playing.
 ---
 
 ## 9. Timing
@@ -907,7 +921,7 @@ that is about **40 KB/s per client** downstream, events excluded. Upstream, `INP
 
 ```text
 52 54             magic "RT"
-09                version 9
+0A                version 10
 01                type CONNECT_REQUEST
 00                flags: none (nothing received yet, so no HAS_ACK)
 00                reserved
@@ -926,8 +940,8 @@ Total: 68 bytes.
 
 ## 11. Possible extensions
 
-Kept out of version 9, but the header leaves room for them:
+Kept out of version 10, but the header leaves room for them:
 
 - a `COMPRESSED` flag bit for LZ4 or zlib payloads;
 - delta snapshots relative to the last acknowledged snapshot;
-- matchmaking and game modes, as new packet types in the `0x49–0x4F` range (#72, #130).
+- matchmaking and game modes, as new packet types in the `0x4A–0x4F` range (#72, #130).

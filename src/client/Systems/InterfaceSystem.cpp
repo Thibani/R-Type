@@ -854,7 +854,9 @@ void drawMenu(
     widgets::panel(target, layout::MenuPanel, theme::Surface, theme::Hull, 1.5F, 18.0F);
     widgets::goldDetail(target, {460.0F, 183.0F}, 72.0F);
     centredTitle(target, assets, "Menu", 64, 205.0F);
-    const std::string_view note = "The game keeps running for the other players.";
+    const std::string_view note = playsAlone(session)
+        ? "The game is paused."
+        : "The game keeps running for the other players.";
     text(target, assets.body, note, 15, theme::Muted,
         {(theme::UiWidth - textWidth(assets.body, note, 15)) / 2.0F, 272.0F});
     widgets::button(

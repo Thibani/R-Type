@@ -125,6 +125,13 @@ inline bool playsAlone(const Session& session)
     return players <= 1;
 }
 
+/// True while a game played alone is paused: its player is in the Esc menu (PAUSE sent).
+[[nodiscard]]
+inline bool gamePaused(const Session& session)
+{
+    return session.screen == Screen::Game && session.menuOpen && playsAlone(session);
+}
+
 /// True if we lead our group. Alone and not told yet, we do.
 [[nodiscard]]
 inline bool leadsTheGroup(const Session& session)

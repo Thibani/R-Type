@@ -78,7 +78,7 @@ other, they share components. `RenderSystem` only reads `Position` and
 Every screen has the moving sky of `StarfieldSystem` behind it. The screens without
 gameplay also have slow gold streaks: never in the game, where they could look like shots.
 
-Esc opens the in-game menu (the game keeps running) or leaves the other
+Esc opens the in-game menu (alone, the game pauses: PAUSE; in a group it keeps running) or leaves the other
 screens: the form quits, the waiting room and game over go back to the main page, and
 the main page itself ignores it, since logging out has its own button. Players are told apart by colour, pattern and P1-P4 tag. Each colour mode has
 its own copy of the sprites, repainted at startup (`Assets.cpp`, `theme::Palettes`).

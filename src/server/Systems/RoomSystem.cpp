@@ -26,7 +26,8 @@ void RoomMessageSystem::update(ecs::World& world, const ecs::Time& /*time*/)
     world.query<ClientMessage>([&](ecs::Entity entity, ClientMessage& message) {
         if (std::holds_alternative<LeaveGame>(message.payload)
             || std::holds_alternative<Input>(message.payload)
-            || std::holds_alternative<Restart>(message.payload)) {
+            || std::holds_alternative<Restart>(message.payload)
+            || std::holds_alternative<Pause>(message.payload)) {
             messages.push_back(entity);
         }
     });
@@ -64,6 +65,11 @@ void RoomMessageSystem::update(ecs::World& world, const ecs::Time& /*time*/)
             }
         } else if (std::holds_alternative<Restart>(message.payload) && together) {
             continue; // Play again is for a game alone; a group plays again from the main page
+        } else if (const auto* pause = std::get_if<Pause>(&message.payload)) {
+            // Only a game alone stops: in a group's game, the others keep playing
+            game.paused = !together && !over && pause->paused;
+        } else if (game.paused) {
+            continue; // Nothing moves: inputs would only pile up until the game resumes
         } else {
             game.world.addComponent(game.world.createEntity(),
                 ClientMessage{.client = place->player, .payload = std::move(message.payload)});
@@ -103,6 +109,9 @@ void RoomSystem::update(ecs::World& world, const ecs::Time& time)
         return true;
     });
     for (const auto& [id, room] : rooms) {
+        if (room->paused) {
+            continue; // Its player is in the Esc menu: no step, no enemy, no damage
+        }
         room->loop.runFrame(time.deltaSeconds());
         // No life and no ship left: the game is over, and its score enters the leaderboard.
         // "Play again" (RESTART) starts a new one in the same room

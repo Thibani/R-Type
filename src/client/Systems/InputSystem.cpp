@@ -144,6 +144,16 @@ void type(Session& session, char32_t c)
     }
 }
 
+/// Opens or closes the Esc menu over the game. Alone, the game pauses meanwhile: the server
+/// stops it (PAUSE). In a group's game, the others keep playing.
+void setMenu(Session& session, bool open)
+{
+    session.menuOpen = open;
+    if (playsAlone(session)) {
+        session.outgoing.emplace_back(network::protocol::Pause{.paused = open});
+    }
+}
+
 void openSettings(Session& session)
 {
     session.settingsOpen = true;
@@ -530,7 +540,7 @@ void activate(Session& session, Settings& settings, int index, ecs::GameLoop& lo
         break;
     case Screen::Game:
         if (index == layout::ResumeButton) {
-            session.menuOpen = false;
+            setMenu(session, false);
         } else if (index == layout::MenuSettingsButton) {
             openSettings(session);
         } else {
@@ -588,7 +598,7 @@ void escape(Session& session, ecs::GameLoop& loop)
         session.request = Request::Quit;
         loop.stop();
     } else if (session.screen == Screen::Game) {
-        session.menuOpen = !session.menuOpen;
+        setMenu(session, !session.menuOpen);
         session.focus = 0;
     } else if (session.screen == Screen::Home) {
         session.focus = session.focus > layout::ChatBox ? layout::PlayButton : session.focus;

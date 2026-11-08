@@ -725,3 +725,19 @@ TEST(GroupGameOver, WhilePlayingTheGroupStateMovesNobody)
 
     EXPECT_EQ(session.screen, client::Screen::Game);
 }
+
+// --- Pause ---------------------------------------------------------------------------------
+
+TEST(Pause, OnlyAGameAloneIsPausedByTheMenu)
+{
+    ecs::World world;
+    inGame(world, 0, "Ann");
+    auto& session = client::singleton<client::Session>(world);
+    EXPECT_FALSE(client::gamePaused(session));
+
+    session.menuOpen = true;
+    EXPECT_TRUE(client::gamePaused(session));
+
+    client::applyPayload(world, PlayerJoined{.playerId = 1, .name = "Ben"}, 0.0F);
+    EXPECT_FALSE(client::gamePaused(session)); // A group's game never stops
+}
