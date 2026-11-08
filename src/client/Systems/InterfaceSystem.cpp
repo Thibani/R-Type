@@ -779,7 +779,7 @@ void drawHud(sf::RenderTarget& target, const Assets& assets, ecs::World& world,
     const sf::FloatRect panel = bossPanel(area, firstRow, statsEnd, firstRowStart, row + rowHeight);
     drawBossBar(target, assets, world, session, panel);
 
-    // Under the score, away from the cards: they can change without hiding it
+    // On the left, under every box: the cards can change without hiding it
     if (!session.notice.empty() && now < session.noticeUntil) {
         const float width = textWidth(assets.bodyBold, session.notice, 16) + 28.0F;
         const sf::FloatRect toast{{left, firstRow + 76.0F}, {width, 40.0F}};
