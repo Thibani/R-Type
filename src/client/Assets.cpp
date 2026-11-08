@@ -8,8 +8,11 @@
 #include <array>
 #include <cstddef>
 #include <optional>
+#include <span>
 #include <system_error>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace client {
 
@@ -19,24 +22,26 @@ constexpr sf::IntRect BydoFrame{{5, 6}, {21, 24}};
 constexpr sf::IntRect PlayerMissileFrame{{249, 105}, {16, 8}};
 constexpr sf::IntRect EnemyMissileFrame{{243, 277}, {12, 10}};
 
-/// The sheets that are the same in every colour mode (only players, Bydos
-/// and missiles are recoloured): enemies and gadgets.
+/// The sheets of the other enemies and of the gadgets. In a colour mode, every
+/// enemy takes the Bydo's colours, so all threats look alike, and the gadgets
+/// (the player's Force and its capsule) take the player missile's colour.
 struct SharedSheet {
     sf::Texture Skin::*texture;
     const char* file;
+    bool friendly;
 };
 constexpr std::array<SharedSheet, 11> SharedSheets{
-    SharedSheet{.texture = &Skin::pataPatas, .file = "r-typesheet8.gif"},
-    SharedSheet{.texture = &Skin::bugs, .file = "r-typesheet16.gif"},
-    SharedSheet{.texture = &Skin::cancers, .file = "r-typesheet19.gif"},
-    SharedSheet{.texture = &Skin::cruisers, .file = "r-typesheet24.gif"},
-    SharedSheet{.texture = &Skin::hoppers, .file = "r-typesheet7.gif"},
-    SharedSheet{.texture = &Skin::spinners, .file = "r-typesheet13.gif"},
-    SharedSheet{.texture = &Skin::gunners, .file = "r-typesheet14.gif"},
-    SharedSheet{.texture = &Skin::mines, .file = "r-typesheet39.gif"},
-    SharedSheet{.texture = &Skin::bosses, .file = "r-typesheet30.gif"},
-    SharedSheet{.texture = &Skin::forces, .file = "r-typesheet2.gif"},
-    SharedSheet{.texture = &Skin::capsules, .file = "r-typesheet3.gif"}};
+    SharedSheet{.texture = &Skin::pataPatas, .file = "r-typesheet8.gif", .friendly = false},
+    SharedSheet{.texture = &Skin::bugs, .file = "r-typesheet16.gif", .friendly = false},
+    SharedSheet{.texture = &Skin::cancers, .file = "r-typesheet19.gif", .friendly = false},
+    SharedSheet{.texture = &Skin::cruisers, .file = "r-typesheet24.gif", .friendly = false},
+    SharedSheet{.texture = &Skin::hoppers, .file = "r-typesheet7.gif", .friendly = false},
+    SharedSheet{.texture = &Skin::spinners, .file = "r-typesheet13.gif", .friendly = false},
+    SharedSheet{.texture = &Skin::gunners, .file = "r-typesheet14.gif", .friendly = false},
+    SharedSheet{.texture = &Skin::mines, .file = "r-typesheet39.gif", .friendly = false},
+    SharedSheet{.texture = &Skin::bosses, .file = "r-typesheet30.gif", .friendly = false},
+    SharedSheet{.texture = &Skin::forces, .file = "r-typesheet2.gif", .friendly = true},
+    SharedSheet{.texture = &Skin::capsules, .file = "r-typesheet3.gif", .friendly = true}};
 
 /// A 12 × 12 tile of player `index`'s swatch pattern: stripes, dots, checks
 /// or solid colour (from the mockup's style guide).
@@ -107,14 +112,83 @@ bool loadTexture(sf::Texture& texture, const sf::Image& image)
     return true;
 }
 
+/// The RGBA bytes of `image`, 4 per pixel.
+std::span<const std::uint8_t> pixelBytes(const sf::Image& image)
+{
+    return {image.getPixelsPtr(), static_cast<std::size_t>(image.getSize().x) * image.getSize().y * 4U};
+}
+
+/// The colours of a sheet and how many pixels have each. A sheet has millions
+/// of pixels but a few hundred colours, often the same many pixels in a row.
+std::vector<std::pair<sf::Color, std::size_t>> colourCounts(const sf::Image& image)
+{
+    std::unordered_map<std::uint32_t, std::size_t> counts;
+    const std::span<const std::uint8_t> bytes = pixelBytes(image);
+    std::uint32_t last = 0;
+    std::size_t run = 0;
+    for (std::size_t i = 0; i < bytes.size(); i += 4) {
+        const std::uint32_t colour = sf::Color(bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]).toInteger();
+        if (run > 0 && colour != last) {
+            counts[last] += run;
+            run = 0;
+        }
+        last = colour;
+        ++run;
+    }
+    if (run > 0) {
+        counts[last] += run;
+    }
+    std::vector<std::pair<sf::Color, std::size_t>> colours;
+    colours.reserve(counts.size());
+    for (const auto& [colour, pixels] : counts) {
+        colours.emplace_back(sf::Color(colour), pixels);
+    }
+    return colours;
+}
+
+/// A whole sheet in the colours of `palette`: an enemy's parts in the Bydo's
+/// colours, a gadget in the player missile's, each colour of `colours`
+/// repainted once. Shades are kept around the sheet's average brightness,
+/// since these sprites have no single main colour.
+void tintSheet(sf::Image& image, const std::vector<std::pair<sf::Color, std::size_t>>& colours,
+    bool friendly, const theme::Palette& palette)
+{
+    const sf::Color from = theme::averageShade(colours);
+    std::unordered_map<std::uint32_t, sf::Color> repainted;
+    for (const auto& [colour, pixels] : colours) {
+        const sf::Color to = friendly ? palette.playerMissile : palette.bydo.at(theme::bydoPart(colour));
+        repainted.emplace(colour.toInteger(), theme::tinted(colour, from, to));
+    }
+    const std::span<const std::uint8_t> original = pixelBytes(image);
+    std::vector<std::uint8_t> bytes(original.begin(), original.end());
+    std::uint32_t last = 0;
+    auto lastRepainted = sf::Color(last);
+    bool any = false;
+    for (std::size_t i = 0; i < bytes.size(); i += 4) {
+        const std::uint32_t colour = sf::Color(bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]).toInteger();
+        if (!any || colour != last) {
+            last = colour;
+            lastRepainted = repainted.at(colour);
+            any = true;
+        }
+        bytes[i] = lastRepainted.r;
+        bytes[i + 1] = lastRepainted.g;
+        bytes[i + 2] = lastRepainted.b;
+        bytes[i + 3] = lastRepainted.a;
+    }
+    image = sf::Image(image.getSize(), bytes.data());
+}
+
 void tintFrame(sf::Image& image, sf::IntRect frame, sf::Color from, sf::Color to)
 {
     repaint(image, frame, [&](sf::Color pixel) { return theme::tinted(pixel, from, to); });
 }
 
 /// The skin of `mode`, from the original sprite sheets.
+using SheetColours = std::array<std::vector<std::pair<sf::Color, std::size_t>>, SharedSheets.size()>;
+
 bool loadSkin(Skin& skin, ColourMode mode, sf::Image bydos, sf::Image missiles,
-    const std::array<sf::Image, SharedSheets.size()>& shared)
+    std::array<sf::Image, SharedSheets.size()> shared, const SheetColours& sheetColours)
 {
     const theme::Palette& palette = theme::Palettes.at(static_cast<std::size_t>(mode));
     if (mode != ColourMode::Off) {
@@ -125,6 +199,9 @@ bool loadSkin(Skin& skin, ColourMode mode, sf::Image bydos, sf::Image missiles,
         });
         tintFrame(missiles, PlayerMissileFrame, original.playerMissile, palette.playerMissile);
         tintFrame(missiles, EnemyMissileFrame, original.enemyMissile, palette.enemyMissile);
+        for (std::size_t i = 0; i < SharedSheets.size(); ++i) {
+            tintSheet(shared.at(i), sheetColours.at(i), SharedSheets.at(i).friendly, palette);
+        }
     }
     for (std::size_t i = 0; i < skin.patterns.size(); ++i) {
         if (!skin.patterns.at(i).loadFromImage(patternTile(i, palette.players.at(i)))) {
@@ -164,8 +241,13 @@ std::expected<void, std::string> Assets::load(Assets& assets, const std::filesys
             return fail(sprites / SharedSheets.at(i).file);
         }
     }
+    SheetColours sheetColours;
+    for (std::size_t i = 0; i < SharedSheets.size(); ++i) {
+        sheetColours.at(i) = colourCounts(shared.at(i)); // Once, for the 3 colour modes
+    }
     for (std::size_t mode = 0; mode < assets.skins.size(); ++mode) {
-        if (!loadSkin(assets.skins.at(mode), static_cast<ColourMode>(mode), bydos, missiles, shared)) {
+        if (!loadSkin(assets.skins.at(mode), static_cast<ColourMode>(mode), bydos, missiles, shared,
+                sheetColours)) {
             return std::unexpected("cannot create the textures of the colour modes");
         }
     }
