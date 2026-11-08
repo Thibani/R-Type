@@ -405,6 +405,23 @@ they were sent, so no change can be forgotten, whatever its cause.
 A code has 6 signs out of 32, about a billion values, without those easy to mistake when read
 aloud. Trying them is limited to 5 wrong codes per 30 seconds and per account.
 
+### Leaderboard (#91)
+
+Finished games go to a fourth text file (`--scores`, default `scores.txt`), one line per game,
+written at most once per second like the friends file. A game is a line, not a best score per
+player, as asked: the same team can be in the 10 several times, and "your last game" can be
+ranked even far below them. Each ranking keeps its games sorted, so an answer costs a copy of
+10 lines and a binary search for the player's last game, whatever the number of games.
+
+A game ends when nobody is left in it, and its team score then counts for everyone who started
+it. Until lives exist (#145), leaving is the only end; with them, the score will be taken at
+GAME_OVER instead, which changes only `RoomSystem`.
+
+| Option | For | Against |
+|---|---|---|
+| **Text file, like the other stores (chosen)** | Same tools, same safe replace, readable by hand | The whole file is rewritten at each save |
+| SQLite | Queries, no full rewrite | A new dependency for 10 lines and one rank |
+
 ## 11. Security
 
 | Threat                              | Mitigation                                         | Status |

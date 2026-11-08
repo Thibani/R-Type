@@ -1,10 +1,10 @@
-# R-Type Network Protocol — Version 7
+# R-Type Network Protocol — Version 8
 
 | Status   | Implemented                 |
 |----------|-----------------------------|
-| Version  | 6                           |
+| Version  | 8                           |
 | Transport| UDP only                    |
-| Issue    | #21 (design), #10 (documentation), #97 (encryption), #73 (accounts), #72 (main page), #126 (friends), #92 (chat) |
+| Issue    | #21 (design), #10 (documentation), #97 (encryption), #73 (accounts), #72 (main page), #126 (friends), #92 (chat), #71 (groups), #91 (leaderboard) |
 
 This document specifies the binary protocol spoken between `r-type_client`
 and `r-type_server`. It is meant to be complete enough to write a new client
@@ -119,7 +119,7 @@ Every datagram starts with this 20-byte header.
 | Offset | Size | Field          | Description                                                  |
 |-------:|-----:|----------------|--------------------------------------------------------------|
 | 0      | 2    | `magic`        | Always `0x5254` (`"RT"`). Filters out stray traffic.          |
-| 2      | 1    | `version`      | Protocol version. This document describes version `7`.       |
+| 2      | 1    | `version`      | Protocol version. This document describes version `8`.       |
 | 3      | 1    | `type`         | Packet type, see [§4](#4-packet-types).                       |
 | 4      | 1    | `flags`        | Bit field, see below.                                         |
 | 5      | 1    | `reserved`     | **MUST** be `0`.                                              |
@@ -135,7 +135,7 @@ Every datagram starts with this 20-byte header.
 |----:|------------|----------------------------------------------------------------------|
 | 0   | `RELIABLE` | The payload starts with a `u16 reliableId` and must be acknowledged. |
 | 1   | `HAS_ACK`  | `ack` and `ackBits` are meaningful. Clear until a packet is received.|
-| 2–7 | —          | Reserved, **MUST** be `0` in version 7.                              |
+| 2–7 | —          | Reserved, **MUST** be `0` in version 8.                              |
 
 ### 3.2 Versioning
 
@@ -243,8 +243,10 @@ Sizes are payload sizes, header excluded. Reliable packets include their
 | `0x44` | `GROUP_STATE`     | S → C     | **yes**  | 11 + 17 × count    |
 | `0x45` | `GROUP_RESULT`    | S → C     | **yes**  | 3                  |
 | `0x46` | `GROUP_INVITED`   | S → C     | **yes**  | 18                 |
+| `0x47` | `LEADERBOARD_REQUEST` | C → S | **yes**  | 3                  |
+| `0x48` | `LEADERBOARD`     | S → C     | **yes**  | 12 + 68 × count    |
 
-Ranges `0x00`, `0x08–0x0F`, `0x11–0x1F`, `0x27–0x2F` and `0x47–0xFF` are reserved.
+Ranges `0x00`, `0x08–0x0F`, `0x11–0x1F`, `0x27–0x2F` and `0x49–0xFF` are reserved.
 
 These sizes are before encryption: every type except `CONNECT_REQUEST`,
 `CONNECT_ACCEPT` and `CONNECT_REJECT` adds 24 bytes on the network
@@ -367,6 +369,11 @@ in a game ([§8.7](#87-groups)). `GROUP_LEAVE` has no other field.
 | `GROUP_ANSWER`  | 2      | 16   | `name`   | Who invited                                |
 |                 | 18     | 1    | `reply`  | `0` REFUSE, `1` ACCEPT                     |
 | `GROUP_READY`   | 2      | 1    | `ready`  | `0` or `1`                                 |
+
+#### `LEADERBOARD_REQUEST` (`0x47`)
+
+After `reliableId`, 1 byte: `board`, `0` SOLO or `1` MULTI. The server ignores it before the
+login ([§8.8](#88-leaderboard)).
 
 #### `INPUT` (`0x10`)
 
@@ -553,6 +560,17 @@ newcomer once for every player already connected.
 
 `GROUP_INVITED` (`0x46`) — a leader invites this player. After `reliableId`, 16 bytes: their name.
 
+`LEADERBOARD` (`0x48`) — the answer to `LEADERBOARD_REQUEST`.
+
+| Offset | Size | Field        | Values                                              |
+|-------:|-----:|--------------|-----------------------------------------------------|
+| 0      | 2    | `reliableId` |                                                     |
+| 2      | 1    | `board`      | `0` SOLO, `1` MULTI: the one asked for              |
+| 3      | 1    | `count`      | `0`–`10`: the best games, best first                |
+| 4      | 68 × count | games  | 4 bytes of `score` (`u32`), then 4 names of 16 bytes: the accounts that started the game, the unused ones last and all zero. SOLO: exactly one name |
+| …      | 4    | `lastRank`   | Rank of the player's last game in this ranking, even beyond 10; `0`: none |
+| …      | 4    | `lastScore`  | Its score; `0` if `lastRank` is `0`                 |
+
 ---
 
 ## 5. Identifiers and enumerations
@@ -625,7 +643,7 @@ of an enemy, `CONNECT_ACCEPT`).
   messages wait until the window moves. Without this rule, losing a single
   message while many others are in flight would disconnect a healthy peer.
 
-The client sends reliable messages too (`JOIN_GAME`, `LEAVE_GAME`, friends, chat, groups), with the same rules.
+The client sends reliable messages too (`JOIN_GAME`, `LEAVE_GAME`, friends, chat, groups, leaderboard), with the same rules.
 
 ---
 
@@ -637,15 +655,15 @@ and drops the datagram at the first failure:
 
 1. Size is between 20 and 1200 bytes.
 2. `magic` is `0x5254`.
-3. `version` is `3` (see [§3.2](#32-versioning) for `CONNECT_REQUEST`).
+3. `version` is `8` (see [§3.2](#32-versioning) for `CONNECT_REQUEST`).
 4. `type` is known and allowed in this direction (e.g. a server drops
    `SNAPSHOT`).
 5. `reserved` is `0` and reserved flag bits are `0`.
 6. `payloadSize` equals the datagram size minus 20.
 7. `RELIABLE` is set exactly for the reliable types of [§4](#4-packet-types).
 8. The payload size matches the type: exact for fixed-size types, and
-   `5 + count` / `11 + 13 × count` / `11 + 17 × count` for `INPUT` /
-   `SNAPSHOT` / `GROUP_STATE`, with `count` within its range.
+   `5 + count` / `11 + 13 × count` / `11 + 17 × count` / `12 + 68 × count` for
+   `INPUT` / `SNAPSHOT` / `GROUP_STATE` / `LEADERBOARD`, with `count` within its range.
 9. Every enumeration value is in its range; names are valid UTF-8.
 10. `sessionToken` matches the session of the sender's address (or is `0`
     for `CONNECT_REQUEST`).
@@ -807,6 +825,23 @@ Each member gets `GROUP_STATE` whenever something in it changes, the first time 
 Known limits: the 5 wrong codes are per account, so many accounts can try more of the billion
 codes. Anyone who reads a code can use it, until it is replaced or deleted.
 
+### 8.8 Leaderboard
+
+The server keeps every finished game in two rankings: **SOLO** for a game started by one
+player, **MULTI** for a game started by a group of 2 to 4. A game is a line: the same players
+can be there several times.
+
+- A game ends when no player is left in it: its team score then enters its ranking, under the
+  names of the accounts that started it, even those who left before the end. While one player
+  is still in the game, it goes on and keeps scoring.
+- Games are sorted by score; on a tie, the older game comes first.
+- `LEADERBOARD_REQUEST` is answered by `LEADERBOARD`: the 10 best games of that ranking, then
+  the rank and score of the last game the player played there, even far below the 10.
+
+Known limits: a game still running when the server stops is not kept. The server saves the
+file at most once per second, so a crash can lose the last second. The file grows by one line
+per game. Until lives exist (endless mode, #145), a game only ends when its last player leaves.
+
 ---
 
 ## 9. Timing
@@ -835,7 +870,7 @@ that is about **40 KB/s per client** downstream, events excluded. Upstream, `INP
 
 ```text
 52 54             magic "RT"
-07                version 7
+08                version 8
 01                type CONNECT_REQUEST
 00                flags: none (nothing received yet, so no HAS_ACK)
 00                reserved
@@ -854,8 +889,8 @@ Total: 68 bytes.
 
 ## 11. Possible extensions
 
-Kept out of version 7, but the header leaves room for them:
+Kept out of version 8, but the header leaves room for them:
 
 - a `COMPRESSED` flag bit for LZ4 or zlib payloads;
 - delta snapshots relative to the last acknowledged snapshot;
-- matchmaking and game modes, as new packet types in the `0x47–0x4F` range (#72, #130).
+- matchmaking and game modes, as new packet types in the `0x49–0x4F` range (#72, #130).
